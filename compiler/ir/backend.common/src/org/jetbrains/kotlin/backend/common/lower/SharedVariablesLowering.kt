@@ -32,7 +32,8 @@ import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 
-val sharedVariablesPhase = makeIrModulePhase(
+val sharedVariablesPhase = makeIrFilePhase(
+//val sharedVariablesPhase = makeIrModulePhase(
     ::SharedVariablesLowering,
     name = "SharedVariables",
     description = "Transform shared variables"

@@ -328,7 +328,6 @@ private val functionInliningPhase = makeIrModulePhase<JvmBackendContext>(
 )
 
 private val jvmFilePhases = listOf(
-
     kCallableNamePropertyPhase,
     annotationPhase,
     annotationImplementationPhase,
@@ -344,6 +343,7 @@ private val jvmFilePhases = listOf(
     propertyReferencePhase,
     arrayConstructorPhase,
     constPhase1,
+
 
     // TODO: merge the next three phases together, as visitors behave incorrectly between them
     //  (backing fields moved out of companion objects are reachable by two paths):
@@ -367,7 +367,7 @@ private val jvmFilePhases = listOf(
 
     assertionPhase,
     returnableBlocksPhase,
-
+    sharedVariablesPhase,
     localDeclarationsPhase,
     // makePatchParentsPhase(),
 
@@ -459,17 +459,19 @@ private fun buildJvmLoweringPhases(
                 jvmOverloadsAnnotationPhase then
                 mainMethodGenerationPhase then
                 inventNamesForLocalClassesPhase then
-                sharedVariablesPhase then
 
                 jvmLateinitLowering then
+//            sharedVariablesPhase then
 
-                localClassesInInlineLambdasPhase then
-                localClassesInInlineFunctionsPhase then
-                localClassesExtractionFromInlineFunctionsPhase then
+//            localClassesInInlineLambdasPhase then
+//            localClassesInInlineFunctionsPhase then
+//            localClassesExtractionFromInlineFunctionsPhase then
 
                 functionInliningPhase then
                 provisionalFunctionExpressionPhase then
                 inventNamesForLocalClassesPhase2 then
+//            sharedVariablesPhase then
+
 
                 buildLoweringsPhase(phases) then
                 generateMultifileFacadesPhase then
