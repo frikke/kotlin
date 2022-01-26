@@ -18,7 +18,7 @@ import org.jetbrains.kotlin.resolve.jvm.JvmClassName
 import org.jetbrains.org.objectweb.asm.Type
 
 val inventNamesForLocalClassesPhase = makeIrModulePhase<JvmBackendContext>(
-//val inventNamesForLocalClassesPhase = makeIrModulePhase<JvmBackendContext>(
+//val inventNamesForLocalClassesPhase = makeIrFilePhase<JvmBackendContext>(
     { context -> JvmInventNamesForLocalClasses(context) },
     name = "InventNamesForLocalClasses",
     description = "Invent names for local classes and anonymous objects",
@@ -27,7 +27,7 @@ val inventNamesForLocalClassesPhase = makeIrModulePhase<JvmBackendContext>(
 )
 
 val inventNamesForLocalClassesPhase2 = makeIrModulePhase<JvmBackendContext>(
-//val inventNamesForLocalClassesPhase = makeIrModulePhase<JvmBackendContext>(
+//val inventNamesForLocalClassesPhase = makeIrFilePhase<JvmBackendContext>(
     { context -> JvmInventNamesForLocalClasses(context) },
     name = "InventNamesForLocalClasses2",
     description = "Invent names for local classes and anonymous objects",
@@ -35,7 +35,17 @@ val inventNamesForLocalClassesPhase2 = makeIrModulePhase<JvmBackendContext>(
     prerequisite = setOf(mainMethodGenerationPhase)
 )
 
-class JvmInventNamesForLocalClasses(private val context: JvmBackendContext) : InventNamesForLocalClasses(allowTopLevelCallables = true) {
+val inventNamesForNewLocalClassesPhase = makeIrModulePhase<JvmBackendContext>(
+    { context -> JvmInventNamesForNewLocalClasses(context) },
+    name = "InventNamesForLocalClasses3",
+    description = "Invent names for local classes and anonymous objects",
+    // MainMethodGeneration introduces lambdas, needing names for their local classes.
+    prerequisite = setOf(mainMethodGenerationPhase)
+)
+
+open class JvmInventNamesForLocalClasses(
+    protected val context: JvmBackendContext
+) : InventNamesForLocalClasses(allowTopLevelCallables = true) {
     override fun computeTopLevelClassName(clazz: IrClass): String {
         val file = clazz.parent as? IrFile
             ?: throw AssertionError("Top-level class expected: ${clazz.render()}")
@@ -56,5 +66,19 @@ class JvmInventNamesForLocalClasses(private val context: JvmBackendContext) : In
 
     override fun putLocalClassName(declaration: IrAttributeContainer, localClassName: String) {
         context.putLocalClassType(declaration, Type.getObjectType(localClassName))
+    }
+}
+
+class JvmInventNamesForNewLocalClasses(context: JvmBackendContext) : JvmInventNamesForLocalClasses(context) {
+    private val namesToIndex = mutableMapOf<String, Int>()
+    override fun putLocalClassName(declaration: IrAttributeContainer, localClassName: String) {
+//        if (context.getLocalClassType(declaration) != null || context.getLocalClassType(declaration.attributeOwnerId) != null) {
+//            return
+//        }
+        val index = namesToIndex[localClassName]
+        namesToIndex[localClassName] = (index ?: -1) + 1
+
+        val safeName = if (index == null) localClassName else localClassName + index
+        context.putLocalClassType(declaration, Type.getObjectType(safeName))
     }
 }

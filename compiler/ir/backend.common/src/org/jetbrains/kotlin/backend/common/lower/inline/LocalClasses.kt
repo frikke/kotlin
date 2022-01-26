@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.backend.common.lower.inline
 import org.jetbrains.kotlin.backend.common.*
 import org.jetbrains.kotlin.backend.common.lower.LocalClassPopupLowering
 import org.jetbrains.kotlin.backend.common.lower.LocalDeclarationsLowering
+import org.jetbrains.kotlin.backend.common.lower.VisibilityPolicy
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.*
@@ -29,7 +30,13 @@ import org.jetbrains.kotlin.ir.visitors.*
     So in this case all local classes MIGHT BE COPIED.
  */
 
-class LocalClassesInInlineLambdasLowering(val context: CommonBackendContext) : BodyLoweringPass {
+class LocalClassesInInlineLambdasLowering(
+    val context: CommonBackendContext,
+    private val localNameSanitizer: (String) -> String = { it },
+    private val visibilityPolicy: VisibilityPolicy = VisibilityPolicy.DEFAULT,
+    private val suggestUniqueNames: Boolean = true,
+    private val forceFieldsForInlineCaptures: Boolean = false
+) : BodyLoweringPass {
     override fun lower(irFile: IrFile) {
         runOnFilePostfix(irFile)
     }
@@ -109,7 +116,8 @@ class LocalClassesInInlineLambdasLowering(val context: CommonBackendContext) : B
                 val irBlock = IrBlockImpl(expression.startOffset, expression.endOffset, expression.type).apply {
                     statements += expression
                 }
-                LocalDeclarationsLowering(context).lower(irBlock, container, data, localClasses, adaptedFunctions)
+                LocalDeclarationsLowering(context, localNameSanitizer, visibilityPolicy, suggestUniqueNames, forceFieldsForInlineCaptures)
+                    .lower(irBlock, container, data, localClasses, adaptedFunctions)
                 irBlock.statements.addAll(0, localClasses)
 
                 for (lambda in inlineLambdas) {
@@ -130,7 +138,13 @@ class LocalClassesInInlineLambdasLowering(val context: CommonBackendContext) : B
     }
 }
 
-class LocalClassesInInlineFunctionsLowering(val context: CommonBackendContext) : BodyLoweringPass {
+class LocalClassesInInlineFunctionsLowering(
+    val context: CommonBackendContext,
+    private val localNameSanitizer: (String) -> String = { it },
+    private val visibilityPolicy: VisibilityPolicy = VisibilityPolicy.DEFAULT,
+    private val suggestUniqueNames: Boolean = true,
+    private val forceFieldsForInlineCaptures: Boolean = false
+) : BodyLoweringPass {
     override fun lower(irFile: IrFile) {
         runOnFilePostfix(irFile)
     }
@@ -169,7 +183,8 @@ class LocalClassesInInlineFunctionsLowering(val context: CommonBackendContext) :
         if (classesToExtract.isEmpty())
             return
 
-        LocalDeclarationsLowering(context).lower(function, function, classesToExtract)
+        LocalDeclarationsLowering(context, localNameSanitizer, visibilityPolicy, suggestUniqueNames, forceFieldsForInlineCaptures)
+            .lower(function, function, classesToExtract)
     }
 }
 
