@@ -32,8 +32,8 @@ import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 
-val sharedVariablesPhase = makeIrFilePhase(
-//val sharedVariablesPhase = makeIrModulePhase(
+//val sharedVariablesPhase = makeIrFilePhase(
+val sharedVariablesPhase = makeIrModulePhase(
     ::SharedVariablesLowering,
     name = "SharedVariables",
     description = "Transform shared variables"
@@ -75,17 +75,19 @@ class SharedVariablesLowering(val context: BackendContext) : BodyLoweringPass {
                     expression.extensionReceiver?.accept(this, data)
                     for (param in callee.valueParameters) {
                         val arg = expression.getValueArgument(param.index) ?: continue
-                        if (param.isInlineParameter()
-                            // This is somewhat conservative but simple.
-                            // If a user put redundant <crossinline> modifier on a parameter,
-                            // may be it's their fault?
-                            && !param.isCrossinline
-                            && arg is IrFunctionExpression
-                        ) {
-                            skippedFunctionsParents[arg.function] = data!!
-                            arg.function.acceptChildren(this, data)
-                            skippedFunctionsParents.remove(arg.function)
-                        } else
+                        // TODO don't see any usages of this piece of code. If uncomment then will drop tests that require fun bodies.
+                        // Maybe will be save to use with serialization
+//                        if (param.isInlineParameter()
+//                            // This is somewhat conservative but simple.
+//                            // If a user put redundant <crossinline> modifier on a parameter,
+//                            // may be it's their fault?
+//                            && !param.isCrossinline
+//                            && arg is IrFunctionExpression
+//                        ) {
+//                            skippedFunctionsParents[arg.function] = data!!
+//                            arg.function.acceptChildren(this, data)
+//                            skippedFunctionsParents.remove(arg.function)
+//                        } else
                             arg.accept(this, data)
                     }
                 }
