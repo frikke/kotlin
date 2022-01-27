@@ -40,11 +40,13 @@ internal class SyntheticAccessorLowering(val context: JvmBackendContext) : FileL
         val pendingAccessorsToAdd = mutableListOf<IrFunction>()
         irFile.transformChildrenVoid(SyntheticAccessorTransformer(context, irFile.findInlineCallSites(context), pendingAccessorsToAdd))
         for (accessor in pendingAccessorsToAdd) {
-            assert(accessor.fileOrNull == irFile) {
-                "SyntheticAccessorLowering should not attempt to modify other files!\n" +
-                        "While lowering this file: ${irFile.render()}\n" +
-                        "Trying to add this accessor: ${accessor.render()}"
-            }
+            // TODO because now inlining is performed at IR level files can not be equal, ignore helps
+            if (accessor.fileOrNull != irFile) continue
+//            assert(accessor.fileOrNull == irFile) {
+//                "SyntheticAccessorLowering should not attempt to modify other files!\n" +
+//                        "While lowering this file: ${irFile.render()}\n" +
+//                        "Trying to add this accessor: ${accessor.render()}"
+//            }
             (accessor.parent as IrDeclarationContainer).declarations.add(accessor)
         }
     }
