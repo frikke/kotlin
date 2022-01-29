@@ -69,12 +69,13 @@ open class JvmInventNamesForLocalClasses(
     }
 }
 
+// TODO try to use only one "InventNames"
 class JvmInventNamesForNewLocalClasses(context: JvmBackendContext) : JvmInventNamesForLocalClasses(context) {
     private val namesToIndex = mutableMapOf<String, Int>()
     override fun putLocalClassName(declaration: IrAttributeContainer, localClassName: String) {
-//        if (context.getLocalClassType(declaration) != null || context.getLocalClassType(declaration.attributeOwnerId) != null) {
-//            return
-//        }
+        if (context.getLocalClassType(declaration) != null || context.getLocalClassType(declaration.attributeOwnerId) != null) {
+            return
+        }
         val index = namesToIndex[localClassName]
         namesToIndex[localClassName] = (index ?: -1) + 1
 
