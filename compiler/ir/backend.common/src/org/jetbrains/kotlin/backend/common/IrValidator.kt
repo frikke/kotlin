@@ -93,6 +93,10 @@ class IrValidator(val context: CommonBackendContext, val config: IrValidatorConf
         element.acceptVoid(elementChecker)
         element.acceptChildrenVoid(this)
     }
+
+    override fun visitInlineMarker(element: IrInlineMarker, data: Nothing?) {
+        //
+    }
 }
 
 fun IrElement.checkDeclarationParents() {
