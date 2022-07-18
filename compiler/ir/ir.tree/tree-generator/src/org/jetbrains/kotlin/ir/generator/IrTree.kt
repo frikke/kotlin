@@ -1053,4 +1053,13 @@ object IrTree : AbstractTreeBuilder() {
 
         parent(branch)
     }
+    val inlineMarker: ElementConfig by element(Declaration) {
+        visitorParent = rootElement
+        transform = true
+
+        parent(statement)
+
+        +field("inlineCall", call)
+        +field("callee", function)
+    }
 }

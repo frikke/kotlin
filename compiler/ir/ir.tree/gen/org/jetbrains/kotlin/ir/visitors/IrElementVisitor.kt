@@ -19,6 +19,7 @@ import org.jetbrains.kotlin.ir.declarations.IrExternalPackageFragment
 import org.jetbrains.kotlin.ir.declarations.IrField
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrFunction
+import org.jetbrains.kotlin.ir.declarations.IrInlineMarker
 import org.jetbrains.kotlin.ir.declarations.IrLocalDelegatedProperty
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrPackageFragment
@@ -318,4 +319,7 @@ interface IrElementVisitor<out R, in D> {
     fun visitBranch(branch: IrBranch, data: D): R = visitElement(branch, data)
 
     fun visitElseBranch(branch: IrElseBranch, data: D): R = visitBranch(branch, data)
+
+    fun visitInlineMarker(declaration: IrInlineMarker, data: D): R =
+            visitElement(declaration, data)
 }

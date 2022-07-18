@@ -5,9 +5,7 @@
 
 package org.jetbrains.kotlin.ir.util
 
-import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.IrStatement
-import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
+import org.jetbrains.kotlin.ir.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.*
 import org.jetbrains.kotlin.ir.expressions.*
@@ -411,8 +409,8 @@ open class DeepCopyIrTreeWithSymbols(
     override fun visitSyntheticBody(body: IrSyntheticBody): IrSyntheticBody =
         IrSyntheticBodyImpl(body.startOffset, body.endOffset, body.kind)
 
-    override fun visitInlineMarker(element: IrInlineMarker, data: Nothing?): IrElement {
-        return IrInlineMarker(element.startOffset, element.endOffset, element.type, element.inlineCall, element.callee)
+    override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?): IrElement {
+        return IrInlineMarkerImpl(declaration.startOffset, declaration.endOffset, declaration.inlineCall, declaration.callee)
     }
 
     override fun visitExpression(expression: IrExpression): IrExpression =

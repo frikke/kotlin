@@ -94,7 +94,7 @@ class IrValidator(val context: CommonBackendContext, val config: IrValidatorConf
         element.acceptChildrenVoid(this)
     }
 
-    override fun visitInlineMarker(element: IrInlineMarker, data: Nothing?) {
+    override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?) {
         //
     }
 }

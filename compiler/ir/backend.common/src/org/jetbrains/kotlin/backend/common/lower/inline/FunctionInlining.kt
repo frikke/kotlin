@@ -16,11 +16,10 @@ import org.jetbrains.kotlin.backend.common.lower.InnerClassesSupport
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.builtins.StandardNames
-import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.IrStatement
-import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
+import org.jetbrains.kotlin.ir.*
 import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
+import org.jetbrains.kotlin.ir.declarations.impl.IrInlineMarkerImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
@@ -134,7 +133,7 @@ class FunctionInlining(
         return inliner.inline()
     }
 
-    override fun visitInlineMarker(element: IrInlineMarker, data: Nothing?): IrElement = element
+    override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?): IrElement = declaration
 
     private val IrFunction.needsInlining get() = this.isInline && !this.isExternal
 
@@ -224,9 +223,7 @@ class FunctionInlining(
             newStatements.addAll(evaluationStatements)
             val fileEntry = (parent as? IrFunction)?.fileOrNull?.fileEntry
             if (fileEntry != null && !callee.isInlineOnly()) {
-                newStatements += IrInlineMarker(
-                    UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingType, callSite as IrCall, callee
-                )
+                newStatements += IrInlineMarkerImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, callSite as IrCall, callee)
             }
             statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
@@ -254,7 +251,7 @@ class FunctionInlining(
                         return expression
                     }
 
-                    override fun visitInlineMarker(element: IrInlineMarker, data: Nothing?) = element
+                    override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?) = declaration
                 })
                 patchDeclarationParents(parent) // TODO: Why it is not enough to just run SetDeclarationsParentVisitor?
             }
@@ -305,7 +302,7 @@ class FunctionInlining(
                 }
             }
 
-            override fun visitInlineMarker(element: IrInlineMarker, data: Nothing?) = element
+            override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?) = declaration
 
             fun inlineFunctionExpression(irCall: IrCall, irFunctionExpression: IrFunctionExpression): IrExpression {
                 // Inline the lambda. Lambda parameters will be substituted with lambda arguments.
