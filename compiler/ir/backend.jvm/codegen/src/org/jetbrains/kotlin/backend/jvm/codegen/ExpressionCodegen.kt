@@ -140,13 +140,19 @@ class ExpressionCodegen(
     val smap: SourceMapper,
     val reifiedTypeParametersUsages: ReifiedTypeParametersUsages,
 ) : IrElementVisitor<PromisedValue, BlockInfo>, BaseExpressionCodegen {
-    private data class AdditionalIrInlineData(val smap: SourceMapCopier, val inlineMarker: IrInlineMarker) {
-        fun isInvokeOnLambda(): Boolean {
-            return inlineMarker.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE
-        }
-    }
+//    private data class AdditionalIrInlineData(val smap: SourceMapCopier, val inlineMarker: IrInlineMarker) {
+//        fun isInvokeOnLambda(): Boolean {
+//            return inlineMarker.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE
+//        }
+//    }
+//
+//    private val localSmapCopiers: MutableList<AdditionalIrInlineData> = mutableListOf()
 
-    private val localSmapCopiers: MutableList<AdditionalIrInlineData> = mutableListOf()
+    private fun getLocalSmap(): List<JvmBackendContext.AdditionalIrInlineData> = context.localSmapCopiersByClass
+
+    private fun addToLocalSmap(info: JvmBackendContext.AdditionalIrInlineData) {
+        context.localSmapCopiersByClass.add(info)
+    }
 
     override fun toString(): String = signature.toString()
 
@@ -161,7 +167,7 @@ class ExpressionCodegen(
 
     val state = context.state
 
-    private val fileEntry = irFunction.fileParent.fileEntry
+    private val fileEntry = if (context.inlinedAnonymousClassToOriginal[classCodegen.irClass] != null) (context.inlinedAnonymousClassToOriginal[classCodegen.irClass] as IrClass).fileEntry else irFunction.fileParent.fileEntry
 
     override val visitor: InstructionAdapter
         get() = mv
@@ -203,11 +209,11 @@ class ExpressionCodegen(
         val offset = if (startOffset) this.startOffset else endOffset
         if (offset < 0) return
 
-        val lineNumber = if (localSmapCopiers.isNotEmpty()) {
-            val doUntil = if (localSmapCopiers.size >= 2 && !localSmapCopiers[0].isInvokeOnLambda() && localSmapCopiers[1].isInvokeOnLambda()) 1 else 0
+        val lineNumber = if (getLocalSmap().isNotEmpty()) {
+            val doUntil = if (getLocalSmap().size >= 2 && !getLocalSmap()[0].isInvokeOnLambda() && getLocalSmap()[1].isInvokeOnLambda()) 1 else 0
             var result = -1
-            for (i in (localSmapCopiers.size - 1) downTo doUntil) {
-                val inlineData = localSmapCopiers[i]
+            for (i in (getLocalSmap().size - 1) downTo doUntil) {
+                val inlineData = getLocalSmap()[i]
                 val localFileEntry = inlineData.inlineMarker.callee.fileEntry
                 result = inlineData.smap.mapLineNumber(localFileEntry.getLineNumber(offset) + 1)
             }
@@ -475,14 +481,14 @@ class ExpressionCodegen(
     }
 
     private fun visitStatementContainer(container: IrStatementContainer, data: BlockInfo): PromisedValue {
-        val before = localSmapCopiers.size
+        val before = getLocalSmap().size
         val result = container.statements.fold(unitValue) { prev, exp ->
             prev.discard()
             exp.accept(this, data)
         }
 
-        if (localSmapCopiers.size != before) {
-            val inlineData = localSmapCopiers.last()
+        if (getLocalSmap().size != before) {
+            val inlineData = getLocalSmap().last()
             val calleeBody = inlineData.inlineMarker.callee.body
             if (calleeBody !is IrStatementContainer || calleeBody.statements.lastOrNull() !is IrReturn) {
                 // Allow setting a breakpoint on the closing brace of a void-returning function without an explicit return
@@ -491,7 +497,7 @@ class ExpressionCodegen(
                 mv.nop()
             }
 
-            localSmapCopiers.removeLast()
+            context.localSmapCopiersByClass.removeLast()
             if (inlineData.isInvokeOnLambda()) {
                 // TODO the rest
                 inlineData.inlineMarker.inlineCall.markLineNumber(startOffset = false)
@@ -960,10 +966,12 @@ class ExpressionCodegen(
         mv.nop()
 
         if (inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE) {
-            val callSite = if (inlineCall.isInvokeOnDefaultArg(element.callee)) localSmapCopiers.lastOrNull()?.smap?.callSite else null
+            val callSite = if (inlineCall.isInvokeOnDefaultArg(element.callee)) getLocalSmap().lastOrNull()?.smap?.callSite else null
             val classSourceMapper = context.getSourceMapper(element.callee.parentClassOrNull!!)
             val classSMAP = SMAP(classSourceMapper.resultMappings)//.generateMethodNode(element.callee!!)
-            localSmapCopiers += AdditionalIrInlineData(SourceMapCopier(classSourceMapper, classSMAP, callSite), element)
+            addToLocalSmap(
+                JvmBackendContext.AdditionalIrInlineData(SourceMapCopier(if (context.inlinedAnonymousClassToOriginal[classCodegen.irClass] != null) smap else classSourceMapper, classSMAP, callSite), element)
+            )
         } else {
             val nodeAndSmap = element.callee.getClassWithDeclaredFunction()!!.declarations
                 .filterIsInstance<IrSimpleFunction>()
@@ -982,7 +990,9 @@ class ExpressionCodegen(
             val path = type?.className?.replace('.', '/')
                 ?: irFunction.parentClassOrNull?.fqNameWhenAvailable?.asString()?.replace('.', '/')
                 ?: ""
-            localSmapCopiers += AdditionalIrInlineData(SourceMapCopier(smap, nodeAndSmap.classSMAP, SourcePosition(line, file, path)), element)
+            addToLocalSmap(
+                JvmBackendContext.AdditionalIrInlineData(SourceMapCopier(smap, nodeAndSmap.classSMAP, SourcePosition(line, file, path)), element)
+            )
         }
 
         if (inlineCall.hasDefaultArgs()) {
@@ -999,7 +1009,16 @@ class ExpressionCodegen(
 
     override fun visitClass(declaration: IrClass, data: BlockInfo): PromisedValue {
         if (declaration.origin != JvmLoweredDeclarationOrigin.CONTINUATION_CLASS) {
-            val childCodegen = ClassCodegen.getOrCreate(declaration, context, enclosingFunctionForLocalObjects)
+            val parentFunction = if (getLocalSmap().isEmpty()) {
+                enclosingFunctionForLocalObjects
+            } else {
+                val inlineMarker = getLocalSmap().first().inlineMarker
+//                val callable = methodSignatureMapper.mapToCallableMethod(inlineMarker.inlineCall, irFunction)
+//                val newName = inlineNameGenerator.subGenerator(callable.asmMethod.name).subGenerator(true, null).generatorClass
+//                context.putLocalClassType(declaration, Type.getObjectType(newName))
+                inlineMarker.callee
+            }
+            val childCodegen = ClassCodegen.getOrCreate(declaration, context, parentFunction)
             childCodegen.generate()
             closureReifiedMarkers[declaration] = childCodegen.reifiedTypeParametersUsages
         }

@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.backend.jvm.caches.BridgeLoweringCache
 import org.jetbrains.kotlin.backend.jvm.caches.CollectionStubComputer
 import org.jetbrains.kotlin.backend.jvm.mapping.IrTypeMapper
 import org.jetbrains.kotlin.backend.jvm.mapping.MethodSignatureMapper
+import org.jetbrains.kotlin.codegen.inline.SourceMapCopier
 import org.jetbrains.kotlin.codegen.state.GenerationState
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
@@ -37,6 +38,7 @@ import org.jetbrains.kotlin.ir.types.defaultType
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.resolve.jvm.JvmClassName
+import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.org.objectweb.asm.Type
 import java.util.concurrent.ConcurrentHashMap
 
@@ -90,6 +92,16 @@ class JvmBackendContext(
     override val sharedVariablesManager = JvmSharedVariablesManager(state.module, ir.symbols, irBuiltIns, irFactory)
 
     lateinit var getIntrinsic: (IrFunctionSymbol) -> IntrinsicMarker?
+
+    // TODO doc
+    val inlinedAnonymousClassToOriginal = mutableMapOf<IrClass, IrAttributeContainer>()
+
+    // TODO doc
+    val localSmapCopiersByClass = mutableListOf<AdditionalIrInlineData>()
+
+    data class AdditionalIrInlineData(val smap: SourceMapCopier, val inlineMarker: IrInlineMarker) {
+        fun isInvokeOnLambda() = inlineMarker.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE
+    }
 
     private val localClassType = ConcurrentHashMap<IrAttributeContainer, Type>()
 

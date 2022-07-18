@@ -337,6 +337,14 @@ private val functionInliningPhase = makeIrModulePhase<JvmBackendContext>(
     )
 )
 
+internal val jvmInlinedDataCollector = makeIrModulePhase(
+    ::JvmInlinedDataCollector,
+    name = "JvmInlinedDataCollector",
+    description = "Find and store original declaration for inlined ir elements",
+    prerequisite = setOf(functionInliningPhase)
+)
+
+
 internal val propertyReferenceInliningPhase = makeIrModulePhase(
     ::PropertyReferenceInliningLowering,
     name = "PropertyReferenceInliningPhase",
@@ -485,6 +493,7 @@ private fun buildJvmLoweringPhases(
             localClassesExtractionFromInlineFunctionsPhase then
 
                 functionInliningPhase then
+                jvmInlinedDataCollector then
             propertyReferenceInliningPhase then
                 provisionalFunctionExpressionPhase then
 //            inventNamesForLocalClassesPhase2 then

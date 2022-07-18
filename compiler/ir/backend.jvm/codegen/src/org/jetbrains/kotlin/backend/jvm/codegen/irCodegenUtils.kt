@@ -71,7 +71,8 @@ fun IrFrameMap.leave(irDeclaration: IrSymbolOwner): Int {
 }
 
 fun JvmBackendContext.getSourceMapper(declaration: IrClass): SourceMapper {
-    val fileEntry = declaration.fileParent.fileEntry
+    val originalClass = (this.inlinedAnonymousClassToOriginal[declaration] as? IrClass) ?: declaration
+    val fileEntry = originalClass.fileParent.fileEntry
     // NOTE: apparently inliner requires the source range to cover the
     //       whole file the class is declared in rather than the class only.
     val endLineNumber = when (fileEntry) {
@@ -80,12 +81,12 @@ fun JvmBackendContext.getSourceMapper(declaration: IrClass): SourceMapper {
     }
     val sourceFileName = when (fileEntry) {
         is MultifileFacadeFileEntry -> fileEntry.partFiles.singleOrNull()?.name
-        else -> declaration.fileParent.name
+        else -> originalClass.fileParent.name
     }
     return SourceMapper(
         SourceInfo(
             sourceFileName,
-            defaultTypeMapper.mapClass(declaration).internalName,
+            defaultTypeMapper.mapClass(originalClass).internalName,
             endLineNumber + 1
         )
     )
