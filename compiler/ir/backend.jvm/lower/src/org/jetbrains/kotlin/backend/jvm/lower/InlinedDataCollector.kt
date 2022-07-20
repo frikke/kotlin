@@ -14,9 +14,7 @@ import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.IrAttributeContainer
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrFile
-import org.jetbrains.kotlin.ir.expressions.IrContainerExpression
-import org.jetbrains.kotlin.ir.expressions.IrExpression
-import org.jetbrains.kotlin.ir.expressions.IrReturnableBlock
+import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.org.objectweb.asm.Type
@@ -35,27 +33,43 @@ class JvmInlinedDataCollector(val context: JvmBackendContext) : FileLoweringPass
         if (expression !is IrReturnableBlock || expression.inlineFunctionSymbol == null) return super.visitContainerExpression(expression)
 
         innerInlinedCalls++
-        return super.visitContainerExpression(expression).apply { innerInlinedCalls-- }
+        return super.visitContainerExpression(expression).apply {
+            innerInlinedCalls--
+            expression.setUpAttributeOwnerIfToSelf()
+        }
     }
 
     override fun visitClass(declaration: IrClass) {
         if (innerInlinedCalls > 0) {
             context.inlinedAnonymousClassToOriginal[declaration] = declaration.attributeOwnerId
-            declaration.setUpAttributeOwnerIfToSelf()
-            context.putLocalClassType(declaration, Type.getObjectType("inlinedClass" + count++))
+//            context.putLocalClassType(declaration, Type.getObjectType("inlinedClass" + count++))
         }
         super.visitClass(declaration)
     }
 
+//    override fun visitFunctionExpression(expression: IrFunctionExpression) {
+//        if (innerInlinedCalls > 0) {
+//            expression.setUpAttributeOwnerIfToSelf()
+//        }
+//        super.visitFunctionExpression(expression)
+//    }
+//
+//    override fun visitFunctionReference(expression: IrFunctionReference) {
+//        if (innerInlinedCalls > 0) {
+//            expression.setUpAttributeOwnerIfToSelf()
+//        }
+//        super.visitFunctionReference(expression)
+//    }
+
     private fun IrElement.setUpAttributeOwnerIfToSelf() {
-        (this as? IrAttributeContainer)?.let { attributeOwnerId = this }
-//        accept(object : IrElementVisitorVoid {
-//            override fun visitElement(element: IrElement) {
-//                if (element is IrAttributeContainer) {
-//                    element.attributeOwnerId = element
-//                }
-//                element.acceptChildrenVoid(this)
-//            }
-//        }, null)
+//        (this as? IrAttributeContainer)?.let { attributeOwnerId = this }
+        accept(object : IrElementVisitorVoid {
+            override fun visitElement(element: IrElement) {
+                if (element is IrAttributeContainer) {
+                    element.attributeOwnerId = element
+                }
+                element.acceptChildrenVoid(this)
+            }
+        }, null)
     }
 }
