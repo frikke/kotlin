@@ -494,10 +494,10 @@ private fun buildJvmLoweringPhases(
 
                 functionInliningPhase then
                 jvmInlinedDataCollector then
-            propertyReferenceInliningPhase then
+                inventNamesForNewLocalClassesPhase then
+                propertyReferenceInliningPhase then
                 provisionalFunctionExpressionPhase then
 //            inventNamesForLocalClassesPhase2 then
-            inventNamesForNewLocalClassesPhase then
 //            sharedVariablesPhase then
 
 

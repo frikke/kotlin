@@ -94,6 +94,7 @@ class JvmBackendContext(
 
     // TODO doc
     val inlinedAnonymousClassToOriginal = mutableMapOf<IrClass, IrAttributeContainer>()
+    val declarationsThatHasInlinedBlock = mutableSetOf<IrAttributeContainer>()
 
     // TODO doc
     val localSmapCopiersByClass = mutableListOf<AdditionalIrInlineData>()

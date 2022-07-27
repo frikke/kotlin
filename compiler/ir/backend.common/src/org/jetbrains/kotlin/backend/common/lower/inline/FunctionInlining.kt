@@ -133,8 +133,6 @@ class FunctionInlining(
         return inliner.inline()
     }
 
-    override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?): IrElement = declaration
-
     private val IrFunction.needsInlining get() = this.isInline && !this.isExternal
 
     private inner class Inliner(
@@ -221,7 +219,7 @@ class FunctionInlining(
             val newStatements = mutableListOf<IrStatement>()
 
             newStatements.addAll(evaluationStatements)
-            val fileEntry = (parent as? IrFunction)?.fileOrNull?.fileEntry
+            val fileEntry = (parent as? IrDeclaration)?.fileOrNull?.fileEntry
             if (fileEntry != null && !callee.isInlineOnly()) {
                 newStatements += IrInlineMarkerImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, callSite as IrCall, callee)
             }
@@ -250,8 +248,6 @@ class FunctionInlining(
                         }
                         return expression
                     }
-
-                    override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?) = declaration
                 })
                 patchDeclarationParents(parent) // TODO: Why it is not enough to just run SetDeclarationsParentVisitor?
             }
@@ -612,6 +608,13 @@ class FunctionInlining(
             return evaluationStatements
         }
 
+        private fun IrValueParameter.getOriginalParameter(): IrValueParameter {
+            if (this.parent !is IrFunction) return this
+            val original = (this.parent as IrFunction).originalFunction
+            return listOf(original.dispatchReceiverParameter, original.extensionReceiverParameter, *original.valueParameters.toTypedArray())
+                .single { it != null && it.name == this.name && it.startOffset == this.startOffset }!!
+        }
+
         private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): List<IrStatement> {
             val arguments = buildParameterToArgument(callSite, callee)
             val evaluationStatements = mutableListOf<IrStatement>()
@@ -644,7 +647,18 @@ class FunctionInlining(
                 val argumentExtracted = !argument.argumentExpression.isPure(false, context = context)
 
                 if (!argumentExtracted) {
-                    substituteMap[argument.parameter] = variableInitializer
+                    // TODO add new parameter to lowering that will chose between inlining and copying
+//                    substituteMap[argument.parameter] = variableInitializer
+                    val newVariable =
+                        currentScope.scope.createTemporaryVariable(
+                            irExpression = variableInitializer,
+                            nameHint = callee.symbol.owner.name.toString(),
+                            isMutable = false,
+                            irType = argument.parameter.getOriginalParameter().type
+                        )
+
+                    evaluationStatements.add(newVariable)
+                    substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol, InlinedArgument())
                 } else {
                     val newVariable =
                         currentScope.scope.createTemporaryVariable(
@@ -688,6 +702,8 @@ class FunctionInlining(
             IrGetValueImpl(startOffset, endOffset, type, symbol, origin)
     }
 }
+
+class InlinedArgument: IrStatementOrigin
 
 class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementOrigin {
     override fun toString(): String =

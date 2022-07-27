@@ -122,10 +122,9 @@ abstract class InventNamesForLocalClasses(private val allowTopLevelCallables: Bo
         }
 
         override fun visitFunctionExpression(expression: IrFunctionExpression, data: Data) {
-            val internalName = localFunctionNames[expression.function.symbol] ?: inventName(null, data)
-            putLocalClassName(expression, internalName)
-
             expression.acceptChildren(this, data)
+            val internalName = localFunctionNames[expression.function.symbol]!!
+            putLocalClassName(expression, internalName)
         }
 
         override fun visitPropertyReference(expression: IrPropertyReference, data: Data) {

@@ -1009,17 +1009,10 @@ class ExpressionCodegen(
 
     override fun visitClass(declaration: IrClass, data: BlockInfo): PromisedValue {
         if (declaration.origin != JvmLoweredDeclarationOrigin.CONTINUATION_CLASS) {
-            val parentFunction = if (getLocalSmap().isEmpty()) {
-                enclosingFunctionForLocalObjects
-            } else {
-                val inlineMarker = getLocalSmap().first().inlineMarker
-//                val callable = methodSignatureMapper.mapToCallableMethod(inlineMarker.inlineCall, irFunction)
-//                val newName = inlineNameGenerator.subGenerator(callable.asmMethod.name).subGenerator(true, null).generatorClass
-//                declaration.attributeOwnerId = declaration
-//                context.putLocalClassType(declaration, Type.getObjectType(newName))
-                inlineMarker.callee
+            if (getLocalSmap().isNotEmpty() && declaration.attributeOwnerId !in context.declarationsThatHasInlinedBlock) {
+                return unitValue
             }
-            val childCodegen = ClassCodegen.getOrCreate(declaration, context, parentFunction)
+            val childCodegen = ClassCodegen.getOrCreate(declaration, context, enclosingFunctionForLocalObjects)
             childCodegen.generate()
             closureReifiedMarkers[declaration] = childCodegen.reifiedTypeParametersUsages
         }
