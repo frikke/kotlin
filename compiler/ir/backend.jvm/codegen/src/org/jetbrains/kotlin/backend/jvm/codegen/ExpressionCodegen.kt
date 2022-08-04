@@ -167,7 +167,7 @@ class ExpressionCodegen(
 
     val state = context.state
 
-    private val fileEntry = if (context.inlinedAnonymousClassToOriginal[classCodegen.irClass] != null) (context.inlinedAnonymousClassToOriginal[classCodegen.irClass] as IrClass).fileEntry else irFunction.fileParent.fileEntry
+    private val fileEntry = (classCodegen.irClass.getOriginalDeclaration() ?: irFunction).fileParent.fileEntry
 
     override val visitor: InstructionAdapter
         get() = mv
@@ -970,7 +970,7 @@ class ExpressionCodegen(
             val classSourceMapper = context.getSourceMapper(declaration.callee.parentClassOrNull!!)
             val classSMAP = SMAP(classSourceMapper.resultMappings)//.generateMethodNode(element.callee!!)
             addToLocalSmap(
-                JvmBackendContext.AdditionalIrInlineData(SourceMapCopier(if (context.inlinedAnonymousClassToOriginal[classCodegen.irClass] != null) smap else classSourceMapper, classSMAP, callSite), declaration)
+                JvmBackendContext.AdditionalIrInlineData(SourceMapCopier(smap, classSMAP, callSite), declaration)
             )
         } else {
             val nodeAndSmap = declaration.callee.getClassWithDeclaredFunction()!!.declarations
@@ -1009,7 +1009,7 @@ class ExpressionCodegen(
 
     override fun visitClass(declaration: IrClass, data: BlockInfo): PromisedValue {
         if (declaration.origin != JvmLoweredDeclarationOrigin.CONTINUATION_CLASS) {
-            if (getLocalSmap().isNotEmpty() && declaration.attributeOwnerId !in context.declarationsThatHasInlinedBlock) {
+            if (getLocalSmap().isNotEmpty() && declaration.attributeOwnerIdBeforeInline == null) {
                 return unitValue
             }
             val childCodegen = ClassCodegen.getOrCreate(declaration, context, enclosingFunctionForLocalObjects)

@@ -16,6 +16,7 @@ import java.io.File
 fun <D : IrAttributeContainer> D.copyAttributes(other: IrAttributeContainer?): D = apply {
     if (other != null) {
         attributeOwnerId = other.attributeOwnerId
+        attributeOwnerIdBeforeInline = other.attributeOwnerIdBeforeInline
     }
 }
 

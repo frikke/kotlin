@@ -16,7 +16,9 @@ import org.jetbrains.kotlin.backend.common.lower.InnerClassesSupport
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.builtins.StandardNames
-import org.jetbrains.kotlin.ir.*
+import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.IrStatement
+import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrInlineMarkerImpl
@@ -28,7 +30,9 @@ import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.ir.visitors.*
+import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
+import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
+import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
@@ -78,6 +82,7 @@ class FunctionInlining(
     val innerClassesSupport: InnerClassesSupport? = null,
     val insertAdditionalImplicitCasts: Boolean = false
 ) : IrElementTransformerVoidWithContext(), BodyLoweringPass {
+    private val classesToRegenerate = mutableSetOf<IrAttributeContainer>()
 
     constructor(context: CommonBackendContext) : this(context, DefaultInlineFunctionResolver(context), null)
     constructor(context: CommonBackendContext, innerClassesSupport: InnerClassesSupport) : this(
@@ -130,10 +135,50 @@ class FunctionInlining(
             ?: (containerScope?.irElement as? IrDeclaration)?.parent
 
         val inliner = Inliner(expression, actualCallee, currentScope ?: containerScope!!, parent, context)
-        return inliner.inline()
+        return inliner.inline().apply {
+            classesToRegenerate.forEach { it.setUpCorrectAttributeOwnerForInlinedElements() }
+            classesToRegenerate.clear()
+        }
     }
 
     private val IrFunction.needsInlining get() = this.isInline && !this.isExternal
+
+    private fun IrElement.collectAllLocalClasses(): Set<IrAttributeContainer> {
+        val classes = mutableSetOf<IrAttributeContainer>()
+        this.accept(object : IrElementVisitorVoid {
+            override fun visitElement(element: IrElement) {
+                element.acceptChildrenVoid(this)
+            }
+
+            override fun visitClass(declaration: IrClass) {
+                classes += declaration
+                return super.visitClass(declaration)
+            }
+
+            override fun visitFunctionExpression(expression: IrFunctionExpression) {
+                classes += expression
+                return super.visitFunctionExpression(expression)
+            }
+
+            override fun visitFunctionReference(expression: IrFunctionReference) {
+                classes += expression
+                return super.visitFunctionReference(expression)
+            }
+        }, null)
+        return classes
+    }
+
+    private fun IrAttributeContainer.setUpCorrectAttributeOwnerForInlinedElements() {
+        this.accept(object : IrElementVisitorVoid {
+            override fun visitElement(element: IrElement) {
+                if (element is IrAttributeContainer && element.attributeOwnerIdBeforeInline == null) {
+                    element.attributeOwnerIdBeforeInline = element.attributeOwnerId.let { it.attributeOwnerIdBeforeInline ?: it }
+                    element.attributeOwnerId = element
+                }
+                element.acceptChildrenVoid(this)
+            }
+        }, null)
+    }
 
     private inner class Inliner(
         val callSite: IrFunctionAccessExpression,
@@ -160,16 +205,16 @@ class FunctionInlining(
         fun inline() = inlineFunction(callSite, callee, true)
 
         private fun IrElement.copy(): IrElement {
-            return copyIrElement.copy(this)/*.apply {
+            return copyIrElement.copy(this).apply {
                 accept(object : IrElementVisitorVoid {
                     override fun visitElement(element: IrElement) {
                         if (element is IrAttributeContainer) {
-                            element.attributeOwnerId = element
+                            element.attributeOwnerIdBeforeInline = null
                         }
                         element.acceptChildrenVoid(this)
                     }
                 }, null)
-            }*/
+            }
         }
 
         private fun IrFunction.isInlineOnly(): Boolean {
@@ -255,10 +300,94 @@ class FunctionInlining(
 
         //---------------------------------------------------------------------//
 
+        private fun IrAttributeContainer.hasReifiedTypeParameters(): Boolean {
+            var hasReified = false
+
+            fun IrType.recursiveWalkDown(visitor: IrElementVisitorVoid) {
+                this@recursiveWalkDown.classifierOrNull?.owner?.acceptVoid(visitor)
+                (this@recursiveWalkDown as? IrSimpleType)?.arguments?.forEach { it.typeOrNull?.recursiveWalkDown(visitor) }
+            }
+
+            this.attributeOwnerId.acceptVoid(object : IrElementVisitorVoid {
+                private val visitedClasses = mutableSetOf<IrClass>()
+
+                override fun visitElement(element: IrElement) {
+                    if (hasReified) return
+                    element.acceptChildrenVoid(this)
+                }
+
+                override fun visitTypeParameter(declaration: IrTypeParameter) {
+                    hasReified = hasReified || declaration.isReified
+                    super.visitTypeParameter(declaration)
+                }
+
+                override fun visitClass(declaration: IrClass) {
+                    if (!visitedClasses.add(declaration)) return
+                    declaration.superTypes.forEach { it.recursiveWalkDown(this) }
+                    super.visitClass(declaration)
+                }
+
+                override fun visitTypeOperator(expression: IrTypeOperatorCall) {
+                    expression.typeOperand.takeIf { it is IrSimpleType }?.recursiveWalkDown(this)
+                    super.visitTypeOperator(expression)
+                }
+
+                override fun visitCall(expression: IrCall) {
+                    (0 until expression.typeArgumentsCount).forEach {
+                        expression.getTypeArgument(it)?.recursiveWalkDown(this)
+                    }
+                    super.visitCall(expression)
+                }
+
+                override fun visitClassReference(expression: IrClassReference) {
+                    expression.classType.recursiveWalkDown(this)
+                    super.visitClassReference(expression)
+                }
+            })
+            return hasReified
+        }
+
         private inner class ParameterSubstitutor : IrElementTransformerVoid() {
+            private val containersStack = mutableListOf<IrAttributeContainer>()
+
+            private fun saveDeclarationsFromStackIntoRegenerationPool() {
+                containersStack.forEach { classesToRegenerate += it }
+            }
+
+            override fun visitClassReference(expression: IrClassReference): IrExpression {
+                if (expression.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
+                return super.visitClassReference(expression)
+            }
+
+            override fun visitClass(declaration: IrClass): IrStatement {
+                if (declaration.attributeOwnerId.attributeOwnerIdBeforeInline != null) classesToRegenerate += declaration
+                containersStack += declaration
+                if (declaration.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
+                return super.visitClass(declaration).apply { containersStack.removeLast() }
+            }
+
+            override fun visitFunctionExpression(expression: IrFunctionExpression): IrExpression {
+                if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) classesToRegenerate += expression
+                containersStack += expression
+                return super.visitFunctionExpression(expression).apply { containersStack.removeLast() }
+            }
+
+            override fun visitFunctionReference(expression: IrFunctionReference): IrExpression {
+                if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) classesToRegenerate += expression
+                containersStack += expression
+                return super.visitFunctionReference(expression).apply { containersStack.removeLast() }
+            }
+
+            override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
+                if (expression.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
+                return super.visitTypeOperator(expression)
+            }
 
             override fun visitGetValue(expression: IrGetValue): IrExpression {
                 val newExpression = super.visitGetValue(expression) as IrGetValue
+                if (newExpression.type.getClass()?.let { classesToRegenerate.contains(it) } == true) {
+                    saveDeclarationsFromStackIntoRegenerationPool()
+                }
                 val argument = substituteMap[newExpression.symbol.owner] ?: return newExpression
 
                 argument.transformChildrenVoid(this) // Default argument can contain subjects for substitution.
@@ -271,17 +400,20 @@ class FunctionInlining(
 
                 if (insertAdditionalImplicitCasts)
                     ret = ret.implicitCastIfNeededTo(newExpression.type)
+                saveDeclarationsFromStackIntoRegenerationPool()
+                ((ret as? IrGetValue)?.symbol?.owner ?: ret).collectAllLocalClasses().forEach { classesToRegenerate += it }
                 return ret
             }
 
             override fun visitCall(expression: IrCall): IrExpression {
+                if (expression.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
+
                 if (!isLambdaCall(expression))
                     return super.visitCall(expression)
 
-                val dispatchReceiver = expression.dispatchReceiver as IrGetValue
+                val dispatchReceiver = expression.dispatchReceiver as? IrGetValue ?: return super.visitCall(expression)
                 val functionArgument = substituteMap[dispatchReceiver.symbol.owner] ?: return super.visitCall(expression)
-                if ((dispatchReceiver.symbol.owner as? IrValueParameter)?.isNoinline == true)
-                    return super.visitCall(expression)
+                if ((dispatchReceiver.symbol.owner as? IrValueParameter)?.isNoinline == true) return super.visitCall(expression)
 
                 return when {
                     functionArgument is IrFunctionReference ->
@@ -295,6 +427,9 @@ class FunctionInlining(
 
                     else ->
                         super.visitCall(expression)
+                }.apply {
+                    saveDeclarationsFromStackIntoRegenerationPool()
+                    this.collectAllLocalClasses().forEach { classesToRegenerate += it }
                 }
             }
 
