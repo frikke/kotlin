@@ -302,6 +302,8 @@ class FunctionInlining(
                     functionArgument is IrFunctionReference ->
                         inlineFunctionReference(expression, functionArgument, functionArgument.symbol.owner)
 
+                    functionArgument is IrPropertyReference -> inlinePropertyReference(expression, functionArgument)
+
                     functionArgument.isAdaptedFunctionReference() ->
                         inlineAdaptedFunctionReference(expression, functionArgument as IrBlock)
 
@@ -324,6 +326,30 @@ class FunctionInlining(
                 )
                 // Substitute lambda arguments with target function arguments.
                 return newExpression.transform(this, null)
+            }
+
+            private fun inlinePropertyReference(expression: IrCall, propertyReference: IrPropertyReference): IrExpression {
+                val getterCall = IrCallImpl.fromSymbolOwner(
+                    expression.startOffset, expression.endOffset, expression.type, propertyReference.getter!!
+                )
+
+                fun tryToGetArg(i: Int): IrExpression? {
+                    if (i >= expression.valueArgumentsCount) return null
+                    return expression.getValueArgument(i)?.transform(this, null)
+                }
+
+                val receiverFromField = propertyReference.dispatchReceiver ?: propertyReference.extensionReceiver
+                getterCall.dispatchReceiver = getterCall.symbol.owner.dispatchReceiverParameter?.let {
+                    receiverFromField ?: tryToGetArg(0)
+                }
+                getterCall.extensionReceiver = getterCall.symbol.owner.extensionReceiverParameter?.let {
+                    when (getterCall.symbol.owner.dispatchReceiverParameter) {
+                        null -> receiverFromField ?: tryToGetArg(0)
+                        else -> tryToGetArg(if (receiverFromField != null) 0 else 1)
+                    }
+                }
+
+                return getterCall
             }
 
             fun inlineAdaptedFunctionReference(irCall: IrCall, irBlock: IrBlock): IrExpression {
@@ -474,6 +500,9 @@ class FunctionInlining(
                                 || argumentExpression is IrFunctionExpression
                                 || argumentExpression.isAdaptedFunctionReference())
 
+            val isInlinablePropertyReference: Boolean
+                get() = parameter.isInlineParameter() && argumentExpression is IrPropertyReference
+
             val isImmutableVariableLoad: Boolean
                 get() = argumentExpression.let { argument ->
                     argument is IrGetValue && !argument.symbol.owner.let { it is IrVariable && it.isVar }
@@ -590,11 +619,15 @@ class FunctionInlining(
 
         //-------------------------------------------------------------------------//
 
-        private fun evaluateArguments(functionReference: IrFunctionReference): List<IrStatement> {
-            val arguments = functionReference.getArgumentsWithIr().map { ParameterToArgument(it.first, it.second) }
+        private fun evaluateArguments(reference: IrCallableReference<*>): List<IrStatement> {
+            val arguments = reference.getArgumentsWithIr().map { ParameterToArgument(it.first, it.second) }
             val evaluationStatements = mutableListOf<IrStatement>()
             val substitutor = ParameterSubstitutor()
-            val referenced = functionReference.symbol.owner
+            val referenced = when (reference) {
+                is IrFunctionReference -> reference.symbol.owner
+                is IrPropertyReference -> reference.getter!!.owner
+                else -> error(this)
+            }
             arguments.forEach {
                 val newArgument = if (it.isImmutableVariableLoad) {
                     it.argumentExpression.transform( // Arguments may reference the previous ones - substitute them.
@@ -617,9 +650,9 @@ class FunctionInlining(
                     IrGetValueWithoutLocation(newVariable.symbol)
                 }
                 when (it.parameter) {
-                    referenced.dispatchReceiverParameter -> functionReference.dispatchReceiver = newArgument
-                    referenced.extensionReceiverParameter -> functionReference.extensionReceiver = newArgument
-                    else -> functionReference.putValueArgument(it.parameter.index, newArgument)
+                    referenced.dispatchReceiverParameter -> reference.dispatchReceiver = newArgument
+                    referenced.extensionReceiverParameter -> reference.extensionReceiver = newArgument
+                    else -> reference.putValueArgument(it.parameter.index, newArgument)
                 }
             }
             return evaluationStatements
@@ -628,8 +661,7 @@ class FunctionInlining(
         private fun IrValueParameter.getOriginalParameter(): IrValueParameter {
             if (this.parent !is IrFunction) return this
             val original = (this.parent as IrFunction).originalFunction
-            return listOf(original.dispatchReceiverParameter, original.extensionReceiverParameter, *original.valueParameters.toTypedArray())
-                .single { it != null && it.name == this.name && it.startOffset == this.startOffset }!!
+            return original.allParameters.single { it.name == this.name && it.startOffset == this.startOffset }
         }
 
         private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): List<IrStatement> {
@@ -642,9 +674,9 @@ class FunctionInlining(
                  * For simplicity and to produce simpler IR we don't create temporaries for every immutable variable,
                  * not only for those referring to inlinable lambdas.
                  */
-                if (argument.isInlinableLambdaArgument) {
+                if (argument.isInlinableLambdaArgument || argument.isInlinablePropertyReference) {
                     substituteMap[argument.parameter] = argument.argumentExpression
-                    (argument.argumentExpression as? IrFunctionReference)?.let { evaluationStatements += evaluateArguments(it) }
+                    (argument.argumentExpression as? IrCallableReference<*>)?.let { evaluationStatements += evaluateArguments(it) }
 
                     return@forEach
                 }
