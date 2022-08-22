@@ -1007,16 +1007,35 @@ class ExpressionCodegen(
         return unitValue
     }
 
+    // three types of inlined local classes
+    // 1. MUST BE regenerated because of set of rules in AnonymousInfo // declaration.attributeOwnerIdBeforeInline != null
+    // 2. MUST NOT BE regenerated and MUST BE CREATED only once because they are inlined from call site lambda
+    // this lambda will not exist after inline
+    // 3. MUST NOT BE regenerated because will be created at callee site
     override fun visitClass(declaration: IrClass, data: BlockInfo): PromisedValue {
         if (declaration.origin != JvmLoweredDeclarationOrigin.CONTINUATION_CLASS) {
             if (getLocalSmap().isNotEmpty() && declaration.attributeOwnerIdBeforeInline == null) {
-                return unitValue
+//                if (declaration.attributeOwnerId is IrFunctionExpression) {
+//                    val function = (declaration.attributeOwnerId as IrFunctionExpression).function.symbol.owner
+//                    if (function.parents.contains(getLocalSmap().first().inlineMarker.callee.originalFunction)) {
+//                        return unitValue // 3
+//                    }
+//                } else if (getLocalSmap().last().isLambdaInvoke()) {
+////                    return unitValue // 2
+//                }
+                if (!getLocalSmap().last().isLambdaInvoke()) {
+                    return unitValue // 3
+                }
             }
             val childCodegen = ClassCodegen.getOrCreate(declaration, context, enclosingFunctionForLocalObjects)
             childCodegen.generate()
             closureReifiedMarkers[declaration] = childCodegen.reifiedTypeParametersUsages
         }
         return unitValue
+    }
+
+    private fun JvmBackendContext.AdditionalIrInlineData.isLambdaInvoke(): Boolean {
+        return inlineMarker.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE
     }
 
     private fun putNeedClassReificationMarker(declaration: IrClass) {

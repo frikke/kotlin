@@ -473,9 +473,9 @@ private fun buildJvmLoweringPhases(
             sharedVariablesPhase then
             inventNamesForLocalClassesPhase then
 
-            localClassesInInlineLambdasPhase then
-            localClassesInInlineFunctionsPhase then
-            localClassesExtractionFromInlineFunctionsPhase then
+//            localClassesInInlineLambdasPhase then
+//            localClassesInInlineFunctionsPhase then
+//            localClassesExtractionFromInlineFunctionsPhase then
 
                 functionInliningPhase then
                 inventNamesForNewLocalClassesPhase then

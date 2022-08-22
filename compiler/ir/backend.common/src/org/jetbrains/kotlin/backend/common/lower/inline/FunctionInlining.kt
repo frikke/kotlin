@@ -139,15 +139,36 @@ class FunctionInlining(
     private val IrFunction.needsInlining get() = this.isInline && !this.isExternal
 
     private fun IrAttributeContainer.setUpCorrectAttributeOwnerForInlinedElements() {
-        this.accept(object : IrElementVisitorVoid {
+        if (this.attributeOwnerIdBeforeInline != null) return
+        this.attributeOwnerIdBeforeInline = this.attributeOwnerId.let { it.attributeOwnerIdBeforeInline ?: it }
+        this.attributeOwnerId = this
+
+        this.acceptChildrenVoid(object : IrElementVisitorVoid {
             override fun visitElement(element: IrElement) {
-                if (element is IrAttributeContainer && element.attributeOwnerIdBeforeInline == null) {
+                if (element is IrAttributeContainer) {
+                    if (element.attributeOwnerIdBeforeInline != null) return
                     element.attributeOwnerIdBeforeInline = element.attributeOwnerId.let { it.attributeOwnerIdBeforeInline ?: it }
                     element.attributeOwnerId = element
                 }
                 element.acceptChildrenVoid(this)
             }
-        }, null)
+
+            override fun visitClass(declaration: IrClass) {
+                return
+            }
+
+            override fun visitFunctionExpression(expression: IrFunctionExpression) {
+                return
+            }
+
+            override fun visitFunctionReference(expression: IrFunctionReference) {
+                return
+            }
+
+            override fun visitPropertyReference(expression: IrPropertyReference) {
+                return
+            }
+        })
     }
 
     private inner class Inliner(
@@ -173,7 +194,30 @@ class FunctionInlining(
         val substituteMap = mutableMapOf<IrValueParameter, IrExpression>()
 
         fun inline() = inlineFunction(callSite, callee, true).apply {
-            this.collectIrClassesThatMustBeRegenerated(substituteMap).forEach { it.setUpCorrectAttributeOwnerForInlinedElements() }
+            val mustBeRegenerated = this.collectIrClassesThatMustBeRegenerated(substituteMap)
+            mustBeRegenerated.forEach { it.setUpCorrectAttributeOwnerForInlinedElements() }
+//            this.transformChildrenVoid(object : IrElementTransformerVoid() {
+//                override fun visitClass(declaration: IrClass): IrStatement {
+//                    if (declaration != declaration.attributeOwnerId && declaration.attributeOwnerIdBeforeInline == null) {
+//                        return IrCompositeImpl(declaration.startOffset, declaration.endOffset, context.irBuiltIns.unitType)
+//                    }
+//                    return super.visitClass(declaration)
+//                }
+//
+//                override fun visitFunctionExpression(expression: IrFunctionExpression): IrExpression {
+//                    if (expression != expression.attributeOwnerId && expression.attributeOwnerIdBeforeInline == null) {
+//                        return IrCompositeImpl(expression.startOffset, expression.endOffset, context.irBuiltIns.unitType)
+//                    }
+//                    return super.visitFunctionExpression(expression)
+//                }
+//
+//                override fun visitFunctionReference(expression: IrFunctionReference): IrExpression {
+//                    if (expression != expression.attributeOwnerId && expression.attributeOwnerIdBeforeInline == null) {
+//                        return IrCompositeImpl(expression.startOffset, expression.endOffset, context.irBuiltIns.unitType)
+//                    }
+//                    return super.visitFunctionReference(expression)
+//                }
+//            })
         }
 
         private fun IrElement.copy(): IrElement {
@@ -235,11 +279,11 @@ class FunctionInlining(
             val transformer = ParameterSubstitutor()
             val newStatements = mutableListOf<IrStatement>()
 
-            newStatements.addAll(evaluationStatements)
             val fileEntry = (parent as? IrDeclaration)?.fileOrNull?.fileEntry
             if (fileEntry != null && !callee.isInlineOnly()) {
                 newStatements += IrInlineMarkerImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, callSite as IrCall, callee)
             }
+            newStatements.addAll(evaluationStatements)
             statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
             return IrReturnableBlockImpl(
@@ -754,6 +798,7 @@ class FunctionInlining(
 
 class InlinedArgument : IrStatementOrigin
 class InlinedFunctionReference : IrStatementOrigin
+//class InlinedMarker(val inlineCall: IrCall, val callee: IrFunction) : IrStatementOrigin
 
 class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementOrigin {
     override fun toString(): String =
@@ -785,7 +830,9 @@ private fun IrElement.collectIrClassesThatMustBeRegenerated(substituteMap: Map<I
         }
 
         override fun visitClass(declaration: IrClass) {
-            if (declaration.attributeOwnerId.attributeOwnerIdBeforeInline != null) classesToRegenerate += declaration
+            if (declaration.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
+                classesToRegenerate += declaration
+            }
             containersStack += declaration
             if (declaration.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
             super.visitClass(declaration)
@@ -793,7 +840,9 @@ private fun IrElement.collectIrClassesThatMustBeRegenerated(substituteMap: Map<I
         }
 
         override fun visitFunctionExpression(expression: IrFunctionExpression) {
-            if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) classesToRegenerate += expression
+            if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
+                classesToRegenerate += expression
+            }
             containersStack += expression
             if (inlinedFunctionExpressionFromArgument.contains(expression.attributeOwnerId)) saveDeclarationsFromStackIntoRegenerationPool()
             super.visitFunctionExpression(expression)
@@ -801,7 +850,9 @@ private fun IrElement.collectIrClassesThatMustBeRegenerated(substituteMap: Map<I
         }
 
         override fun visitFunctionReference(expression: IrFunctionReference) {
-            if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) classesToRegenerate += expression
+            if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
+                classesToRegenerate += expression
+            }
             containersStack += expression
             super.visitFunctionReference(expression)
             containersStack.removeLast()
@@ -819,8 +870,8 @@ private fun IrElement.collectIrClassesThatMustBeRegenerated(substituteMap: Map<I
             }
 
             if (inlinedGetValue.contains(expression.symbol)) {
-                saveDeclarationsFromStackIntoRegenerationPool()
-                expression.symbol.owner.collectAllLocalClasses().forEach { classesToRegenerate += it }
+//                saveDeclarationsFromStackIntoRegenerationPool()
+//                expression.symbol.owner.collectAllLocalClasses().forEach { classesToRegenerate += it }
             }
         }
 
@@ -837,7 +888,12 @@ private fun IrElement.collectIrClassesThatMustBeRegenerated(substituteMap: Map<I
                 return
             }
             saveDeclarationsFromStackIntoRegenerationPool()
-            expression.collectAllLocalClasses().forEach { classesToRegenerate += it }
+//            expression.collectAllLocalClasses().forEach { classesToRegenerate += it }
+            /*expression.collectAllLocalClasses().forEach {
+                if (it.attributeOwnerIdBeforeInline == null) {
+                    it.attributeOwnerId = it
+                }
+            }*/
         }
     })
     return classesToRegenerate
