@@ -7,6 +7,8 @@ package org.jetbrains.kotlin.backend.jvm.codegen
 
 import org.jetbrains.kotlin.backend.common.lower.BOUND_RECEIVER_PARAMETER
 import org.jetbrains.kotlin.backend.common.lower.LoweredStatementOrigins
+import org.jetbrains.kotlin.backend.common.lower.inline.NotInlinedLambda
+import org.jetbrains.kotlin.backend.common.lower.parents
 import org.jetbrains.kotlin.backend.jvm.*
 import org.jetbrains.kotlin.backend.jvm.intrinsics.IntrinsicMethod
 import org.jetbrains.kotlin.backend.jvm.intrinsics.JavaClassProperty
@@ -1023,9 +1025,11 @@ class ExpressionCodegen(
 //                } else if (getLocalSmap().last().isLambdaInvoke()) {
 ////                    return unitValue // 2
 //                }
-                if (!getLocalSmap().last().isLambdaInvoke()) {
-                    return unitValue // 3
+//                if (!getLocalSmap().last().isLambdaInvoke()) {
+                if (!declaration.parents.filterIsInstance<IrDeclaration>().any { it.origin is NotInlinedLambda }) {
+                    return unitValue
                 }
+//                }
             }
             val childCodegen = ClassCodegen.getOrCreate(declaration, context, enclosingFunctionForLocalObjects)
             childCodegen.generate()
