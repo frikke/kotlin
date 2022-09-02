@@ -312,7 +312,7 @@ private val localClassesExtractionFromInlineFunctionsPhase = makeIrModulePhase<J
 )
 
 //private val functionInliningPhase = makeIrFilePhase<JvmBackendContext>(
-private val functionInliningPhase = makeIrModulePhase<JvmBackendContext>(
+internal val functionInliningPhase = makeIrModulePhase<JvmBackendContext>(
     { context ->
         class JvmInlineFunctionResolver : InlineFunctionResolver {
             override fun getFunctionDeclaration(symbol: IrFunctionSymbol): IrFunction {
@@ -377,10 +377,11 @@ private val jvmFilePhases = listOf(
 
     assertionPhase,
     returnableBlocksPhase,
-//    sharedVariablesPhase,
+    sharedVariablesPhase,
     localDeclarationsPhase,
     // makePatchParentsPhase(),
 
+    removeDuplicatedInlinedLocalClasses,
     jvmLocalClassExtractionPhase,
 
     staticCallableReferencePhase,
@@ -470,7 +471,7 @@ private fun buildJvmLoweringPhases(
                 mainMethodGenerationPhase then
 
                 jvmLateinitLowering then
-            sharedVariablesPhase then
+//            sharedVariablesPhase then // TODO maybe enable but put before it arrayConstructorPhase
             inventNamesForLocalClassesPhase then
 
 //            localClassesInInlineLambdasPhase then

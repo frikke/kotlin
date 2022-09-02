@@ -197,6 +197,9 @@ class JsIrBackendContext(
         override val symbols = object : Symbols(irBuiltIns, symbolTable) {
             private val context = this@JsIrBackendContext
 
+            override val singleArgumentInlineFunction: IrSimpleFunctionSymbol
+                get() = TODO("Not yet implemented")
+
             override val throwNullPointerException =
                 symbolTable.referenceSimpleFunction(getFunctions(kotlinPackageFqn.child(Name.identifier("THROW_NPE"))).single())
 

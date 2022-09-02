@@ -236,6 +236,10 @@ abstract class Symbols(
 
     abstract val functionAdapter: IrClassSymbol
 
+    // This function is used only with ir inliner. It is needed to ensure that all local declarations inside lambda will be generated,
+    // because after inline these lambdas can be dropped.
+    abstract val singleArgumentInlineFunction: IrSimpleFunctionSymbol
+
     open val unsafeCoerceIntrinsic: IrSimpleFunctionSymbol? = null
 
     open val getWithoutBoundCheckName: Name? = null
