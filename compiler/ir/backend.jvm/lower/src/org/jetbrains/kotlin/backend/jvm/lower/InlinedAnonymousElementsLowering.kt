@@ -20,7 +20,6 @@ import org.jetbrains.kotlin.ir.declarations.IrInlineMarker
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
-import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 
 internal val removeDuplicatedInlinedLocalClasses = makeIrFilePhase(
     ::InlinedAnonymousElementsLowering,
@@ -52,7 +51,7 @@ class InlinedAnonymousElementsLowering(val context: JvmBackendContext) : IrEleme
     override fun visitBlock(expression: IrBlock): IrExpression {
         if (expression.origin is InlinerExpressionLocationHint) {
             inlinedVarStack += expression.origin as InlinerExpressionLocationHint
-            expression.transformChildrenVoid(this)
+            expression.transformChildrenVoid()
             inlinedVarStack.removeLast()
             return expression
         }
@@ -60,7 +59,7 @@ class InlinedAnonymousElementsLowering(val context: JvmBackendContext) : IrEleme
         if (expression.statements.isNotEmpty() && expression.statements.first() is IrInlineMarker) {
             val marker = expression.statements.first() as IrInlineMarker
             inlineStack += marker
-            expression.transformChildrenVoid(this)
+            expression.transformChildrenVoid()
             inlineStack.removeLast()
             return expression
         }
@@ -68,12 +67,11 @@ class InlinedAnonymousElementsLowering(val context: JvmBackendContext) : IrEleme
         return super.visitBlock(expression)
     }
 
-    // basically we want to remove all anonymous classes after inline
-    // except for those that are no inline, they are located inside blocks with `InlinerExpressionLocationHint` origin
+    // Basically we want to remove all anonymous classes after inline
+    // Except for those that are required to present as a copy, see `isRequiredToBeDeclaredOnCallSite`
     override fun visitClass(declaration: IrClass): IrStatement {
-        if (inlineStack.isEmpty() || declaration.attributeOwnerIdBeforeInline != null || declaration.isNoInlineDeclaredOnCallSite()) {
-            // after first two checks we are sure that class declaration is unchanged and is declared either on call site or on callee site
-            // third check is needed to avoid removing of no inline declarations
+        // After first two checks we are sure that class declaration is unchanged and is declared either on call site or on callee site
+        if (inlineStack.isEmpty() || declaration.attributeOwnerIdBeforeInline != null || declaration.isRequiredToBeDeclaredOnCallSite()) {
             return super.visitClass(declaration)
         }
 
@@ -85,7 +83,11 @@ class InlinedAnonymousElementsLowering(val context: JvmBackendContext) : IrEleme
         return super.visitFunctionReference(expression)
     }
 
-    private fun IrAttributeContainer.isNoInlineDeclaredOnCallSite(): Boolean {
+    // This function return `true` if given declaration must present on call site.
+    // Everything outside blocks with `InlinerExpressionLocationHint` origin can be dropped
+    // Declarations inside these blocks must remain if it is not a default one
+    // To understand that we can check parent of original declaration
+    private fun IrAttributeContainer.isRequiredToBeDeclaredOnCallSite(): Boolean {
         if (inlinedVarStack.isEmpty()) return false
         val declaration = when (val original = this.attributeOwnerId) {
             is IrClass -> original
