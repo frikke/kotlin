@@ -74,10 +74,11 @@ class JvmInventNamesForNewLocalClasses(context: JvmBackendContext) : JvmInventNa
     private val namesToIndex = mutableMapOf<String, Int>()
     override fun putLocalClassName(declaration: IrAttributeContainer, localClassName: String) {
         if (context.getLocalClassType(declaration) != null) return
-        val index = namesToIndex[localClassName]
-        namesToIndex[localClassName] = (index ?: -1) + 1
+        val inlinedName = localClassName + "\$\$inlined"
+        val index = namesToIndex[inlinedName]
+        namesToIndex[inlinedName] = (index ?: -1) + 1
 
-        val safeName = if (index == null) localClassName else localClassName + index
+        val safeName = if (index == null) inlinedName else inlinedName + index
         context.putLocalClassType(declaration, Type.getObjectType(safeName))
     }
 }

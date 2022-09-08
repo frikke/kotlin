@@ -321,6 +321,10 @@ class FunctionInlining(
                     else
                         (argument.copy() as IrExpression)
 
+                // This assignment is required for JVM backend in `LocalDeclarationsLowering`. We need to create exact the same constructor
+                // for inlined anonymous class as for original one in case if inlined one will be dropped. To achieve it we need information
+                // about original type in access expression.
+                ret.attributeOwnerId = expression.attributeOwnerId
                 if (insertAdditionalImplicitCasts)
                     ret = ret.implicitCastIfNeededTo(newExpression.type)
                 return ret
@@ -861,6 +865,11 @@ private fun IrElement.collectIrClassesThatMustBeRegenerated(substituteMap: Map<I
         }
 
         override fun visitCall(expression: IrCall) {
+            if (expression.symbol.owner.name.asString() == "singleArgumentInlineFunction") {
+                (expression.getValueArgument(0) as IrFunctionExpression).function.acceptVoid(this)
+                return
+            }
+
             if (expression.hasReifiedTypeParameters() || expression.origin is InlinedFunctionReference) {
                 saveDeclarationsFromStackIntoRegenerationPool()
             }
