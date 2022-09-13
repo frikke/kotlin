@@ -162,7 +162,9 @@ class JvmSymbols(
         })
     }
 
-    override val singleArgumentInlineFunction: IrSimpleFunctionSymbol =
+    // This function is used only with ir inliner. It is needed to ensure that all local declarations inside lambda will be generated,
+    // because after inline these lambdas can be dropped.
+    val singleArgumentInlineFunction: IrSimpleFunctionSymbol =
         intrinsicsClass.functions.single { it.owner.name.asString() == "singleArgumentInlineFunction" }
 
     val checkExpressionValueIsNotNull: IrSimpleFunctionSymbol =

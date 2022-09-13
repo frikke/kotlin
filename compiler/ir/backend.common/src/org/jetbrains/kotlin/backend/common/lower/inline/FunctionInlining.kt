@@ -126,7 +126,7 @@ class FunctionInlining(
             return expression
 
         val actualCallee = inlineFunctionResolver.getFunctionDeclaration(callee.symbol)
-        if (actualCallee.body == null || actualCallee.symbol == context.ir.symbols.singleArgumentInlineFunction) {
+        if (actualCallee.body == null) {
             return expression
         }
 
@@ -140,38 +140,6 @@ class FunctionInlining(
     }
 
     private val IrFunction.needsInlining get() = this.isInline && !this.isExternal
-
-    private fun IrAttributeContainer.setUpCorrectAttributeOwnerForInlinedElements() {
-        fun IrAttributeContainer.setUpCorrectAttributeOwnerForSingleElement() {
-            if (this.attributeOwnerIdBeforeInline != null) return
-            this.attributeOwnerIdBeforeInline = this.attributeOwnerId.let { it.attributeOwnerIdBeforeInline ?: it }
-            this.attributeOwnerId = this
-        }
-
-        setUpCorrectAttributeOwnerForSingleElement()
-        this.acceptChildrenVoid(object : IrElementVisitorVoid {
-            override fun visitElement(element: IrElement) {
-                if (element is IrAttributeContainer) element.setUpCorrectAttributeOwnerForSingleElement()
-                element.acceptChildrenVoid(this)
-            }
-
-            override fun visitClass(declaration: IrClass) {
-                return
-            }
-
-            override fun visitFunctionExpression(expression: IrFunctionExpression) {
-                return
-            }
-
-            override fun visitFunctionReference(expression: IrFunctionReference) {
-                return
-            }
-
-            override fun visitPropertyReference(expression: IrPropertyReference) {
-                return
-            }
-        })
-    }
 
     private inner class Inliner(
         val callSite: IrFunctionAccessExpression,
@@ -195,23 +163,10 @@ class FunctionInlining(
 
         val substituteMap = mutableMapOf<IrValueParameter, IrExpression>()
 
-        fun inline() = inlineFunction(callSite, callee, true).apply {
-            // TODO try to extract to separate lowering
-            val mustBeRegenerated = this.collectIrClassesThatMustBeRegenerated(substituteMap)
-            mustBeRegenerated.forEach { it.setUpCorrectAttributeOwnerForInlinedElements() }
-        }
+        fun inline() = inlineFunction(callSite, callee, true)
 
         private fun IrElement.copy(): IrElement {
-            return copyIrElement.copy(this).apply {
-                accept(object : IrElementVisitorVoid {
-                    override fun visitElement(element: IrElement) {
-                        if (element is IrAttributeContainer) {
-                            element.attributeOwnerIdBeforeInline = null
-                        }
-                        element.acceptChildrenVoid(this)
-                    }
-                }, null)
-            }
+            return copyIrElement.copy(this)
         }
 
         private fun IrFunction.isInlineOnly(): Boolean {
@@ -265,7 +220,7 @@ class FunctionInlining(
                 newStatements += IrInlineMarkerImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, callSite as IrCall, callee)
             }
             newStatements.addAll(evaluationStatements)
-            statements.map { it.removeDuplicatedCallToHack() }.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
+            statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
             return IrReturnableBlockImpl(
                 startOffset = callSite.startOffset,
@@ -293,17 +248,6 @@ class FunctionInlining(
                 })
                 patchDeclarationParents(parent) // TODO: Why it is not enough to just run SetDeclarationsParentVisitor?
             }
-        }
-
-        private fun IrStatement.removeDuplicatedCallToHack(): IrStatement {
-            return this.transform(object : IrElementTransformerVoid() {
-                override fun visitCall(expression: IrCall): IrExpression {
-                    if (expression.symbol == context.ir.symbols.singleArgumentInlineFunction) {
-                        return IrCompositeImpl(expression.startOffset, expression.endOffset, context.irBuiltIns.unitType)
-                    }
-                    return super.visitCall(expression)
-                }
-            }, null) as IrStatement
         }
 
         //---------------------------------------------------------------------//
@@ -443,7 +387,7 @@ class FunctionInlining(
                                 inlinedFunction.returnType,
                                 inlinedFunction.symbol,
                                 classTypeParametersCount,
-                                InlinedFunctionReference()
+                                InlinedFunctionReference
                             )
                         }
                         is IrSimpleFunction ->
@@ -454,7 +398,7 @@ class FunctionInlining(
                                 inlinedFunction.symbol,
                                 inlinedFunction.typeParameters.size,
                                 inlinedFunction.valueParameters.size,
-                                InlinedFunctionReference()
+                                InlinedFunctionReference
                             )
                         else ->
                             error("Unknown function kind : ${inlinedFunction.render()}")
@@ -553,9 +497,6 @@ class FunctionInlining(
                 get() = argumentExpression.let { argument ->
                     argument is IrGetValue && !argument.symbol.owner.let { it is IrVariable && it.isVar }
                 }
-
-            val isDefault: Boolean
-                get() = parameter.defaultValue?.expression == argumentExpression
         }
 
 
@@ -727,13 +668,6 @@ class FunctionInlining(
                     substituteMap[argument.parameter] = argument.argumentExpression
                     (argument.argumentExpression as? IrCallableReference<*>)?.let { evaluationStatements += evaluateArguments(it) }
 
-                    if (argument.argumentExpression is IrFunctionExpression && !argument.isDefault) {
-                        evaluationStatements.add(
-                            IrCallImpl.fromSymbolOwner(-1, -1, context.ir.symbols.singleArgumentInlineFunction)
-                                .also { it.putValueArgument(0, argument.argumentExpression.copy() as IrFunctionExpression) }
-                        )
-                    }
-
                     return@forEach
                 }
 
@@ -793,7 +727,7 @@ class FunctionInlining(
     }
 }
 
-class InlinedFunctionReference : IrStatementOrigin
+object InlinedFunctionReference : IrStatementOrigin
 
 class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementOrigin {
     override fun toString(): String =
@@ -804,132 +738,4 @@ class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementO
 
     private val functionNameOrDefaultToString: String
         get() = (inlineAtSymbol as? IrFunction)?.name?.asString() ?: inlineAtSymbol.toString()
-}
-
-private fun IrElement.collectIrClassesThatMustBeRegenerated(substituteMap: Map<IrValueParameter, IrExpression>): Set<IrAttributeContainer> {
-    val classesToRegenerate = mutableSetOf<IrAttributeContainer>()
-    val inlinedFunctionExpressionFromArgument = emptyList<IrFunctionExpression>()// substituteMap.values.filterIsInstance<IrFunctionExpression>()
-    this.acceptVoid(object : IrElementVisitorVoid {
-        private val containersStack = mutableListOf<IrAttributeContainer>()
-
-        private fun saveDeclarationsFromStackIntoRegenerationPool() {
-            containersStack.forEach { classesToRegenerate += it }
-        }
-
-        override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
-
-        override fun visitClassReference(expression: IrClassReference) {
-            if (expression.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
-            super.visitClassReference(expression)
-        }
-
-        override fun visitClass(declaration: IrClass) {
-            if (declaration.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
-                classesToRegenerate += declaration
-            }
-            containersStack += declaration
-            if (declaration.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
-            super.visitClass(declaration)
-            containersStack.removeLast()
-        }
-
-        override fun visitFunctionExpression(expression: IrFunctionExpression) {
-            if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
-                classesToRegenerate += expression
-            }
-            containersStack += expression
-            if (inlinedFunctionExpressionFromArgument.contains(expression.attributeOwnerId)) saveDeclarationsFromStackIntoRegenerationPool()
-            super.visitFunctionExpression(expression)
-            containersStack.removeLast()
-        }
-
-        override fun visitFunctionReference(expression: IrFunctionReference) {
-            if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
-                classesToRegenerate += expression
-            }
-            containersStack += expression
-            super.visitFunctionReference(expression)
-            containersStack.removeLast()
-        }
-
-        override fun visitTypeOperator(expression: IrTypeOperatorCall) {
-            if (expression.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
-            super.visitTypeOperator(expression)
-        }
-
-        override fun visitGetValue(expression: IrGetValue) {
-            super.visitGetValue(expression)
-            if (expression.type.getClass()?.let { classesToRegenerate.contains(it) } == true) {
-                saveDeclarationsFromStackIntoRegenerationPool()
-            }
-        }
-
-        override fun visitCall(expression: IrCall) {
-            if (expression.symbol.owner.name.asString() == "singleArgumentInlineFunction") {
-                (expression.getValueArgument(0) as IrFunctionExpression).function.acceptVoid(this)
-                return
-            }
-
-            if (expression.hasReifiedTypeParameters() || expression.origin is InlinedFunctionReference) {
-                saveDeclarationsFromStackIntoRegenerationPool()
-            }
-            super.visitCall(expression)
-        }
-
-        override fun visitContainerExpression(expression: IrContainerExpression) {
-            super.visitContainerExpression(expression)
-            if (expression !is IrReturnableBlock || expression.inlineFunctionSymbol?.owner?.origin != IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA) {
-                return
-            }
-            saveDeclarationsFromStackIntoRegenerationPool()
-        }
-    })
-    return classesToRegenerate
-}
-
-private fun IrAttributeContainer.hasReifiedTypeParameters(): Boolean {
-    var hasReified = false
-
-    fun IrType.recursiveWalkDown(visitor: IrElementVisitorVoid) {
-        this@recursiveWalkDown.classifierOrNull?.owner?.acceptVoid(visitor)
-        (this@recursiveWalkDown as? IrSimpleType)?.arguments?.forEach { it.typeOrNull?.recursiveWalkDown(visitor) }
-    }
-
-    this.attributeOwnerId.acceptVoid(object : IrElementVisitorVoid {
-        private val visitedClasses = mutableSetOf<IrClass>()
-
-        override fun visitElement(element: IrElement) {
-            if (hasReified) return
-            element.acceptChildrenVoid(this)
-        }
-
-        override fun visitTypeParameter(declaration: IrTypeParameter) {
-            hasReified = hasReified || declaration.isReified
-            super.visitTypeParameter(declaration)
-        }
-
-        override fun visitClass(declaration: IrClass) {
-            if (!visitedClasses.add(declaration)) return
-            declaration.superTypes.forEach { it.recursiveWalkDown(this) }
-            super.visitClass(declaration)
-        }
-
-        override fun visitTypeOperator(expression: IrTypeOperatorCall) {
-            expression.typeOperand.takeIf { it is IrSimpleType }?.recursiveWalkDown(this)
-            super.visitTypeOperator(expression)
-        }
-
-        override fun visitCall(expression: IrCall) {
-            (0 until expression.typeArgumentsCount).forEach {
-                expression.getTypeArgument(it)?.recursiveWalkDown(this)
-            }
-            super.visitCall(expression)
-        }
-
-        override fun visitClassReference(expression: IrClassReference) {
-            expression.classType.recursiveWalkDown(this)
-            super.visitClassReference(expression)
-        }
-    })
-    return hasReified
 }

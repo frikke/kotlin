@@ -479,6 +479,8 @@ private fun buildJvmLoweringPhases(
 //            localClassesExtractionFromInlineFunctionsPhase then
 
                 functionInliningPhase then
+                createSeparateCallForInlinedLambdas then
+                markNecessaryInlinedClassesAsRegenerated then
                 inventNamesForNewLocalClassesPhase then
                 provisionalFunctionExpressionPhase then
 //            inventNamesForLocalClassesPhase2 then

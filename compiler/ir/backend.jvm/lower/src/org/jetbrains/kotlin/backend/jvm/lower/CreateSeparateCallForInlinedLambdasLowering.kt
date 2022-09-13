@@ -1,0 +1,69 @@
+/*
+ * Copyright 2010-2022 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+package org.jetbrains.kotlin.backend.jvm.lower
+
+import org.jetbrains.kotlin.backend.common.FileLoweringPass
+import org.jetbrains.kotlin.backend.common.phaser.makeIrModulePhase
+import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
+import org.jetbrains.kotlin.backend.jvm.functionInliningPhase
+import org.jetbrains.kotlin.backend.jvm.ir.isInlineParameter
+import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
+import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
+import org.jetbrains.kotlin.ir.declarations.IrFile
+import org.jetbrains.kotlin.ir.declarations.IrInlineMarker
+import org.jetbrains.kotlin.ir.expressions.IrContainerExpression
+import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrFunctionExpression
+import org.jetbrains.kotlin.ir.expressions.IrReturnableBlock
+import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.util.deepCopyWithSymbols
+import org.jetbrains.kotlin.ir.util.getArgumentsWithIr
+import org.jetbrains.kotlin.ir.util.statements
+import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
+
+internal val createSeparateCallForInlinedLambdas = makeIrModulePhase(
+    ::CreateSeparateCallForInlinedLambdasLowering,
+    name = "CreateSeparateCallForInlinedLambdasLowering",
+    description = "This lowering will create separate call `singleArgumentInlineFunction` with previously inlined lambda as argument",
+    prerequisite = setOf(functionInliningPhase)
+)
+
+class CreateSeparateCallForInlinedLambdasLowering(val context: JvmBackendContext) : IrElementTransformerVoid(), FileLoweringPass {
+    override fun lower(irFile: IrFile) {
+        irFile.transformChildrenVoid()
+    }
+
+    override fun visitContainerExpression(expression: IrContainerExpression): IrExpression {
+        if (expression.wasExplicitlyInlined()) {
+            val marker = expression.statements.first() as IrInlineMarker
+            val newCalls = marker.getOnlyInlinableArguments().map { arg ->
+                IrCallImpl.fromSymbolOwner(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.ir.symbols.singleArgumentInlineFunction)
+                    .also { it.putValueArgument(0, arg.transform(this, null).deepCopyWithSymbols(arg.function.parent)) }
+            }
+
+            // we don't need to transform body of original function, just arguments that were extracted as variables
+            expression.statements
+                .take(expression.statements.size - marker.callee.body!!.statements.size)
+                .forEach { it.transformChildrenVoid() }
+            // TODO chane index to 0 after removing IrInlineMarker
+            expression.statements.addAll(1, newCalls) // put new calls right after marker
+            return expression
+        }
+
+        return super.visitContainerExpression(expression)
+    }
+
+    private fun IrExpression.wasExplicitlyInlined(): Boolean {
+        return this is IrReturnableBlock && this.statements.firstOrNull() is IrInlineMarker &&
+                inlineFunctionSymbol?.owner?.origin != IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
+    }
+
+    private fun IrInlineMarker.getOnlyInlinableArguments(): List<IrFunctionExpression> {
+        return this.inlineCall.getArgumentsWithIr()
+            .filter { (param, arg) -> param.isInlineParameter() && arg is IrFunctionExpression }
+            .map { it.second as IrFunctionExpression }
+    }
+}
