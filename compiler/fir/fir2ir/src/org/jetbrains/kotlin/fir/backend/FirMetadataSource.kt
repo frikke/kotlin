@@ -13,10 +13,7 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.SpecialNames
 
 sealed class FirMetadataSource : MetadataSource {
-    abstract val fir: FirDeclaration
-
-    val declarationSiteSession: FirSession
-        get() = fir.moduleData.session
+    abstract val fir: FirDeclaration?
 
     override val name: Name?
         get() = when (val fir = fir) {
@@ -27,8 +24,11 @@ sealed class FirMetadataSource : MetadataSource {
             else -> null
         }
 
-    class File(override val fir: FirFile) : FirMetadataSource(), MetadataSource.File {
+    class File(val files: List<FirFile>) : FirMetadataSource(), MetadataSource.File {
         override var serializedIr: ByteArray? = null
+
+        override val fir: FirDeclaration?
+            get() = null
     }
 
     class Class(override val fir: FirClass) : FirMetadataSource(), MetadataSource.Class {
