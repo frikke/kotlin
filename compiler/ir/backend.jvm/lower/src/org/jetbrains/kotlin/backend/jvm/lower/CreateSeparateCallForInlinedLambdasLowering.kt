@@ -19,7 +19,6 @@ import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrFunctionExpression
 import org.jetbrains.kotlin.ir.expressions.IrReturnableBlock
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
-import org.jetbrains.kotlin.ir.util.deepCopyWithSymbols
 import org.jetbrains.kotlin.ir.util.getArgumentsWithIr
 import org.jetbrains.kotlin.ir.util.statements
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
@@ -41,7 +40,7 @@ class CreateSeparateCallForInlinedLambdasLowering(val context: JvmBackendContext
             val marker = expression.statements.first() as IrInlineMarker
             val newCalls = marker.getOnlyInlinableArguments().map { arg ->
                 IrCallImpl.fromSymbolOwner(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.ir.symbols.singleArgumentInlineFunction)
-                    .also { it.putValueArgument(0, arg.transform(this, null).deepCopyWithSymbols(arg.function.parent)) }
+                    .also { it.putValueArgument(0, arg.transform(this, null)) }
             }
 
             // we don't need to transform body of original function, just arguments that were extracted as variables

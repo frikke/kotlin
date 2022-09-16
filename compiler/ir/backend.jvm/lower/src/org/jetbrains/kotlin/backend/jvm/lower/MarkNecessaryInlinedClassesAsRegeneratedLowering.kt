@@ -63,6 +63,12 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
                 containersStack.forEach { classesToRegenerate += it }
             }
 
+            private fun IrAttributeContainer.saveIfRegenerated() {
+                if (attributeOwnerId.attributeOwnerIdBeforeInline != null) {
+                    classesToRegenerate += this
+                }
+            }
+
             override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
 
             override fun visitClassReference(expression: IrClassReference) {
@@ -71,9 +77,7 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             }
 
             override fun visitClass(declaration: IrClass) {
-                if (declaration.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
-                    classesToRegenerate += declaration
-                }
+                declaration.saveIfRegenerated()
                 containersStack += declaration
                 if (declaration.hasReifiedTypeParameters()) saveDeclarationsFromStackIntoRegenerationPool()
                 super.visitClass(declaration)
@@ -81,18 +85,14 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             }
 
             override fun visitFunctionExpression(expression: IrFunctionExpression) {
-                if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
-                    classesToRegenerate += expression
-                }
+                expression.saveIfRegenerated()
                 containersStack += expression
                 super.visitFunctionExpression(expression)
                 containersStack.removeLast()
             }
 
             override fun visitFunctionReference(expression: IrFunctionReference) {
-                if (expression.attributeOwnerId.attributeOwnerIdBeforeInline != null) {
-                    classesToRegenerate += expression
-                }
+                expression.saveIfRegenerated()
                 containersStack += expression
                 super.visitFunctionReference(expression)
                 containersStack.removeLast()
@@ -111,7 +111,7 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             }
 
             override fun visitCall(expression: IrCall) {
-                if (expression.symbol.owner.name.asString() == "singleArgumentInlineFunction") {
+                if (expression.symbol == context.ir.symbols.singleArgumentInlineFunction) {
                     (expression.getValueArgument(0) as IrFunctionExpression).function.acceptVoid(this)
                     return
                 }
