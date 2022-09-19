@@ -364,6 +364,7 @@ private val jvmFilePhases = listOf(
     jvmStaticInCompanionPhase,
     staticDefaultFunctionPhase,
     bridgePhase,
+    jvmExposeAnnotationPhase,
     syntheticAccessorPhase,
 
     jvmArgumentNullabilityAssertions,
