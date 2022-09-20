@@ -10,7 +10,7 @@ public static final class LocalClassBase /* null*/ {
 
 }
 
-public static final class LocalClassDerived /* null*/ extends Boo.LocalClassBase {
+public static final class LocalClassDerived /* null*/ extends java.lang.Object {
   public  LocalClassDerived();//  .ctor()
 
 }

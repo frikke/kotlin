@@ -97,6 +97,12 @@ public class SymbolLightClassesLoadingForSourceTestGenerated extends AbstractSym
     }
 
     @Test
+    @TestMetadata("exposedAnonymousType.kt")
+    public void testExposedAnonymousType() throws Exception {
+        runTest("compiler/testData/asJava/ultraLightClasses/exposedAnonymousType.kt");
+    }
+
+    @Test
     @TestMetadata("generics.kt")
     public void testGenerics() throws Exception {
         runTest("compiler/testData/asJava/ultraLightClasses/generics.kt");
