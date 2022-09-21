@@ -28,9 +28,10 @@ public final class InlinedDelegate /* InlinedDelegate*/<T>  {
 public final class InlineInheritance /* InlineInheritance*/ {
   private final int v;
 
-  public final int getV();//  getV()
-
+  @java.lang.Override()
   public int getX();//  getX()
+
+  public final int getV();//  getV()
 
   public int y();//  y()
 

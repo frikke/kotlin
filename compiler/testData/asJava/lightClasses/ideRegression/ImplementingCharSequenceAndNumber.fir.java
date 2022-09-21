@@ -35,12 +35,13 @@ public static final class MyNumber /* p1.Container.MyNumber*/ extends java.lang.
   @java.lang.Override()
   public char get(int);//  get(int)
 
+  @java.lang.Override()
+  public int getLength();//  getLength()
+
   public  MyString();//  .ctor()
 
   public error.NonExistentClass chars();//  chars()
 
   public error.NonExistentClass codePoints();//  codePoints()
-
-  public int getLength();//  getLength()
 
 }}

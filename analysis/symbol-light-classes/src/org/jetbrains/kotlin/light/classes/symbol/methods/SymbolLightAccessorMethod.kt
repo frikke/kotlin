@@ -106,6 +106,7 @@ internal class SymbolLightAccessorMethod(
             parent = this,
             nullability = NullabilityType.Unknown,
             annotationUseSiteTarget = accessorSite,
+            doNotAddOverrideAnnotation = true
         )
 
         return annotationsFromProperty + annotationsFromAccessor

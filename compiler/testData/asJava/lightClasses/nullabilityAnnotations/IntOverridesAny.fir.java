@@ -4,8 +4,9 @@ public final class C /* C*/ implements Tr {
   @java.lang.Override()
   public int foo();//  foo()
 
-  public  C();//  .ctor()
-
+  @java.lang.Override()
   public int getV();//  getV()
+
+  public  C();//  .ctor()
 
 }
