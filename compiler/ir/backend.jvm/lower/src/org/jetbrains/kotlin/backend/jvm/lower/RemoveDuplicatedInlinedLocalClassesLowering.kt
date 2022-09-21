@@ -22,7 +22,7 @@ import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 
 internal val removeDuplicatedInlinedLocalClasses = makeIrFilePhase(
-    ::InlinedAnonymousElementsLowering,
+    ::RemoveDuplicatedInlinedLocalClassesLowering,
     name = "RemoveDuplicatedInlinedLocalClasses",
     description = "Drop excess local classes that were copied by ir inliner",
     prerequisite = setOf(functionInliningPhase, localDeclarationsPhase)
@@ -35,7 +35,7 @@ internal val removeDuplicatedInlinedLocalClasses = makeIrFilePhase(
 // This lambda will not exist after inline, so we copy declaration into new temporary inline call `singleArgumentInlineFunction`.
 // 3. MUST NOT BE created at all because will be created at callee site.
 // This lowering drops declarations that correspond to second and third type.
-class InlinedAnonymousElementsLowering(val context: JvmBackendContext) : IrElementTransformerVoid(), FileLoweringPass {
+class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext) : IrElementTransformerVoid(), FileLoweringPass {
     private val inlineStack = mutableListOf<IrInlineMarker>()
     private val inlinedVarStack = mutableListOf<InlinerExpressionLocationHint>()
 
