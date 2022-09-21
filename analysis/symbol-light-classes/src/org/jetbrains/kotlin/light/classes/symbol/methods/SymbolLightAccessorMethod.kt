@@ -169,6 +169,7 @@ internal class SymbolLightAccessorMethod(
         if (!isGetter) return@lazyPub PsiType.VOID
         containingPropertySymbol.returnType.asPsiType(
             this@SymbolLightAccessorMethod,
+            allowErrorTypes = true,
             KtTypeMappingMode.RETURN_TYPE,
             containingClass.isAnnotationType
         ) ?: nonExistentType()

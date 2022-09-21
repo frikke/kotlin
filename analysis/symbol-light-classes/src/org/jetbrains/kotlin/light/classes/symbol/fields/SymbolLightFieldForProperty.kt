@@ -44,11 +44,19 @@ internal class SymbolLightFieldForProperty(
         when {
             isDelegated ->
                 (kotlinOrigin as? KtProperty)?.delegateExpression?.let {
-                    it.getKtType()?.asPsiType(this@SymbolLightFieldForProperty, KtTypeMappingMode.RETURN_TYPE)
+                    it.getKtType()?.asPsiType(
+                        this@SymbolLightFieldForProperty,
+                        allowErrorTypes = true,
+                        KtTypeMappingMode.RETURN_TYPE
+                    )
                 }
 
             else -> {
-                propertySymbol.returnType.asPsiType(this@SymbolLightFieldForProperty, KtTypeMappingMode.RETURN_TYPE)
+                propertySymbol.returnType.asPsiType(
+                    this@SymbolLightFieldForProperty,
+                    allowErrorTypes = true,
+                    KtTypeMappingMode.RETURN_TYPE
+                )
             }
         } ?: nonExistentType()
     }

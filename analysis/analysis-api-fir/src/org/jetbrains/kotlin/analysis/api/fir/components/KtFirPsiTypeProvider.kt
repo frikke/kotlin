@@ -53,10 +53,12 @@ internal class KtFirPsiTypeProvider(
         useSitePosition: PsiElement,
         mode: KtTypeMappingMode,
         isAnnotationMethod: Boolean,
+        allowErrorTypes: Boolean
     ): PsiType? = type.coneType.asPsiType(
         rootModuleSession,
         mode.toTypeMappingMode(type, isAnnotationMethod),
-        useSitePosition
+        useSitePosition,
+        allowErrorTypes
     )
 
 
@@ -178,12 +180,12 @@ internal fun ConeKotlinType.asPsiType(
     session: FirSession,
     mode: TypeMappingMode,
     useSitePosition: PsiElement,
+    allowErrorTypes: Boolean
 ): PsiType? {
     val correctedType = simplifyType(session, useSitePosition)
 
-    if (correctedType is ConeErrorType || correctedType !is SimpleTypeMarker) return null
-
-    if (correctedType.typeArguments.any { it is ConeErrorType }) return null
+    if (!allowErrorTypes && (correctedType is ConeErrorType || correctedType !is SimpleTypeMarker)) return null
+    if (!allowErrorTypes && correctedType.typeArguments.any { it is ConeErrorType }) return null
 
     val signatureWriter = BothSignatureWriter(BothSignatureWriter.Mode.SKIP_CHECKS)
 

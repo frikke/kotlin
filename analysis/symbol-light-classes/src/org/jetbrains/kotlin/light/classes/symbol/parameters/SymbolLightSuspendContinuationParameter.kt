@@ -41,7 +41,7 @@ internal class SymbolLightSuspendContinuationParameter(
 
     private val _type by lazyPub {
         buildClassType(StandardClassIds.Continuation) { argument(functionSymbol.returnType) }
-            .asPsiType(this)
+            .asPsiType(this, allowErrorTypes = true)
             ?: nonExistentType()
     }
 

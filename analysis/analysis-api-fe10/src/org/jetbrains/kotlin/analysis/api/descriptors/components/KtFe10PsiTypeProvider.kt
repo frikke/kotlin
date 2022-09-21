@@ -40,6 +40,7 @@ internal class KtFe10PsiTypeProvider(
         useSitePosition: PsiElement,
         mode: KtTypeMappingMode,
         isAnnotationMethod: Boolean,
+        allowErrorTypes: Boolean
     ): PsiType? {
         val kotlinType = (type as KtFe10Type).type
 

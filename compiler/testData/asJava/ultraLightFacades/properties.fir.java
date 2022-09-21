@@ -43,8 +43,6 @@ public final class PropertiesKt /* PropertiesKt*/ {
 
   private static final error.NonExistentClass delegatedProp2$delegate;
 
-  private static final error.NonExistentClass intConst = 30 /* initializer type: int */;
-
   private static final int f1 = 2 /* initializer type: int */;
 
   private static final int plainField = 1 /* initializer type: int */;
@@ -52,6 +50,8 @@ public final class PropertiesKt /* PropertiesKt*/ {
   private static final int privateVal = 42 /* initializer type: int */;
 
   private static final int privateVar = 42 /* initializer type: int */;
+
+  private static final java.lang.Object intConst = 30 /* initializer type: int */;
 
   private static int counter = 0 /* initializer type: int */;
 
@@ -131,8 +131,6 @@ public final class PropertiesKt /* PropertiesKt*/ {
 
   public static final error.NonExistentClass getDelegatedProp2();//  getDelegatedProp2()
 
-  public static final error.NonExistentClass getIntConst();//  getIntConst()
-
   public static final error.NonExistentClass getSubject();//  getSubject()
 
   public static final int getCounter();//  getCounter()
@@ -148,6 +146,8 @@ public final class PropertiesKt /* PropertiesKt*/ {
   public static final int getPlainField();//  getPlainField()
 
   public static final int getValue(error.NonExistentClass, @org.jetbrains.annotations.NotNull() kotlin.reflect.KProperty<?>);//  getValue(error.NonExistentClass, kotlin.reflect.KProperty<?>)
+
+  public static final java.lang.Object getIntConst();//  getIntConst()
 
   public static final void setCounter(int);//  setCounter(int)
 

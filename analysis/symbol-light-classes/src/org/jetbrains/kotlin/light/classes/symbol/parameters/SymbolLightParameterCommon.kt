@@ -56,7 +56,7 @@ internal abstract class SymbolLightParameterCommon(
                 // TODO: methods with declaration site wildcards?
                 else -> KtTypeMappingMode.VALUE_PARAMETER
             }
-            ktType.asPsiType(this@SymbolLightParameterCommon, typeMappingMode)
+            ktType.asPsiType(this@SymbolLightParameterCommon, allowErrorTypes = true, typeMappingMode)
         } ?: nonExistentType()
         if (parameterSymbol.isVararg) {
             PsiEllipsisType(convertedType, convertedType.annotationProvider)

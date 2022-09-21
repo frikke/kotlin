@@ -45,10 +45,11 @@ internal class SymbolLightFieldForObject(
 
     override fun isDeprecated(): Boolean = _isDeprecated
 
-    override fun getModifierList(): PsiModifierList? = _modifierList
+    override fun getModifierList(): PsiModifierList = _modifierList
 
     private val _type: PsiType by lazyPub {
-        objectSymbol.buildSelfClassType().asPsiType(this@SymbolLightFieldForObject)
+        objectSymbol.buildSelfClassType()
+            .asPsiType(this@SymbolLightFieldForObject, allowErrorTypes = true)
             ?: nonExistentType()
     }
 

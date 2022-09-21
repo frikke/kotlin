@@ -78,7 +78,7 @@ internal class SymbolLightFieldForEnumEntry(
     override fun getName(): String = enumEntrySymbol.name.asString()
 
     private val _type: PsiType by lazyPub {
-        enumEntrySymbol.returnType.asPsiType(this@SymbolLightFieldForEnumEntry) ?: nonExistentType()
+        enumEntrySymbol.returnType.asPsiType(this@SymbolLightFieldForEnumEntry, allowErrorTypes = true) ?: nonExistentType()
     }
 
     override fun getType(): PsiType = _type
