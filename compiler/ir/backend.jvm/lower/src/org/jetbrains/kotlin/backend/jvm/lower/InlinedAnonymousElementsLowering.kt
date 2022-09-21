@@ -75,6 +75,9 @@ class InlinedAnonymousElementsLowering(val context: JvmBackendContext) : IrEleme
             return super.visitClass(declaration)
         }
 
+        // TODO big note. Here we drop anonymous class declaration but there still present a constructor call that has reference to this class.
+        //  Everything works fine because somewhere in code we still have class declaration with the same name. So this doesn't ruin code
+        //  generation and will not drop on runtime, but this is something to be aware of.
         return IrCompositeImpl(declaration.startOffset, declaration.endOffset, context.irBuiltIns.unitType)
     }
 
