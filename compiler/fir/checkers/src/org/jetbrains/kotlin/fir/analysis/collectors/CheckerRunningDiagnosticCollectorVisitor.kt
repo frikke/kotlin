@@ -15,6 +15,10 @@ open class CheckerRunningDiagnosticCollectorVisitor(
     context: CheckerContext,
     protected val components: DiagnosticCollectorComponents
 ) : AbstractDiagnosticCollectorVisitor(context) {
+    init {
+        Unit
+    }
+
 
     override fun checkElement(element: FirElement) {
         components.regularComponents.forEach {

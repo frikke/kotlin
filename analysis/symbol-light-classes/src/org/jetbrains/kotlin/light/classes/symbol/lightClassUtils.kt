@@ -10,9 +10,10 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiType
 import org.jetbrains.kotlin.analysis.api.KtAllowAnalysisOnEdt
 import org.jetbrains.kotlin.analysis.api.lifetime.allowAnalysisOnEdt
+import org.jetbrains.kotlin.builtins.StandardNames
 
 @OptIn(KtAllowAnalysisOnEdt::class)
 internal inline fun <E> allowLightClassesOnEdt(action: () -> E): E = allowAnalysisOnEdt(action)
 
 internal fun PsiElement.nonExistentType(): PsiType =
-    JavaPsiFacade.getElementFactory(project).createTypeFromText("error.NonExistentClass", this)
+    JavaPsiFacade.getElementFactory(project).createTypeFromText(StandardNames.NON_EXISTENT_CLASS.asString(), this)
