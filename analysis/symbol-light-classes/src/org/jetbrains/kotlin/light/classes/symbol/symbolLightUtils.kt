@@ -42,7 +42,6 @@ internal fun KtAnalysisSession.mapType(
     psiContext: PsiElement,
     mode: KtTypeMappingMode
 ): PsiClassType? {
-    if (type is KtClassErrorType) return null
     val psiType = type.asPsiType(
         psiContext,
         allowErrorTypes = true,

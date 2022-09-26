@@ -19,6 +19,7 @@ import org.jetbrains.kotlin.fir.declarations.utils.classId
 import org.jetbrains.kotlin.fir.declarations.utils.isInner
 import org.jetbrains.kotlin.fir.declarations.utils.isLocal
 import org.jetbrains.kotlin.fir.resolve.defaultType
+import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeUnresolvedQualifierError
 import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeUnresolvedSymbolError
 import org.jetbrains.kotlin.fir.resolve.fullyExpandedType
 import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
@@ -33,9 +34,7 @@ import org.jetbrains.kotlin.fir.symbols.impl.FirTypeParameterSymbol
 import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.fir.types.impl.ConeTypeParameterTypeImpl
 import org.jetbrains.kotlin.load.kotlin.TypeMappingMode
-import org.jetbrains.kotlin.name.ClassId
-import org.jetbrains.kotlin.name.SpecialNames
-import org.jetbrains.kotlin.name.StandardClassIds
+import org.jetbrains.kotlin.name.*
 import org.jetbrains.kotlin.types.AbstractTypeMapper
 import org.jetbrains.kotlin.types.TypeMappingContext
 import org.jetbrains.kotlin.types.TypeSystemCommonBackendContext
@@ -44,7 +43,6 @@ import org.jetbrains.kotlin.types.model.KotlinTypeMarker
 import org.jetbrains.kotlin.types.model.SimpleTypeMarker
 import org.jetbrains.kotlin.types.model.TypeConstructorMarker
 import org.jetbrains.kotlin.types.model.TypeParameterMarker
-import org.jetbrains.kotlin.utils.addToStdlib.runIf
 import org.jetbrains.kotlin.utils.addToStdlib.runUnless
 import org.jetbrains.org.objectweb.asm.Type
 
@@ -293,5 +291,14 @@ class ConeTypeSystemCommonBackendContextForTypeMapping(
     private fun possiblyErrorTypeConstructorByClassId(classId: ClassId): ConeClassLikeLookupTag {
         return symbolProvider.getClassLikeSymbolByClassId(classId)?.toLookupTag()
             ?: ConeClassLikeErrorLookupTag(classId)
+    }
+
+    override fun KotlinTypeMarker.getNameForErrorType(): String? {
+        require(this is ConeErrorType)
+        val result = when (val diagnostic = diagnostic) {
+            is ConeUnresolvedQualifierError -> diagnostic.qualifier
+            else -> null
+        }
+        return result
     }
 }

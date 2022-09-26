@@ -15,6 +15,7 @@ import org.jetbrains.kotlin.analysis.api.lifetime.withValidityAssertion
 import org.jetbrains.kotlin.analysis.api.symbols.KtClassLikeSymbol
 import org.jetbrains.kotlin.analysis.api.types.KtClassErrorType
 import org.jetbrains.kotlin.analysis.api.types.KtTypeNullability
+import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeUnresolvedQualifierError
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassLikeSymbol
 import org.jetbrains.kotlin.fir.types.ConeErrorType
 import org.jetbrains.kotlin.fir.types.renderForDebugging
@@ -36,6 +37,9 @@ internal class KtFirClassErrorType(
         val symbols = coneType.diagnostic.getCandidateSymbols().filterIsInstance<FirClassLikeSymbol<*>>()
         symbols.map { builder.classifierBuilder.buildClassLikeSymbol(it) }
     }
+
+    override val presentableQualifiedName: String?
+        get() = (coneType.diagnostic as? ConeUnresolvedQualifierError)?.qualifier
 
     override fun asStringForDebugging(): String = withValidityAssertion { coneType.renderForDebugging() }
     override fun equals(other: Any?) = typeEquals(other)

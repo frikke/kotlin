@@ -40,8 +40,8 @@ public static final class MyNumber /* p1.Container.MyNumber*/ extends java.lang.
 
   public  MyString();//  .ctor()
 
-  public error.NonExistentClass chars();//  chars()
+  public IntStream chars();//  chars()
 
-  public error.NonExistentClass codePoints();//  codePoints()
+  public IntStream codePoints();//  codePoints()
 
 }}

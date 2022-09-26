@@ -25,7 +25,7 @@ public final class InlinedDelegate /* InlinedDelegate*/<T>  {
 
 }
 
-public final class InlineInheritance /* InlineInheritance*/ {
+public final class InlineInheritance /* InlineInheritance*/ implements I {
   private final int v;
 
   @java.lang.Override()
