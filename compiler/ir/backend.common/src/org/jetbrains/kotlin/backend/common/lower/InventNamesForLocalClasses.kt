@@ -6,17 +6,21 @@
 package org.jetbrains.kotlin.backend.common.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
+import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
+import org.jetbrains.kotlin.ir.expressions.IrContainerExpression
 import org.jetbrains.kotlin.ir.expressions.IrFunctionExpression
 import org.jetbrains.kotlin.ir.expressions.IrFunctionReference
 import org.jetbrains.kotlin.ir.expressions.IrPropertyReference
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.util.isAnonymousObject
+import org.jetbrains.kotlin.ir.util.statements
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.NameUtils
 import org.jetbrains.kotlin.util.capitalizeDecapitalize.toUpperCaseAsciiOnly
+import kotlin.collections.set
 
 abstract class InventNamesForLocalClasses(private val allowTopLevelCallables: Boolean) : FileLoweringPass {
 
@@ -38,8 +42,29 @@ abstract class InventNamesForLocalClasses(private val allowTopLevelCallables: Bo
     }
 
     private inner class NameInventor : IrElementVisitor<Unit, Data> {
+        private var processingInlinedFunction = false
         private val anonymousClassesCount = mutableMapOf<String, Int>()
         private val localFunctionNames = mutableMapOf<IrFunctionSymbol, String>()
+
+        override fun visitContainerExpression(expression: IrContainerExpression, data: Data) {
+            if (!processingInlinedFunction && expression.wasExplicitlyInlined()) {
+                val marker = expression.statements.first() as IrInlineMarker
+                val inlinedAt = marker.inlineCall.symbol.owner.name.asString()
+
+                val statementsCountFromCallee = marker.callee.body!!.statements.size
+                expression.statements.take(expression.statements.size - statementsCountFromCallee).forEach {
+                    it.accept(this, data)
+                }
+                processingInlinedFunction = true
+                val newData = data.copy(enclosingName = data.enclosingName + "$\$inlined\$$inlinedAt", isLocal = true)
+                expression.statements.takeLast(statementsCountFromCallee).forEach {
+                    it.accept(this, newData)
+                }
+                processingInlinedFunction = false
+                return
+            }
+            super.visitContainerExpression(expression, data)
+        }
 
         override fun visitClass(declaration: IrClass, data: Data) {
             if (!data.isLocal) {
@@ -99,6 +124,8 @@ abstract class InventNamesForLocalClasses(private val allowTopLevelCallables: Bo
                         localFunctionNames[declaration.symbol] = name
                     }
                 }
+
+                declaration is IrVariable || processingInlinedFunction -> enclosingName
                 enclosingName != null -> "$enclosingName$$simpleName"
                 else -> simpleName
             }
@@ -115,6 +142,10 @@ abstract class InventNamesForLocalClasses(private val allowTopLevelCallables: Bo
         }
 
         override fun visitFunctionReference(expression: IrFunctionReference, data: Data) {
+            if (processingInlinedFunction && expression.attributeOwnerIdBeforeInline == null) {
+                // skip IrFunctionReference from `singleArgumentInlineFunction`
+                return
+            }
             val internalName = localFunctionNames[expression.symbol] ?: inventName(null, data)
             putLocalClassName(expression, internalName)
 
