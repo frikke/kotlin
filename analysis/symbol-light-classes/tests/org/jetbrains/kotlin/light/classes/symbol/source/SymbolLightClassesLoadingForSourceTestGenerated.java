@@ -73,6 +73,12 @@ public class SymbolLightClassesLoadingForSourceTestGenerated extends AbstractSym
     }
 
     @Test
+    @TestMetadata("delegatedProperty.kt")
+    public void testDelegatedProperty() throws Exception {
+        runTest("compiler/testData/asJava/ultraLightClasses/delegatedProperty.kt");
+    }
+
+    @Test
     @TestMetadata("delegatesWithAnnotations.kt")
     public void testDelegatesWithAnnotations() throws Exception {
         runTest("compiler/testData/asJava/ultraLightClasses/delegatesWithAnnotations.kt");

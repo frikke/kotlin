@@ -81,7 +81,7 @@ internal class SymbolLightFieldForProperty(
 
         val modifiers = mutableSetOf<String>()
 
-        val suppressFinal = !propertySymbol.isVal
+        val suppressFinal = !propertySymbol.isVal && !propertySymbol.isDelegatedProperty
 
         propertySymbol.computeModalityForMethod(
             isTopLevel = isTopLevel,
@@ -100,6 +100,7 @@ internal class SymbolLightFieldForProperty(
         if (!suppressFinal) {
             modifiers.add(PsiModifier.FINAL)
         }
+
         if (propertySymbol.hasAnnotation(TRANSIENT_ANNOTATION_CLASS_ID, null)) {
             modifiers.add(PsiModifier.TRANSIENT)
         }
