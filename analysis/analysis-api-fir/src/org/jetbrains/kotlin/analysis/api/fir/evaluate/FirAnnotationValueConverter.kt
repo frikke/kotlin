@@ -11,17 +11,18 @@ import org.jetbrains.kotlin.analysis.api.components.KtConstantEvaluationMode
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.analysis.checkers.getContainingClassSymbol
+import org.jetbrains.kotlin.fir.analysis.checkers.toClassLikeSymbol
 import org.jetbrains.kotlin.fir.declarations.FirClass
 import org.jetbrains.kotlin.fir.declarations.utils.isLocal
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.psi
 import org.jetbrains.kotlin.fir.references.FirResolvedNamedReference
-import org.jetbrains.kotlin.fir.resolve.dfa.coneType
 import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeUnresolvedNameError
 import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeUnresolvedQualifierError
 import org.jetbrains.kotlin.fir.symbols.impl.FirConstructorSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirEnumEntrySymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirNamedFunctionSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirTypeAliasSymbol
 import org.jetbrains.kotlin.fir.types.ConeErrorType
 import org.jetbrains.kotlin.fir.types.coneType
 import org.jetbrains.kotlin.name.Name
@@ -151,7 +152,10 @@ internal object FirAnnotationValueConverter {
             }
 
             is FirGetClassCall -> {
-                val symbol = (argument as? FirResolvedQualifier)?.symbol
+                var symbol = (argument as? FirResolvedQualifier)?.symbol
+                if (symbol is FirTypeAliasSymbol) {
+                    symbol = symbol.resolvedExpandedTypeRef.toClassLikeSymbol(session) ?: symbol
+                }
                 when {
                     symbol == null -> {
                         val errorType = argument.typeRef.coneType as? ConeErrorType
