@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.backend.konan
 import kotlinx.cinterop.toCValues
 import llvm.*
 import org.jetbrains.kotlin.backend.konan.llvm.*
+import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
 
 private fun LLVMValueRef.isFunctionCall() = LLVMIsACallInst(this) != null || LLVMIsAInvokeInst(this) != null
 
@@ -37,25 +38,22 @@ private class CallsChecker(generationState: NativeGenerationState, goodFunctions
     private fun moduleFunction(name: String) =
             LLVMGetNamedFunction(llvm.module, name) ?: throw IllegalStateException("$name function is not available")
 
-    val getMethodImpl = llvm.externalFunction(LlvmFunctionProto(
+    val getMethodImpl = llvm.externalStdlibFunction(
             "class_getMethodImplementation",
             LlvmRetType(pointerType(functionType(llvm.voidType, false))),
-            listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType)),
-            origin = context.stdlibModule.llvmSymbolOrigin)
+            listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType))
     )
 
-    val getClass = llvm.externalFunction(LlvmFunctionProto(
+    val getClass = llvm.externalStdlibFunction(
             "object_getClass",
             LlvmRetType(llvm.int8PtrType),
-            listOf(LlvmParamType(llvm.int8PtrType)),
-            origin = context.stdlibModule.llvmSymbolOrigin)
+            listOf(LlvmParamType(llvm.int8PtrType))
     )
 
-    val getSuperClass = llvm.externalFunction(LlvmFunctionProto(
+    val getSuperClass = llvm.externalStdlibFunction(
             "class_getSuperclass",
             LlvmRetType(llvm.int8PtrType),
-            listOf(LlvmParamType(llvm.int8PtrType)),
-            origin = context.stdlibModule.llvmSymbolOrigin)
+            listOf(LlvmParamType(llvm.int8PtrType))
     )
 
     val checkerFunction = moduleFunction("Kotlin_mm_checkStateAtExternalFunctionCall")

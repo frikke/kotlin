@@ -24,10 +24,9 @@ import org.jetbrains.kotlin.backend.konan.serialization.KonanIrModuleSerializer
 import org.jetbrains.kotlin.backend.konan.serialization.KonanManglerDesc
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.languageVersionSettings
-import org.jetbrains.kotlin.ir.declarations.IrFile
-import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
+import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
+import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFactoryImpl
-import org.jetbrains.kotlin.ir.declarations.path
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.konan.target.CompilerOutputKind
 import org.jetbrains.kotlin.name.FqName
@@ -351,26 +350,48 @@ internal val umbrellaCompilation = SameTypeNamedCompilerPhase(
         description = "A batched compilation with shared FE and ME phases",
         prerequisite = emptySet(),
         lower = object : CompilerPhase<Context, Unit, Unit> {
+            fun isReferencedByNativeRuntime(declarations: List<IrDeclaration>): Boolean =
+                    declarations.any {
+                        it.hasAnnotation(RuntimeNames.exportTypeInfoAnnotation)
+                                || it.hasAnnotation(RuntimeNames.exportForCppRuntime)
+                    } || declarations.any {
+                        it is IrClass && isReferencedByNativeRuntime(it.declarations)
+                    }
+
             override fun invoke(phaseConfig: PhaseConfigurationService, phaserState: PhaserState<Unit>, context: Context, input: Unit) {
                 val module = context.irModules[context.config.libraryToCache!!.klib.libraryName]
                         ?: error("No module for the library being cached: ${context.config.libraryToCache!!.klib.libraryName}")
 
                 val files = module.files.toList()
                 module.files.clear()
-                val functionInterfaceFiles = files.filter { it.isFunctionInterfaceFile }
+
+                val stdlibIsBeingCached = module.descriptor == context.stdlibModule
+                val functionInterfaceFiles = files.takeIf { stdlibIsBeingCached }
+                        ?.filter { it.isFunctionInterfaceFile }.orEmpty()
+                val filesReferencedByNativeRuntime = files.takeIf { stdlibIsBeingCached }
+                        ?.filter { isReferencedByNativeRuntime(it.declarations) }.orEmpty()
 
                 for (file in files) {
                     if (file.isFunctionInterfaceFile) continue
 
-                    context.generationState = NativeGenerationState(
+                    val generationState = NativeGenerationState(
                             context.config,
                             context,
                             CacheDeserializationStrategy.SingleFile(file.path, file.fqName.asString())
                     )
+                    context.generationState = generationState
 
                     module.files += file
-                    if (context.generationState.shouldDefineFunctionClasses)
+                    if (generationState.shouldDefineFunctionClasses)
                         module.files += functionInterfaceFiles
+
+                    if (generationState.shouldLinkRuntimeNativeLibraries) {
+                        filesReferencedByNativeRuntime.forEach {
+                            generationState.llvmImports.add(
+                                    origin = context.standardLlvmSymbolsOrigin,
+                                    fileOrigin = CompiledKlibFileOrigin.CertainFile(it.fqName.asString(), it.path))
+                        }
+                    }
 
                     entireBackend.invoke(phaseConfig, phaserState, context, Unit)
 
