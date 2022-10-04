@@ -12,6 +12,7 @@ import llvm.LLVMInlineAsmDialect
 import llvm.LLVMValueRef
 import org.jetbrains.kotlin.backend.konan.getARCRetainAutoreleasedReturnValueMarker
 import org.jetbrains.kotlin.backend.konan.llvm.*
+import org.jetbrains.kotlin.descriptors.konan.CompiledKlibFileOrigin
 
 internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
     val generationState = codegen.generationState
@@ -33,7 +34,8 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
                     LlvmRetType(llvm.int8PtrType),
                     listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType)),
                     isVararg = true,
-                    origin = context.stdlibModule.llvmSymbolOrigin
+                    origin = context.standardLlvmSymbolsOrigin,
+                    fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
             )).llvmValue
     )
 
@@ -43,7 +45,8 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
                 LlvmRetType(llvm.voidType),
                 listOf(LlvmParamType(llvm.int8PtrType)),
                 listOf(LlvmFunctionAttribute.NoUnwind),
-                origin = context.stdlibModule.llvmSymbolOrigin
+                origin = context.standardLlvmSymbolsOrigin,
+                fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
         )
         llvm.externalFunction(proto)
     }
@@ -52,7 +55,8 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
             "objc_alloc",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType)),
-            origin = context.stdlibModule.llvmSymbolOrigin
+            origin = context.standardLlvmSymbolsOrigin,
+            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
     ))
 
     val objcAutoreleaseReturnValue = llvm.externalFunction(LlvmFunctionProto(
@@ -60,7 +64,8 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType)),
             listOf(LlvmFunctionAttribute.NoUnwind),
-            origin = context.stdlibModule.llvmSymbolOrigin
+            origin = context.standardLlvmSymbolsOrigin,
+            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
     ))
 
     val objcRetainAutoreleasedReturnValue = llvm.externalFunction(LlvmFunctionProto(
@@ -68,7 +73,8 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType)),
             listOf(LlvmFunctionAttribute.NoUnwind),
-            origin = context.stdlibModule.llvmSymbolOrigin
+            origin = context.standardLlvmSymbolsOrigin,
+            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
     ))
 
     val objcRetainAutoreleasedReturnValueMarker: LLVMValueRef? by lazy {

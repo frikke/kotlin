@@ -1,5 +1,6 @@
 package org.jetbrains.kotlin.backend.konan
 
+import org.jetbrains.kotlin.backend.konan.llvm.Llvm
 import org.jetbrains.kotlin.backend.konan.serialization.ClassFieldsSerializer
 import org.jetbrains.kotlin.backend.konan.serialization.InlineFunctionBodyReferenceSerializer
 import org.jetbrains.kotlin.konan.KonanExternalToolFailure
@@ -54,14 +55,29 @@ internal class CacheStorage(val generationState: NativeGenerationState) {
     }
 
     private fun saveCacheBitcodeDependencies() {
-        val bitcodeDependencies = config.resolvedLibraries
+        val libraryToCache = config.cacheSupport.libraryToCache!!
+        val usedBitcode = generationState.llvmImports.usedBitcode().groupBy { it.library }
+        val bitcodeModuleDependencies = mutableListOf<String>()
+        val bitcodeFileDependencies = mutableListOf<String>()
+        val strategy = libraryToCache.strategy as? CacheDeserializationStrategy.SingleFile
+        config.resolvedLibraries
                 .getFullList(TopologicalLibraryOrder)
-                .map { it as KonanLibrary }
-                .filter {
-                    generationState.llvmImports.bitcodeIsUsed(it)
-                            && it != config.cacheSupport.libraryToCache?.klib // Skip loops.
+                .forEach { library ->
+                    require(library is KonanLibrary)
+                    val filesUsed = usedBitcode[library]
+                    if (filesUsed == null && generationState.llvmImports.bitcodeIsUsed(library)
+                            && library != libraryToCache.klib /* Skip loops */) {
+                        // Dependency on the entire library.
+                        bitcodeModuleDependencies.add("${library.uniqueName}${CachedLibraries.DEPENDENCIES_DELIMITER}")
+                    }
+                    filesUsed?.forEach { libraryFile ->
+                        if (library != libraryToCache.klib || strategy?.filePath != libraryFile.filePath /* Skip loops */) {
+                            val fileId = CacheSupport.cacheFileId(libraryFile.fqName, libraryFile.filePath)
+                            bitcodeFileDependencies.add("${library.uniqueName}${CachedLibraries.DEPENDENCIES_DELIMITER}$fileId")
+                        }
+                    }
                 }
-        outputFiles.bitcodeDependenciesFile!!.writeLines(bitcodeDependencies.map { it.uniqueName })
+        outputFiles.bitcodeDependenciesFile!!.writeLines(bitcodeModuleDependencies + bitcodeFileDependencies)
     }
 
     private fun saveInlineFunctionBodies() {
@@ -236,7 +252,8 @@ private fun determineCachesToLink(generationState: NativeGenerationState): Cache
     val staticCaches = mutableListOf<String>()
     val dynamicCaches = mutableListOf<String>()
 
-    generationState.llvm.allCachedBitcodeDependencies.forEach { library ->
+    generationState.llvm.allCachedBitcodeDependencies.forEach { dependency ->
+        val library = dependency.library
         val currentBinaryContainsLibrary = generationState.llvmModuleSpecification.containsLibrary(library)
         val cache = generationState.context.config.cachedLibraries.getLibraryCache(library)
                 ?: error("Library $library is expected to be cached")
@@ -250,7 +267,9 @@ private fun determineCachesToLink(generationState: NativeGenerationState): Cache
             CachedLibraries.Kind.STATIC -> staticCaches
         }
 
-        list += cache.binariesPaths
+        list += if (dependency is Llvm.CachedBitcodeDependency.CertainFiles && cache is CachedLibraries.Cache.PerFile)
+            dependency.files.map { cache.getFileBinaryPath(it) }
+        else cache.binariesPaths
     }
     return CachesToLink(static = staticCaches, dynamic = dynamicCaches)
 }

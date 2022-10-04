@@ -105,7 +105,9 @@ internal class KotlinStaticData(override val generationState: NativeGenerationSt
         }
         return if (isExternal(descriptor)) {
             constPointer(importGlobal(
-                    kind.llvmName, runtime.objHeaderType, origin = descriptor.llvmSymbolOrigin
+                    kind.llvmName, runtime.objHeaderType,
+                    origin = descriptor.llvmSymbolOrigin,
+                    fileOrigin = context.irLinker.getFileOrigin(descriptor)
             ))
         } else {
             generationState.llvmDeclarations.forUnique(kind).pointer

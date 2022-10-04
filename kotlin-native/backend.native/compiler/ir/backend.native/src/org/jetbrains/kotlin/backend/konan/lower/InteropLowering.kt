@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.backend.konan.llvm.IntrinsicType
 import org.jetbrains.kotlin.backend.konan.llvm.tryGetIntrinsicType
 import org.jetbrains.kotlin.backend.konan.serialization.resolveFakeOverrideMaybeAbstract
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.konan.CompiledKlibFileOrigin
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.builders.*
@@ -543,7 +544,9 @@ private class InteropLoweringPart1(val generationState: NativeGenerationState) :
     ): IrExpression = generateWithStubs(call) {
         if (method.parent !is IrClass) {
             // Category-provided.
-            generationState.llvmImports.add(method.llvmSymbolOrigin)
+            generationState.llvmImports.add(
+                    origin = method.llvmSymbolOrigin,
+                    fileOrigin = this@InteropLoweringPart1.context.irLinker.getFileOrigin(method))
         }
 
         this.generateObjCCall(
@@ -1011,7 +1014,9 @@ private class InteropTransformer(
     private fun generateCCall(expression: IrCall): IrExpression {
         val function = expression.symbol.owner
 
-        generationState.llvmImports.add(function.llvmSymbolOrigin)
+        generationState.llvmImports.add(
+                origin = function.llvmSymbolOrigin,
+                fileOrigin = context.irLinker.getFileOrigin(function))
         val exceptionMode = ForeignExceptionMode.byValue(
                 function.konanLibrary?.manifestProperties?.getProperty(ForeignExceptionMode.manifestKey)
         )

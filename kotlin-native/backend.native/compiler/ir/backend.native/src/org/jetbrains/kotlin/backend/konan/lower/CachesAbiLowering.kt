@@ -14,6 +14,7 @@ import org.jetbrains.kotlin.backend.konan.NativeMapping
 import org.jetbrains.kotlin.backend.konan.descriptors.synthesizedName
 import org.jetbrains.kotlin.backend.konan.ir.llvmSymbolOrigin
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
+import org.jetbrains.kotlin.descriptors.konan.CompiledKlibFileOrigin
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.builders.declarations.addValueParameter
@@ -51,6 +52,7 @@ internal class CachesAbiSupport(mapping: NativeMapping, private val irFactory: I
                 returnType = irClass.parentAsClass.defaultType
             }.apply {
                 parent = irClass.getPackageFragment()
+                attributeOwnerId = irClass // To be able to get the file.
 
                 addValueParameter {
                     name = Name.identifier("innerClass")
@@ -73,6 +75,7 @@ internal class CachesAbiSupport(mapping: NativeMapping, private val irFactory: I
                 returnType = actualField.type
             }.apply {
                 parent = irProperty.getPackageFragment()
+                attributeOwnerId = irProperty // To be able to get the file.
 
                 (owner as? IrClass)?.let {
                     addValueParameter {
@@ -150,6 +153,7 @@ internal class ImportCachesAbiTransformer(val generationState: NativeGenerationS
     private val cachesAbiSupport = generationState.context.cachesAbiSupport
     private val innerClassesSupport = generationState.context.innerClassesSupport
     private val llvmImports = generationState.llvmImports
+    private val irLinker = generationState.context.irLinker
 
     override fun lower(irFile: IrFile) {
         irFile.transformChildrenVoid(this)
@@ -168,7 +172,7 @@ internal class ImportCachesAbiTransformer(val generationState: NativeGenerationS
 
             irClass?.isInner == true && innerClassesSupport.getOuterThisField(irClass) == field -> {
                 val accessor = cachesAbiSupport.getOuterThisAccessor(irClass)
-                llvmImports.add(irClass.llvmSymbolOrigin)
+                llvmImports.add(irClass.llvmSymbolOrigin, irLinker.getFileOrigin(irClass))
                 return irCall(expression.startOffset, expression.endOffset, accessor, emptyList()).apply {
                     putValueArgument(0, expression.receiver)
                 }
@@ -176,7 +180,7 @@ internal class ImportCachesAbiTransformer(val generationState: NativeGenerationS
 
             property?.isLateinit == true -> {
                 val accessor = cachesAbiSupport.getLateinitPropertyAccessor(property)
-                llvmImports.add(property.llvmSymbolOrigin)
+                llvmImports.add(property.llvmSymbolOrigin, irLinker.getFileOrigin(property))
                 return irCall(expression.startOffset, expression.endOffset, accessor, emptyList()).apply {
                     if (irClass != null)
                         putValueArgument(0, expression.receiver)
