@@ -179,7 +179,7 @@ class FunctionInlining(
 
         val substituteMap = mutableMapOf<IrValueParameter, IrExpression>()
 
-        fun inline() = inlineFunction(callSite, callee, true)
+        fun inline() = inlineFunction(callSite, callee, true).addIrInlineMarker(callSite, callee)
 
         private fun IrElement.copy(): IrElement {
             return copyIrElement.copy(this)
@@ -191,6 +191,23 @@ class FunctionInlining(
                 return correspondingPropertySymbol!!.owner.hasAnnotation(inlineOnlyName)
             }
             return this.hasAnnotation(inlineOnlyName)
+        }
+
+        private fun IrReturnableBlock.addIrInlineMarker(
+            callSite: IrFunctionAccessExpression,
+            callee: IrFunction,
+            originalExpression: IrFunctionExpression? = null
+        ): IrReturnableBlock {
+            val fileEntry = (parent as? IrDeclaration)?.fileOrNull?.fileEntry
+            if (fileEntry != null && !callee.isInlineOnly()) {
+                val inlinedAt = if (originalExpression == null) parent as IrDeclaration else this@Inliner.callee
+                val marker = IrInlineMarkerImpl(
+                    UNDEFINED_OFFSET, UNDEFINED_OFFSET, callSite as IrCall, callee, originalExpression, inlinedAt
+                )
+                this.statements.add(0, marker)
+            }
+
+            return this
         }
 
         private fun inlineFunction(
@@ -231,13 +248,7 @@ class FunctionInlining(
             val transformer = ParameterSubstitutor()
             val newStatements = mutableListOf<IrStatement>()
 
-            val fileEntry = (parent as? IrDeclaration)?.fileOrNull?.fileEntry
-            if (fileEntry != null && !callee.isInlineOnly()) {
-                newStatements += IrInlineMarkerImpl(
-                    UNDEFINED_OFFSET, UNDEFINED_OFFSET, callSite as IrCall, callee, callee.origin == IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
-                )
-            }
-            newStatements.addAll(evaluationStatements)
+            newStatements.add(evaluationStatements)
             statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
             return IrReturnableBlockImpl(
@@ -332,7 +343,7 @@ class FunctionInlining(
                     irCall,
                     irFunctionExpression.function,
                     false
-                )
+                ).addIrInlineMarker(irCall, irFunctionExpression.function, irFunctionExpression)
                 // Substitute lambda arguments with target function arguments.
                 return newExpression.transform(this, null)
             }
@@ -674,7 +685,7 @@ class FunctionInlining(
             return original.allParameters.single { it.name == this.name && it.startOffset == this.startOffset }
         }
 
-        private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): List<IrStatement> {
+        private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): IrComposite {
             val arguments = buildParameterToArgument(callSite, callee)
             val evaluationStatements = mutableListOf<IrStatement>()
             val substitutor = ParameterSubstitutor()
@@ -714,7 +725,7 @@ class FunctionInlining(
                             ).apply {
                                 statements.add(variableInitializer)
                             },
-                            nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers(),
+                            nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + argument.parameter.name.asStringStripSpecialMarkers(),
                             isMutable = false
                         )
 
@@ -722,7 +733,9 @@ class FunctionInlining(
                     substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol)
                 }
             }
-            return evaluationStatements
+            return IrCompositeImpl(
+                callSite.startOffset, callSite.endOffset, context.irBuiltIns.unitType, null, statements = evaluationStatements
+            )
         }
     }
 
