@@ -640,9 +640,9 @@ class FunctionInlining(
 
         //-------------------------------------------------------------------------//
 
-        private fun evaluateArguments(reference: IrCallableReference<*>): List<IrStatement> {
+        private fun evaluateArguments(reference: IrCallableReference<*>): List<IrVariable> {
             val arguments = reference.getArgumentsWithIr().map { ParameterToArgument(it.first, it.second) }
-            val evaluationStatements = mutableListOf<IrStatement>()
+            val evaluationStatements = mutableListOf<IrVariable>()
             val substitutor = ParameterSubstitutor()
             val referenced = when (reference) {
                 is IrFunctionReference -> reference.symbol.owner
@@ -687,7 +687,7 @@ class FunctionInlining(
 
         private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): IrComposite {
             val arguments = buildParameterToArgument(callSite, callee)
-            val evaluationStatements = mutableListOf<IrStatement>()
+            val evaluationStatements = mutableListOf<IrVariable>()
             val substitutor = ParameterSubstitutor()
             arguments.forEach { argument ->
                 /*
