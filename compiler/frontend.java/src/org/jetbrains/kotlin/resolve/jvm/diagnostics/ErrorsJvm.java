@@ -214,6 +214,9 @@ public interface ErrorsJvm {
 
     DiagnosticFactory2<KtAnnotationEntry, FqName, FqName> REDUNDANT_REPEATABLE_ANNOTATION = DiagnosticFactory2.create(WARNING);
 
+    DiagnosticFactory2<PsiElement, String, String> BASE_CLASS_FIELD_SHADOWS_DERIVED_CLASS_PROPERTY = DiagnosticFactory2.create(WARNING);
+
+
     @SuppressWarnings("UnusedDeclaration")
     Object _initializer = new Object() {
         {

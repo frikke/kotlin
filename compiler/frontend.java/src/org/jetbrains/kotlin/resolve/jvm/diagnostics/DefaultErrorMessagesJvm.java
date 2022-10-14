@@ -237,6 +237,12 @@ public class DefaultErrorMessagesJvm implements DefaultErrorMessages.Extension {
 
         MAP.put(REDUNDANT_REPEATABLE_ANNOTATION,
                 "Please, remove the ''{0}'' annotation, as ''{1}'' is already enough", TO_STRING, TO_STRING);
+
+        MAP.put(BASE_CLASS_FIELD_SHADOWS_DERIVED_CLASS_PROPERTY,
+                "Now field from base class {0} shadows the property with {1}. " +
+                "This behavior will be changed soon in favor of the property. " +
+                "Please use explicit case to {0} if you wish to preserve current behavior. " +
+                "See https://youtrack.jetbrains.com/issue/KT-55017 for details", STRING, STRING);
     }
 
     @NotNull
