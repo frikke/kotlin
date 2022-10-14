@@ -654,7 +654,7 @@ class FunctionInlining(
                     it.argumentExpression.transform( // Arguments may reference the previous ones - substitute them.
                         substitutor,
                         data = null
-                    )
+                    ).let { getValue -> IrGetValueWithoutLocation((getValue as IrGetValue).symbol) }
                 } else {
                     val newVariable =
                         currentScope.scope.createTemporaryVariable(
@@ -706,7 +706,7 @@ class FunctionInlining(
                 val variableInitializer = argument.argumentExpression.transform(substitutor, data = null)
 
                 if (argument.isImmutableVariableLoad) {
-                    substituteMap[argument.parameter] = variableInitializer
+                    substituteMap[argument.parameter] = IrGetValueWithoutLocation((variableInitializer as IrGetValue).symbol)
                     return@forEach
                 }
 
