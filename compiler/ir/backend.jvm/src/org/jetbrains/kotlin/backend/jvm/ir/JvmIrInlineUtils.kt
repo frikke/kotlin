@@ -99,6 +99,11 @@ private fun IrAttributeContainer.getDeclarationBeforeInline(): IrDeclaration? {
     }
 }
 
+fun IrAttributeContainer.getAttributeBeforeInline(): IrAttributeContainer? {
+    if (this.attributeOwnerIdBeforeInline == null) return null
+    return generateSequence(this) { it.attributeOwnerIdBeforeInline }.last()
+}
+
 val IrDeclaration.fileParentBeforeInline: IrFile
     get() {
         val original = (this as? IrAttributeContainer)?.getDeclarationBeforeInline()
