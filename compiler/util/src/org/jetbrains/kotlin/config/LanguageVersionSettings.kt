@@ -318,6 +318,7 @@ enum class LanguageFeature(
     UnitConversionsOnArbitraryExpressions(sinceVersion = null),
     JsAllowImplementingFunctionInterface(sinceVersion = null, kind = UNSTABLE_FEATURE),
     ValueClassesSecondaryConstructorWithBody(sinceVersion = null, kind = UNSTABLE_FEATURE),
+    SafeExternalEnums(sinceVersion = null, kind = UNSTABLE_FEATURE), // KT-30810
     ;
 
     init {
