@@ -257,7 +257,9 @@ class FunctionInlining(
                 endOffset = callSite.endOffset,
                 type = callSite.type,
                 symbol = irReturnableBlockSymbol,
-                origin = InlinedFunction(),
+                origin = InlinedFunction(
+                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE || callSite.symbol.owner.name == OperatorNameConventions.INVOKE
+                ),
                 statements = newStatements,
                 inlineFunctionSymbol = callee.symbol
             ).apply {
@@ -773,7 +775,7 @@ class FunctionInlining(
 }
 
 object InlinedFunctionReference : IrStatementOrigin
-class InlinedFunction : IrStatementOrigin
+class InlinedFunction(val isLambdaInlining: Boolean) : IrStatementOrigin
 
 class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementOrigin {
     override fun toString(): String =
