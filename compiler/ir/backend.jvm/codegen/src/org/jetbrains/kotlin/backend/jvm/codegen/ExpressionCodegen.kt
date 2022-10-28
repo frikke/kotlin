@@ -533,9 +533,6 @@ class ExpressionCodegen(
         val marker = block.statements.first() as IrInlineMarker
         val lineNumberForOffset = getLineNumberForOffset(marker.inlineCall.startOffset)
 
-        marker.inlineCall.markLineNumber(true)
-        mv.nop()
-
         block.getNonDefaultAdditionalStatementsFromInlinedBlock().forEach { exp ->
             exp.accept(this, data).discard()
         }
@@ -562,6 +559,11 @@ class ExpressionCodegen(
 
         block.getDefaultAdditionalStatementsFromInlinedBlock().forEach { exp ->
             exp.accept(this, data).discard()
+        }
+
+        if (marker.inlineCall.hasDefaultArgs()) {
+            // we must reset LN because at this point in original inliner we will inline non default call
+            lastLineNumber = -1
         }
 
         val result = block.getOriginalStatementsFromInlinedBlock().fold(unitValue) { prev, exp ->
@@ -1085,6 +1087,11 @@ class ExpressionCodegen(
 
     override fun visitInlineMarker(declaration: IrInlineMarker, data: BlockInfo): PromisedValue {
         val inlineCall = declaration.inlineCall
+
+        if (!inlineCall.hasDefaultArgs()) {
+            declaration.inlineCall.markLineNumber(startOffset = true)
+            mv.nop()
+        }
 
         val localSmaps = getLocalSmap()
         if (declaration.originalExpression != null) {

@@ -671,7 +671,7 @@ class FunctionInlining(
                                 substitutor,
                                 data = null
                             ),
-                            nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers(),
+                            nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + it.parameter.name.asStringStripSpecialMarkers(),
                             isMutable = false
                         )
 
@@ -707,7 +707,12 @@ class FunctionInlining(
                  */
                 if (argument.isInlinableLambdaArgument || argument.isInlinablePropertyReference) {
                     substituteMap[argument.parameter] = argument.argumentExpression
-                    (argument.argumentExpression as? IrCallableReference<*>)?.let { evaluationStatements += evaluateArguments(it) }
+                    when (val arg = argument.argumentExpression) {
+                        is IrCallableReference<*> -> evaluationStatements += evaluateArguments(arg)
+                        is IrBlock -> if (arg.origin == IrStatementOrigin.ADAPTED_FUNCTION_REFERENCE) {
+                            evaluationStatements += evaluateArguments(arg.statements.last() as IrFunctionReference)
+                        }
+                    }
 
                     return@forEach
                 }
