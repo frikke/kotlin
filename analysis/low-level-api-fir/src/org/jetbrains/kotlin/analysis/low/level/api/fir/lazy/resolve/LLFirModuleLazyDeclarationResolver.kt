@@ -276,6 +276,7 @@ internal class LLFirModuleLazyDeclarationResolver(val moduleComponents: LLFirMod
                     toPhase,
                     checkPCE,
                 )
+                return
             }
 
             is FirFile -> {
