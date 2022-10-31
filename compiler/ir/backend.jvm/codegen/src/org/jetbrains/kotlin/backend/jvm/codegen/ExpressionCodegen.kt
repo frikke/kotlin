@@ -536,10 +536,20 @@ class ExpressionCodegen(
     }
 
     private inline fun stashSmapForGivenTry(tryInfo: TryWithFinallyInfo, block: () -> Unit) {
-        val smapInTryBlock = getLocalSmap().takeLastWhile { it.tryInfo == tryInfo }
+        val lastLineNumberBeforeFinally = lastLineNumber
+        val localSmap = getLocalSmap()
+        val smapCountToDrop = localSmap.indexOfFirst { it.tryInfo == tryInfo }
+        if (smapCountToDrop == -1) {
+            return block()
+        }
+
+        val smapInTryBlock = localSmap.takeLast(localSmap.size - smapCountToDrop)
         smapInTryBlock.forEach { _ -> dropLastLocalSmap() }
         block()
         smapInTryBlock.forEach { addToLocalSmap(it) }
+        if (smapInTryBlock.isNotEmpty()) {
+            lastLineNumber = lastLineNumberBeforeFinally
+        }
     }
 
     private fun visitInlinedFunctionBlock(block: IrBlock, data: BlockInfo): PromisedValue {
@@ -611,7 +621,7 @@ class ExpressionCodegen(
 
 
             if ((block.origin as InlinedFunction).isLambdaInlining) {
-                val overrideLineNumber = marker.callee.isInlineOnly()
+                val overrideLineNumber = getLocalSmap().reversed().firstOrNull { !it.isInvokeOnLambda() }?.inlineMarker?.callee?.isInlineOnly() == true
                 val currentLineNumber = if (overrideLineNumber) getLocalSmap().last().smap.callSite!!.line else lineNumberForOffset
 //        currentLineNumber = getLineNumberForOffset(marker.inlineCall.startOffset)
                 // TODO start_2: reuse code
@@ -628,7 +638,7 @@ class ExpressionCodegen(
                 // TODO end_2
             }
 
-            markLineNumberAfterInlineIfNeeded(marker.callee.isInlineOnly())
+//            markLineNumberAfterInlineIfNeeded(marker.callee.isInlineOnly())
             return result
         }
     }
