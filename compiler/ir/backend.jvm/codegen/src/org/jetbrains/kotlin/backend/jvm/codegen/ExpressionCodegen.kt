@@ -1108,10 +1108,8 @@ class ExpressionCodegen(
     override fun visitInlineMarker(declaration: IrInlineMarker, data: BlockInfo): PromisedValue {
         val inlineCall = declaration.inlineCall
 
-        if (!inlineCall.hasDefaultArgs()) {
-            declaration.inlineCall.markLineNumber(startOffset = true)
-            mv.nop()
-        }
+        declaration.inlineCall.markLineNumber(startOffset = true)
+        mv.nop()
 
         val localSmaps = getLocalSmap()
         if (declaration.originalExpression != null) {
