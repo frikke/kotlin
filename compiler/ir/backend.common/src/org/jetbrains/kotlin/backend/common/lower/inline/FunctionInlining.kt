@@ -649,18 +649,16 @@ class FunctionInlining(
                 else -> error(this)
             }
             arguments.forEach {
+                // Arguments may reference the previous ones - substitute them.
+                val irExpression = it.argumentExpression.transform(substitutor, data = null)
                 val newArgument = if (it.isImmutableVariableLoad) {
-                    it.argumentExpression.transform( // Arguments may reference the previous ones - substitute them.
-                        substitutor,
-                        data = null
-                    ).let { getValue -> IrGetValueWithoutLocation((getValue as IrGetValue).symbol) }
+                    IrGetValueWithoutLocation((irExpression as IrGetValue).symbol)
                 } else {
                     val newVariable =
                         currentScope.scope.createTemporaryVariable(
-                            irExpression = it.argumentExpression.transform( // Arguments may reference the previous ones - substitute them.
-                                substitutor,
-                                data = null
-                            ),
+                            startOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
+                            endOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
+                            irExpression = irExpression,
                             nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + it.parameter.name.asStringStripSpecialMarkers(),
                             isMutable = false
                         )
@@ -723,8 +721,8 @@ class FunctionInlining(
                     val newVariable =
                         currentScope.scope.createTemporaryVariable(
                             irExpression = IrBlockImpl(
-                                variableInitializer.startOffset,
-                                variableInitializer.endOffset,
+                                if (argument.isDefaultArg) variableInitializer.startOffset else UNDEFINED_OFFSET,
+                                if (argument.isDefaultArg) variableInitializer.endOffset else UNDEFINED_OFFSET,
                                 variableInitializer.type,
                                 InlinerExpressionLocationHint((currentScope.irElement as IrSymbolOwner).symbol)
                             ).apply {
