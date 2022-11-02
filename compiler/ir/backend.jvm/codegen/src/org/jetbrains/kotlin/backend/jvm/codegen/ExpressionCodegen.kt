@@ -482,6 +482,11 @@ class ExpressionCodegen(
                 writeLocalVariablesInTable(info, markNewLabel())
             }
         }
+
+        if (expression.statements.firstOrNull() is IrInlineMarker) {
+            markLineNumberAfterInlineIfNeeded(isInsideCondition)
+        }
+
         if (isSynthesizedInitBlock) {
             expression.markLineNumber(startOffset = false)
             mv.nop()
@@ -638,7 +643,8 @@ class ExpressionCodegen(
                 // TODO end_2
             }
 
-//            markLineNumberAfterInlineIfNeeded(marker.callee.isInlineOnly())
+            // takeUnless is required to avoid markLineNumberAfterInlineIfNeeded for inline only
+            lastLineNumber = lineNumberForOffset.takeUnless { noLineNumberScope } ?: -1
             return result
         }
     }
