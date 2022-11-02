@@ -483,7 +483,7 @@ class ExpressionCodegen(
             }
         }
 
-        if (expression.statements.firstOrNull() is IrInlineMarker) {
+        if ((expression.origin as? InlinedFunction)?.isLambdaInlining == false) {
             markLineNumberAfterInlineIfNeeded(isInsideCondition)
         }
 
@@ -612,15 +612,16 @@ class ExpressionCodegen(
             }
             // TODO end_1
 
-            if (!(block.origin as InlinedFunction).isLambdaInlining) {
-                // TODO start_3: reuse from visitReturn and see ReturnableBlockLowering
-                val lastStatement = marker.callee.body!!.statements.last()
-                if (lastStatement is IrReturn && lastStatement.returnTargetSymbol == marker.callee.symbol) {
-                    block.statements.last().markLineNumber(startOffset = true)
-                    mv.nop()
-                }
-                // TODO end_3
+//            if (!(block.origin as InlinedFunction).isLambdaInlining) {
+            // TODO start_3: reuse from visitReturn and see ReturnableBlockLowering
+            val lastStatement = marker.callee.body!!.statements.last()
+            if (lastStatement is IrReturn && lastStatement.returnTargetSymbol == marker.callee.symbol) {
+                // if return is implicit we must put new LN at the end of expression
+                block.statements.last().markLineNumber(startOffset = lastStatement.startOffset != lastStatement.endOffset)
+                mv.nop()
             }
+            // TODO end_3
+//            }
 
             dropLastLocalSmap()
 
@@ -644,7 +645,9 @@ class ExpressionCodegen(
             }
 
             // takeUnless is required to avoid markLineNumberAfterInlineIfNeeded for inline only
-            lastLineNumber = lineNumberForOffset.takeUnless { noLineNumberScope } ?: -1
+            if (!(block.origin as InlinedFunction).isLambdaInlining) {
+                lastLineNumber = lineNumberForOffset.takeUnless { noLineNumberScope } ?: -1
+            }
             return result
         }
     }

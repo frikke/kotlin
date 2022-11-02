@@ -10,9 +10,7 @@ import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.IrDeclaration
 import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.declarations.copyAttributes
-import org.jetbrains.kotlin.ir.expressions.IrBody
-import org.jetbrains.kotlin.ir.expressions.IrCall
-import org.jetbrains.kotlin.ir.expressions.IrFunctionExpression
+import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrBlockImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionReferenceImpl
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
@@ -44,6 +42,11 @@ class ProvisionalFunctionExpressionLowering :
             declaration.endOffset
         )
     )
+
+    override fun visitContainerExpression(expression: IrContainerExpression, data: ProvisionalFunctionExpressionLoweringContext): IrExpression {
+        if (expression !is IrReturnableBlock) return super.visitContainerExpression(expression, data)
+        return super.visitContainerExpression(expression, ProvisionalFunctionExpressionLoweringContext())
+    }
 
     override fun visitFunctionExpression(expression: IrFunctionExpression, data: ProvisionalFunctionExpressionLoweringContext): IrElement {
         expression.transformChildren(this, ProvisionalFunctionExpressionLoweringContext())
