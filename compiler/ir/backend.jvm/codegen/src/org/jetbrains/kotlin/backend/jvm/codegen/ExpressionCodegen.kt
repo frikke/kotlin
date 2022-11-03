@@ -615,10 +615,14 @@ class ExpressionCodegen(
 //            if (!(block.origin as InlinedFunction).isLambdaInlining) {
             // TODO start_3: reuse from visitReturn and see ReturnableBlockLowering
             val lastStatement = marker.callee.body!!.statements.lastOrNull()
-            if (lastStatement is IrReturn && lastStatement.returnTargetSymbol == marker.callee.symbol) {
-                // if return is implicit we must put new LN at the end of expression
-                block.statements.last().markLineNumber(startOffset = lastStatement.startOffset != lastStatement.endOffset)
-                mv.nop()
+            if (lastStatement is IrReturn) {
+                val returnTarget = lastStatement.returnTargetSymbol.owner
+                val originalTarget = (returnTarget as? IrAttributeContainer)?.attributeOwnerId ?: returnTarget
+                if (originalTarget == marker.callee) {
+                    // if return is implicit we must put new LN at the end of expression
+                    block.statements.last().markLineNumber(startOffset = lastStatement.startOffset != lastStatement.endOffset)
+                    mv.nop()
+                }
             }
             // TODO end_3
 //            }
