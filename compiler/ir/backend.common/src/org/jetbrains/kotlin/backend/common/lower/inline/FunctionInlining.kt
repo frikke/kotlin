@@ -733,7 +733,11 @@ class FunctionInlining(
                 // Arguments may reference the previous ones - substitute them.
                 val variableInitializer = argument.argumentExpression.transform(substitutor, data = null)
 
-                if (argument.isImmutableVariableLoad) {
+                // TODO documnent why we need '>= 0'
+                //  basically this is needed for jvm
+                //  see org/jetbrains/kotlin/backend/jvm/codegen/IrInlineCodegen.kt:138
+                //  val onStack = ... else ... if (irValueParameter.index >= 0) ..
+                if (argument.isImmutableVariableLoad && argument.parameter.index >= 0) {
                     substituteMap[argument.parameter] = IrGetValueWithoutLocation((variableInitializer as IrGetValue).symbol)
                     return@forEach
                 }
