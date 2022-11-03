@@ -22,14 +22,12 @@ import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
-import org.jetbrains.kotlin.ir.builders.irComposite
 import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrInlineMarkerImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
-import org.jetbrains.kotlin.ir.symbols.IrReturnableBlockSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
@@ -247,7 +245,17 @@ class FunctionInlining(
             newStatements.add(evaluationStatements)
             statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
-            return irReturnableBlockSymbol.toReturnableBlock(callSite, callee, newStatements).apply {
+            return IrReturnableBlockImpl(
+                startOffset = callSite.startOffset,
+                endOffset = callSite.endOffset,
+                type = callSite.type,
+                symbol = irReturnableBlockSymbol,
+                origin = InlinedFunction(
+                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE || callSite.symbol.owner.name == OperatorNameConventions.INVOKE
+                ),
+                statements = newStatements,
+                inlineFunctionSymbol = callee.symbol
+            ).apply {
                 transformChildrenVoid(object : IrElementTransformerVoid() {
                     override fun visitReturn(expression: IrReturn): IrExpression {
                         expression.transformChildrenVoid(this)
@@ -265,24 +273,6 @@ class FunctionInlining(
                 })
                 patchDeclarationParents(parent) // TODO: Why it is not enough to just run SetDeclarationsParentVisitor?
             }
-        }
-
-        private fun IrReturnableBlockSymbol.toReturnableBlock(
-            callSite: IrFunctionAccessExpression,
-            callee: IrFunction,
-            newStatements: List<IrStatement>
-        ): IrReturnableBlockImpl {
-            return IrReturnableBlockImpl(
-                startOffset = callSite.startOffset,
-                endOffset = callSite.endOffset,
-                type = callSite.type,
-                symbol = this,
-                origin = InlinedFunction(
-                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE || callSite.symbol.owner.name == OperatorNameConventions.INVOKE
-                ),
-                statements = newStatements,
-                inlineFunctionSymbol = callee.symbol
-            )
         }
 
         //---------------------------------------------------------------------//
@@ -498,28 +488,24 @@ class FunctionInlining(
                         (it.statements.first() as IrInlineMarker).originalExpression = irFunctionReference
                         it
                     } else {
-                        val irReturnableBlockSymbol = IrReturnableBlockSymbolImpl()
-//                        val endOffset = statements.lastOrNull()?.endOffset ?: callee.endOffset // TODO
-                        val irBuilder = context.createIrBuilder(irReturnableBlockSymbol, -1, -1)
-
+                        // TODO clear this
                         val stubForInline = context.irFactory.buildFun {
-                            startOffset = immediateCall.startOffset
-                            endOffset = immediateCall.endOffset
+                            startOffset = it.startOffset
+                            endOffset = it.endOffset
                             name = Name.identifier("stub_for_ir_inlining")
                             visibility = DescriptorVisibilities.LOCAL
-                            returnType = immediateCall.type
+                            returnType = it.type
                             isSuspend = function.isSuspend
                         }.apply {
-                            body = context.irFactory.createBlockBody(UNDEFINED_OFFSET, UNDEFINED_OFFSET)
+                            body = context.irFactory.createBlockBody(UNDEFINED_OFFSET, UNDEFINED_OFFSET).apply {
+                                statements += IrReturnImpl(
+                                    UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingType, symbol, it
+                                )
+                            }
                             parent = callee.parent
                         }
 
-                        val emptyComposite = irBuilder.irComposite {
-                            +irBuilder.irComposite {}
-                            +irBuilder.irComposite {}
-                        }
-                        val irReturn = irBuilder.irReturn(super.visitExpression(immediateCall))
-                        irReturnableBlockSymbol.toReturnableBlock(irCall, stubForInline, listOf(emptyComposite, irReturn))
+                        inlineFunction(irCall, stubForInline, false)
                             .addIrInlineMarker(irCall, stubForInline, irFunctionReference)
                     }
                 }
