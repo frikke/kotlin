@@ -17,21 +17,26 @@ import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.builtins.StandardNames
 import org.jetbrains.kotlin.contracts.parsing.ContractsDslNames
+import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
+import org.jetbrains.kotlin.ir.builders.declarations.buildFun
+import org.jetbrains.kotlin.ir.builders.irComposite
 import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrInlineMarkerImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
+import org.jetbrains.kotlin.ir.symbols.IrReturnableBlockSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.*
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
 fun IrValueParameter.isInlineParameter(type: IrType = this.type) =
@@ -187,7 +192,7 @@ class FunctionInlining(
         private fun IrReturnableBlock.addIrInlineMarker(
             callSite: IrFunctionAccessExpression,
             callee: IrFunction,
-            originalExpression: IrFunctionExpression? = null
+            originalExpression: IrAttributeContainer? = null
         ): IrReturnableBlock {
             val fileEntry = (parent as? IrDeclaration)?.fileOrNull?.fileEntry
             if (fileEntry != null) {
@@ -242,17 +247,7 @@ class FunctionInlining(
             newStatements.add(evaluationStatements)
             statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
-            return IrReturnableBlockImpl(
-                startOffset = callSite.startOffset,
-                endOffset = callSite.endOffset,
-                type = callSite.type,
-                symbol = irReturnableBlockSymbol,
-                origin = InlinedFunction(
-                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE || callSite.symbol.owner.name == OperatorNameConventions.INVOKE
-                ),
-                statements = newStatements,
-                inlineFunctionSymbol = callee.symbol
-            ).apply {
+            return irReturnableBlockSymbol.toReturnableBlock(callSite, callee, newStatements).apply {
                 transformChildrenVoid(object : IrElementTransformerVoid() {
                     override fun visitReturn(expression: IrReturn): IrExpression {
                         expression.transformChildrenVoid(this)
@@ -270,6 +265,24 @@ class FunctionInlining(
                 })
                 patchDeclarationParents(parent) // TODO: Why it is not enough to just run SetDeclarationsParentVisitor?
             }
+        }
+
+        private fun IrReturnableBlockSymbol.toReturnableBlock(
+            callSite: IrFunctionAccessExpression,
+            callee: IrFunction,
+            newStatements: List<IrStatement>
+        ): IrReturnableBlockImpl {
+            return IrReturnableBlockImpl(
+                startOffset = callSite.startOffset,
+                endOffset = callSite.endOffset,
+                type = callSite.type,
+                symbol = this,
+                origin = InlinedFunction(
+                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE || callSite.symbol.owner.name == OperatorNameConventions.INVOKE
+                ),
+                statements = newStatements,
+                inlineFunctionSymbol = callee.symbol
+            )
         }
 
         //---------------------------------------------------------------------//
@@ -406,8 +419,8 @@ class FunctionInlining(
                         is IrConstructor -> {
                             val classTypeParametersCount = inlinedFunction.parentAsClass.typeParameters.size
                             IrConstructorCallImpl.fromSymbolOwner(
-                                startOffset,
-                                endOffset,
+                                irFunctionReference.startOffset,
+                                irFunctionReference.endOffset,
                                 inlinedFunction.returnType,
                                 inlinedFunction.symbol,
                                 classTypeParametersCount,
@@ -416,8 +429,8 @@ class FunctionInlining(
                         }
                         is IrSimpleFunction ->
                             IrCallImpl(
-                                startOffset,
-                                endOffset,
+                                irFunctionReference.startOffset,
+                                irFunctionReference.endOffset,
                                 inlinedFunction.returnType,
                                 inlinedFunction.symbol,
                                 inlinedFunction.typeParameters.size,
@@ -479,9 +492,35 @@ class FunctionInlining(
                     for (index in 0 until irFunctionReference.typeArgumentsCount)
                         putTypeArgument(index, irFunctionReference.getTypeArgument(index))
                 }.implicitCastIfNeededTo(irCall.type)
-                return super.visitExpression(immediateCall).transform(this@FunctionInlining, null).apply {
-                    if (this is IrReturnableBlock) {
-                        (this.statements.first() as IrInlineMarker).originalExpression = irFunctionReference
+
+                return super.visitExpression(immediateCall).transform(this@FunctionInlining, null).let {
+                    if (it is IrReturnableBlock) {
+                        (it.statements.first() as IrInlineMarker).originalExpression = irFunctionReference
+                        it
+                    } else {
+                        val irReturnableBlockSymbol = IrReturnableBlockSymbolImpl()
+//                        val endOffset = statements.lastOrNull()?.endOffset ?: callee.endOffset // TODO
+                        val irBuilder = context.createIrBuilder(irReturnableBlockSymbol, -1, -1)
+
+                        val stubForInline = context.irFactory.buildFun {
+                            startOffset = immediateCall.startOffset
+                            endOffset = immediateCall.endOffset
+                            name = Name.identifier("stub_for_ir_inlining")
+                            visibility = DescriptorVisibilities.LOCAL
+                            returnType = immediateCall.type
+                            isSuspend = function.isSuspend
+                        }.apply {
+                            body = context.irFactory.createBlockBody(UNDEFINED_OFFSET, UNDEFINED_OFFSET)
+                            parent = callee.parent
+                        }
+
+                        val emptyComposite = irBuilder.irComposite {
+                            +irBuilder.irComposite {}
+                            +irBuilder.irComposite {}
+                        }
+                        val irReturn = irBuilder.irReturn(super.visitExpression(immediateCall))
+                        irReturnableBlockSymbol.toReturnableBlock(irCall, stubForInline, listOf(emptyComposite, irReturn))
+                            .addIrInlineMarker(irCall, stubForInline, irFunctionReference)
                     }
                 }
             }
