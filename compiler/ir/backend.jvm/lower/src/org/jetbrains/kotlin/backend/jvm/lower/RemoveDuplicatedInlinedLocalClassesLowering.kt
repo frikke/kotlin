@@ -6,20 +6,22 @@
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
-import org.jetbrains.kotlin.backend.common.ir.getAdditionalStatementsFromInlinedBlock
+import org.jetbrains.kotlin.backend.common.ir.getDefaultAdditionalStatementsFromInlinedBlock
+import org.jetbrains.kotlin.backend.common.ir.getNonDefaultAdditionalStatementsFromInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.getOriginalStatementsFromInlinedBlock
-import org.jetbrains.kotlin.backend.common.lower.parentsWithSelf
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.functionInliningPhase
 import org.jetbrains.kotlin.backend.jvm.localDeclarationsPhase
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
-import org.jetbrains.kotlin.ir.declarations.IrAttributeContainer
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrInlineMarker
-import org.jetbrains.kotlin.ir.expressions.*
+import org.jetbrains.kotlin.ir.expressions.IrBlock
+import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrFunctionReference
 import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
 
@@ -53,7 +55,8 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
         if (expression.statements.isNotEmpty() && expression.statements.first() is IrInlineMarker) {
             val marker = expression.statements.first() as IrInlineMarker
             inlineStack += marker
-            expression.getAdditionalStatementsFromInlinedBlock().forEach { it.transform(this, false) }
+            expression.getNonDefaultAdditionalStatementsFromInlinedBlock().forEach { it.transform(this, false) }
+            expression.getDefaultAdditionalStatementsFromInlinedBlock().forEach { it.transform(this, true) }
             expression.getOriginalStatementsFromInlinedBlock().forEach { it.transform(this, true) }
             inlineStack.removeLast()
             return expression
@@ -62,11 +65,11 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
         return super.visitBlock(expression, data)
     }
 
-    // Basically we want to remove all anonymous classes after inline
-    // Except for those that are required to present as a copy, see `isRequiredToBeDeclaredOnCallSite`
+    // Basically we want to remove all anonymous classes after inline. Exceptions are:
+    // 1. classes that must be regenerated (declaration.attributeOwnerIdBeforeInline != null)
+    // 2. classes that are originally declared on call site or are default lambdas (data == true)
     override fun visitClass(declaration: IrClass, data: Boolean): IrStatement {
-        // After first two checks we are sure that class declaration is unchanged and is declared either on call site or on callee site
-        if (inlineStack.isEmpty() || declaration.attributeOwnerIdBeforeInline != null || declaration.isRequiredToBeDeclaredOnCallSite(data)) {
+        if (inlineStack.isEmpty() || declaration.attributeOwnerIdBeforeInline != null || !data) {
             return super.visitClass(declaration, data)
         }
 
@@ -79,20 +82,5 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
     override fun visitFunctionReference(expression: IrFunctionReference, data: Boolean): IrElement {
         expression.symbol.owner.accept(this, data)
         return super.visitFunctionReference(expression, data)
-    }
-
-    // This function return `true` if given declaration must present on call site.
-    // Everything outside "additional" blocks can be dropped
-    // Declarations inside these blocks must remain if it is not a default one
-    // To understand that we can check parent of original declaration
-    private fun IrAttributeContainer.isRequiredToBeDeclaredOnCallSite(originallyDeclaredOnCallSite: Boolean): Boolean {
-        if (originallyDeclaredOnCallSite) return false
-        val declaration = when (val original = this.attributeOwnerId) {
-            is IrClass -> original
-            is IrFunctionExpression -> original.function
-            is IrFunctionReference -> return true // `originallyDeclaredOnCallSite` ensures that this reference was declared on call site
-            else -> return false
-        }
-        return declaration.parentsWithSelf.any { it == inlineStack.last().inlinedAt }
     }
 }
