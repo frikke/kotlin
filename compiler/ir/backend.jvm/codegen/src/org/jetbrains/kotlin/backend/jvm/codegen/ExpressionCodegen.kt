@@ -147,7 +147,7 @@ class ExpressionCodegen(
     val reifiedTypeParametersUsages: ReifiedTypeParametersUsages,
 ) : IrElementVisitor<PromisedValue, BlockInfo>, BaseExpressionCodegen {
     data class AdditionalIrInlineData(val smap: SourceMapCopier, val inlineMarker: IrInlineMarker, val parentSmap: SourceMapper, val tryInfo: TryWithFinallyInfo?) {
-        fun isInvokeOnLambda(): Boolean = inlineMarker.originalExpression != null
+        fun isInvokeOnLambda(): Boolean = inlineMarker.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE
     }
 
     val classToCachedSourceMapper = mutableMapOf<IrDeclaration, SourceMapper>()
@@ -1125,7 +1125,7 @@ class ExpressionCodegen(
         mv.nop()
 
         val localSmaps = getLocalSmap()
-        if (declaration.originalExpression != null) {
+        if (declaration.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE) {
             val callSite = getLocalSmap().lastOrNull()?.smap?.callSite?.takeIf { inlineCall.isInvokeOnDefaultArg(declaration.callee) }
             val classSMAP = context.typeToCachedSMAP[context.getLocalClassType(declaration.originalExpression!!)]!!
 

@@ -485,7 +485,7 @@ class FunctionInlining(
 
                 return super.visitExpression(immediateCall).transform(this@FunctionInlining, null).let {
                     if (it is IrReturnableBlock) {
-                        (it.statements.first() as IrInlineMarker).originalExpression = irFunctionReference
+                        it.statements[0] = IrInlineMarkerImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irCall, inlinedFunction.symbol.owner, irFunctionReference, this@Inliner.callee)
                         it
                     } else {
                         // TODO clear this
