@@ -11,6 +11,7 @@ import org.jetbrains.kotlin.backend.common.ir.getOriginalStatementsFromInlinedBl
 import org.jetbrains.kotlin.backend.common.lower.BOUND_RECEIVER_PARAMETER
 import org.jetbrains.kotlin.backend.common.lower.LoweredStatementOrigins
 import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunction
+import org.jetbrains.kotlin.backend.common.lower.inline.isAdaptedFunctionReference
 import org.jetbrains.kotlin.backend.jvm.*
 import org.jetbrains.kotlin.backend.jvm.intrinsics.IntrinsicMethod
 import org.jetbrains.kotlin.backend.jvm.intrinsics.JavaClassProperty
@@ -222,7 +223,8 @@ class ExpressionCodegen(
             val iterator = getLocalSmap().reversed().iterator()
             while (iterator.hasNext()) {
                 if (previousData?.isInvokeOnLambda() == true) {
-                    while (iterator.hasNext() && iterator.next().inlineMarker.callee != previousData.inlineMarker.inlinedAt) {
+//                    while (iterator.hasNext() && iterator.next().inlineMarker.callee != previousData.inlineMarker.inlinedAt) {
+                    while (iterator.hasNext() && iterator.next().inlineMarker.callee != getInlinedAt(previousData.inlineMarker.originalExpression!!)) {
                         // after lambda's smap we should skip "frames" that were inlined inside body of inline function that accept given lambda
                         continue
                     }
@@ -1118,6 +1120,26 @@ class ExpressionCodegen(
         return default?.function == expected
     }
 
+//    private fun getInlinedAt(): IrElement {
+//        if (getLocalSmap().isEmpty()) return irFunction.originalFunction
+//        return getLocalSmap().last().inlineMarker.callee
+//    }
+
+    private fun getInlinedAt(originalExpression: IrElement): IrFunction? {
+        for (marker in getLocalSmap().map { it.inlineMarker }) {
+            marker.inlineCall.getAllArgumentsWithIr().forEach {
+                val actualArg = (it.second?.attributeOwnerId ?: ((it.first.defaultValue?.expression?.attributeOwnerId as? IrBlock)?.statements?.firstOrNull() as? IrClass)?.attributeOwnerId) as? IrExpression
+                val extractedAnonymousFunction = if (actualArg?.isAdaptedFunctionReference() == true) ((actualArg as IrBlock).statements.last() as IrFunctionReference).attributeOwnerId else actualArg
+                if (extractedAnonymousFunction == originalExpression) {
+                    return marker.callee
+                }
+            }
+        }
+
+//        throw AssertionError("Original expression not found")
+        return null
+    }
+
     override fun visitInlineMarker(declaration: IrInlineMarker, data: BlockInfo): PromisedValue {
         val inlineCall = declaration.inlineCall
 
@@ -1132,8 +1154,10 @@ class ExpressionCodegen(
             val sourceMapper = if (localSmaps.isEmpty()) {
                 smap
             } else {
-                localSmaps.reversed().firstOrNull { it.inlineMarker.callee == declaration.inlinedAt }?.smap?.parent
-                    ?: localSmaps.last().smap.parent // if we are in anonymous inlined class and lambda was declared outside
+//                localSmaps.reversed().firstOrNull { it.inlineMarker.callee == declaration.inlinedAt }?.smap?.parent
+//                    ?: localSmaps.last().smap.parent // if we are in anonymous inlined class and lambda was declared outside
+                localSmaps.reversed().firstOrNull { it.inlineMarker.callee == getInlinedAt(declaration.originalExpression!!) }?.smap?.parent
+                    ?: localSmaps.last().smap.parent
             }
             addToLocalSmap(
                 AdditionalIrInlineData(
