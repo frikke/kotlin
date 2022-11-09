@@ -42,12 +42,11 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
     override fun visitBlock(expression: IrBlock): IrExpression {
         if (expression.wasExplicitlyInlined()) {
             val marker = expression.statements.first() as IrInlineMarker
-            if (visited.contains(marker.callee)) {
-                return super.visitBlock(expression)
+            if (!visited.contains(marker.callee)) {
+                visited += marker.callee
+                // TODO that if callee is located in other module? can we lower it from file lowering?
+                marker.callee.transform(this, null)
             }
-            visited += marker.callee
-            // TODO that if callee is located in other module? can we lower it from file lowering?
-            marker.callee.transform(this, null)
 
             val mustBeRegenerated = (expression as IrReturnableBlock).collectDeclarationsThatMustBeRegenerated()
             expression.setUpCorrectAttributesForAllInnerElements(mustBeRegenerated)
