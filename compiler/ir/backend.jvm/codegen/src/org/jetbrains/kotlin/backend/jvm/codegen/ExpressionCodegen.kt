@@ -1147,7 +1147,7 @@ class ExpressionCodegen(
         mv.nop()
 
         val localSmaps = getLocalSmap()
-        if (declaration.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE) {
+        if (declaration.originalExpression != null) {
             val callSite = getLocalSmap().lastOrNull()?.smap?.callSite?.takeIf { inlineCall.isInvokeOnDefaultArg(declaration.callee) }
             val classSMAP = context.typeToCachedSMAP[context.getLocalClassType(declaration.originalExpression!!)]!!
 

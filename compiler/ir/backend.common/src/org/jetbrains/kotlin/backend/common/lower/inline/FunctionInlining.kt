@@ -251,7 +251,8 @@ class FunctionInlining(
                 type = callSite.type,
                 symbol = irReturnableBlockSymbol,
                 origin = InlinedFunction(
-                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE || callSite.symbol.owner.name == OperatorNameConventions.INVOKE
+                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE
+                            || callee.origin == IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
                 ),
                 statements = newStatements,
                 inlineFunctionSymbol = callee.symbol
@@ -346,7 +347,8 @@ class FunctionInlining(
 
             private fun inlinePropertyReference(expression: IrCall, propertyReference: IrPropertyReference): IrExpression {
                 val getterCall = IrCallImpl.fromSymbolOwner(
-                    expression.startOffset, expression.endOffset, expression.type, propertyReference.getter!!
+                    expression.startOffset, expression.endOffset, expression.type, propertyReference.getter!!,
+                    origin = InlinedFunctionReference
                 )
 
                 fun tryToGetArg(i: Int): IrExpression? {
@@ -365,7 +367,32 @@ class FunctionInlining(
                     }
                 }
 
-                return getterCall
+                return wrapInStubFunction(super.visitExpression(getterCall), expression, propertyReference)
+            }
+
+            private fun wrapInStubFunction(
+                inlinedCall: IrExpression, invokeCall: IrCall, reference: IrCallableReference<*>
+            ): IrReturnableBlock {
+                // TODO clear this
+                // Note: This function is not exist in tree. It is appeared only in marker as intermediate callee.
+                val stubForInline = context.irFactory.buildFun {
+                    startOffset = inlinedCall.startOffset
+                    endOffset = inlinedCall.endOffset
+                    name = Name.identifier("stub_for_ir_inlining")
+                    visibility = DescriptorVisibilities.LOCAL
+                    returnType = inlinedCall.type
+                    isSuspend = reference.symbol.isSuspend
+                }.apply {
+                    body = context.irFactory.createBlockBody(UNDEFINED_OFFSET, UNDEFINED_OFFSET).apply {
+                        statements += IrReturnImpl(
+                            UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingType, symbol, inlinedCall
+                        )
+                    }
+                    parent = callee.parent
+                }
+
+                return inlineFunction(invokeCall, stubForInline, false)
+                    .addIrInlineMarker(invokeCall, stubForInline, reference)
             }
 
             fun inlineAdaptedFunctionReference(irCall: IrCall, irBlock: IrBlock): IrExpression {
@@ -488,25 +515,7 @@ class FunctionInlining(
                         it.statements[0] = IrInlineMarkerImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irCall, inlinedFunction.symbol.owner, irFunctionReference, this@Inliner.callee)
                         it
                     } else {
-                        // TODO clear this
-                        val stubForInline = context.irFactory.buildFun {
-                            startOffset = it.startOffset
-                            endOffset = it.endOffset
-                            name = Name.identifier("stub_for_ir_inlining")
-                            visibility = DescriptorVisibilities.LOCAL
-                            returnType = it.type
-                            isSuspend = function.isSuspend
-                        }.apply {
-                            body = context.irFactory.createBlockBody(UNDEFINED_OFFSET, UNDEFINED_OFFSET).apply {
-                                statements += IrReturnImpl(
-                                    UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingType, symbol, it
-                                )
-                            }
-                            parent = callee.parent
-                        }
-
-                        inlineFunction(irCall, stubForInline, false)
-                            .addIrInlineMarker(irCall, stubForInline, irFunctionReference)
+                        wrapInStubFunction(it, irCall, irFunctionReference)
                     }
                 }
             }
