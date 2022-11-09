@@ -812,10 +812,6 @@ class LocalDeclarationsLowering(
         // will be dropped, we need to create exact the same constructor as for original one. This can be achieved by collecting all
         // original types by looking into type of value access expression, because other type information will be erased.
         private fun IrClass.collectActualTypes(capturedValues: List<IrValueSymbol>): Map<IrValueSymbol, IrType> {
-            if (this.attributeOwnerIdBeforeInline == null) {
-                return capturedValues.associateWith { it.owner.type }
-            }
-
             val capturedSymbolToType = mutableMapOf<IrValueSymbol, IrType>()
             this.acceptVoid(object : IrElementVisitorVoid {
                 private val visited = mutableSetOf<IrElement>()
@@ -842,8 +838,11 @@ class LocalDeclarationsLowering(
             })
 
             if (capturedSymbolToType.size != capturedValues.size) {
-                throw AssertionError("Could not associate all captured variables with corresponding types")
+                capturedValues.toSet().minus(capturedSymbolToType.keys).forEach {
+                    capturedSymbolToType[it] = it.owner.type
+                }
             }
+
             return capturedSymbolToType
         }
 
