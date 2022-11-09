@@ -1189,7 +1189,7 @@ class ExpressionCodegen(
             }
             val sourcePosition = let {
                 val sourceInfo = newSmap.sourceInfo!!
-                val localFileEntry = declaration.inlinedAt.fileEntry
+                val localFileEntry = getLocalSmap().lastOrNull()?.inlineMarker?.callee?.fileEntry ?: fileEntry
                 val line = if (inlineCall.startOffset < 0) lastLineNumber else localFileEntry.getLineNumber(inlineCall.startOffset) + 1
 //                val file = fileEntry.name.drop(1)
                 SourcePosition(line, sourceInfo.sourceFileName!!, sourceInfo.pathOrCleanFQN)
