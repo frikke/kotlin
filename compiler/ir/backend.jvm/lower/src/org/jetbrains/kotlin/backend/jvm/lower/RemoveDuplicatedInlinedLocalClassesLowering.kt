@@ -41,6 +41,7 @@ internal val removeDuplicatedInlinedLocalClasses = makeIrFilePhase(
 // This lowering drops declarations that correspond to second and third type.
 class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext) : IrElementTransformer<Boolean>, FileLoweringPass {
     private val inlineStack = mutableListOf<IrInlineMarker>()
+    private val visited = mutableSetOf<IrElement>()
 
     override fun lower(irFile: IrFile) {
         irFile.transformChildren(this, false)
@@ -80,6 +81,8 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
     }
 
     override fun visitFunctionReference(expression: IrFunctionReference, data: Boolean): IrElement {
+        if (expression.symbol.owner in visited) return expression
+        visited += expression.symbol.owner
         expression.symbol.owner.accept(this, data)
         return super.visitFunctionReference(expression, data)
     }
