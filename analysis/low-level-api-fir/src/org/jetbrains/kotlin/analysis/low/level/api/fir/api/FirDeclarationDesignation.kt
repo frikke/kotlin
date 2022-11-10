@@ -18,6 +18,8 @@ import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTag
 import org.jetbrains.kotlin.fir.symbols.impl.ConeClassLookupTagWithFixedSymbol
 import org.jetbrains.kotlin.analysis.utils.errors.buildErrorWithAttachment
 import org.jetbrains.kotlin.analysis.utils.errors.checkWithAttachmentBuilder
+import org.jetbrains.kotlin.fir.psi
+import org.jetbrains.kotlin.psi.KtDestructuringDeclaration
 
 class FirDeclarationDesignationWithFile(
     path: List<FirDeclaration>,
@@ -67,6 +69,13 @@ private fun collectDesignationPath(declaration: FirDeclaration): List<FirDeclara
                     val klass = declaration.containingClassLookupTag() ?: return emptyList()
                     if (klass.classId.isLocal) return null
                     klass.toFirRegularClassFromSameSession(declaration.moduleData.session)
+                }
+                is FirErrorProperty -> {
+                    if (declaration.psi is KtDestructuringDeclaration) {
+                        null
+                    } else {
+                        return null
+                    }
                 }
                 else -> return null
             }
