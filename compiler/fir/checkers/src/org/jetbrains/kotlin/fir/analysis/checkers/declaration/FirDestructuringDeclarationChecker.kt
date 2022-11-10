@@ -15,7 +15,8 @@ import org.jetbrains.kotlin.fir.declarations.FirProperty
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase
 import org.jetbrains.kotlin.fir.declarations.FirValueParameter
 import org.jetbrains.kotlin.fir.declarations.FirVariable
-import org.jetbrains.kotlin.fir.diagnostics.ConeDestructuringDeclarationsOnTopLevel
+import org.jetbrains.kotlin.fir.diagnostics.ConeSimpleDiagnostic
+import org.jetbrains.kotlin.fir.diagnostics.DiagnosticKind
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.references.FirErrorNamedReference
 import org.jetbrains.kotlin.fir.resolve.diagnostics.*
@@ -93,7 +94,7 @@ object FirDestructuringDeclarationChecker : FirPropertyChecker() {
         val needToReport =
             when (initializer) {
                 null -> true
-                is FirErrorExpression -> initializer.diagnostic is ConeDestructuringDeclarationsOnTopLevel
+                is FirErrorExpression -> (initializer.diagnostic as? ConeSimpleDiagnostic)?.kind == DiagnosticKind.Syntax
                 else -> false
             }
         if (needToReport) {
