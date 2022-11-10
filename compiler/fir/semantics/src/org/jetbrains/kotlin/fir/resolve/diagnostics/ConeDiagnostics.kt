@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.KtSourceElement
 import org.jetbrains.kotlin.fir.declarations.FirVariable
 import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnostic
 import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnosticWithSource
+import org.jetbrains.kotlin.fir.diagnostics.ConeSimpleDiagnostic
 import org.jetbrains.kotlin.fir.render
 import org.jetbrains.kotlin.fir.resolve.calls.AbstractCandidate
 import org.jetbrains.kotlin.fir.symbols.FirBasedSymbol
@@ -240,4 +241,9 @@ class ConeAmbiguousAlteredAssign(val altererNames: List<String?>) : ConeDiagnost
 
 object ConeForbiddenIntersection : ConeDiagnostic {
     override val reason: String get() = "Such an intersection type is not allowed"
+}
+
+object ConeDestructuringDeclarationsOnTopLevel : ConeDiagnostic {
+    override val reason: String
+        get() = "Destructuring declarations are only allowed for local variables/values"
 }

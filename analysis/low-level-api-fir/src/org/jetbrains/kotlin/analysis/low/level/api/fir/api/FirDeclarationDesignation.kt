@@ -18,8 +18,7 @@ import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTag
 import org.jetbrains.kotlin.fir.symbols.impl.ConeClassLookupTagWithFixedSymbol
 import org.jetbrains.kotlin.analysis.utils.errors.buildErrorWithAttachment
 import org.jetbrains.kotlin.analysis.utils.errors.checkWithAttachmentBuilder
-import org.jetbrains.kotlin.fir.psi
-import org.jetbrains.kotlin.psi.KtDestructuringDeclaration
+import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeDestructuringDeclarationsOnTopLevel
 
 class FirDeclarationDesignationWithFile(
     path: List<FirDeclaration>,
@@ -71,10 +70,10 @@ private fun collectDesignationPath(declaration: FirDeclaration): List<FirDeclara
                     klass.toFirRegularClassFromSameSession(declaration.moduleData.session)
                 }
                 is FirErrorProperty -> {
-                    if (declaration.psi is KtDestructuringDeclaration) {
-                        null
+                    return if (declaration.diagnostic == ConeDestructuringDeclarationsOnTopLevel) {
+                        emptyList()
                     } else {
-                        return null
+                        null
                     }
                 }
                 else -> return null
