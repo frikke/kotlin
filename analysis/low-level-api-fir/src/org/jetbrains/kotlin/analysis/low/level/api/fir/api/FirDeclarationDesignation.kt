@@ -18,7 +18,7 @@ import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTag
 import org.jetbrains.kotlin.fir.symbols.impl.ConeClassLookupTagWithFixedSymbol
 import org.jetbrains.kotlin.analysis.utils.errors.buildErrorWithAttachment
 import org.jetbrains.kotlin.analysis.utils.errors.checkWithAttachmentBuilder
-import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeDestructuringDeclarationsOnTopLevel
+import org.jetbrains.kotlin.fir.diagnostics.ConeDestructuringDeclarationsOnTopLevel
 
 class FirDeclarationDesignationWithFile(
     path: List<FirDeclaration>,
