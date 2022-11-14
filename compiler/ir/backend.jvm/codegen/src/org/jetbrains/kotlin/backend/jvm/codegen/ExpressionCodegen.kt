@@ -1067,46 +1067,14 @@ class ExpressionCodegen(
 
     private fun IrFunction.getClassWithDeclaredFunction(): IrClass? {
         val parent = this.parentClassOrNull ?: return null
-        if (!parent.isInterface) return parent
+        if (!parent.isInterface || this.hasJvmDefault()) return parent
         return parent.declarations.singleOrNull { it.origin == JvmLoweredDeclarationOrigin.DEFAULT_IMPLS } as IrClass
-    }
-
-    private fun IrFunction.getAnalogWithDefaultParameters(): IrFunction {
-        return this.getClassWithDeclaredFunction()!!.declarations.filterIsInstance<IrSimpleFunction>().single {
-            it.attributeOwnerId == this && it.origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER
-        }
-    }
-
-    private fun IrFunction.getAllDefaultValueParameters(): List<IrElement> {
-        assert(this.origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER)
-        val defaultArgs = mutableListOf<IrElement>()
-        this.body?.accept(object : IrElementVisitorVoid {
-            override fun visitElement(element: IrElement) {
-                element.acceptChildrenVoid(this)
-            }
-
-            override fun visitBranch(branch: IrBranch) {
-                defaultArgs += branch.result.let { (it as? IrSetValue)?.value ?: it }
-            }
-        }, null)
-        return defaultArgs
     }
 
     private fun IrCall.hasDefaultArgs(): Boolean {
         val owner = this.symbol.owner
         return (0 until this.valueArgumentsCount).any {
             this.getValueArgument(it) == null && owner.valueParameters[it].defaultValue != null
-        }
-    }
-
-    private fun IrCall.markDefaultArgsWithCorrespondingLineNumber(defaultArgs: List<IrElement>) {
-        var defaultsIndex = 0
-        val owner = this.symbol.owner
-        (0 until this.valueArgumentsCount).forEach {
-            if (this.getValueArgument(it) == null && owner.valueParameters[it].defaultValue != null) {
-                defaultArgs[defaultsIndex++].markLineNumber(true)
-                mv.nop()
-            }
         }
     }
 
@@ -1120,11 +1088,6 @@ class ExpressionCodegen(
         return default?.function == expected
     }
 
-//    private fun getInlinedAt(): IrElement {
-//        if (getLocalSmap().isEmpty()) return irFunction.originalFunction
-//        return getLocalSmap().last().inlineMarker.callee
-//    }
-
     private fun getInlinedAt(originalExpression: IrElement): IrFunction? {
         for (marker in getLocalSmap().map { it.inlineMarker }) {
             marker.inlineCall.getAllArgumentsWithIr().forEach {
@@ -1136,7 +1099,6 @@ class ExpressionCodegen(
             }
         }
 
-//        throw AssertionError("Original expression not found")
         return null
     }
 
@@ -1168,18 +1130,19 @@ class ExpressionCodegen(
                 )
             )
         } else {
-            val allNodeAndSmap = declaration.callee.getClassWithDeclaredFunction()!!.declarations
+            val callee = declaration.callee.getClassWithDeclaredFunction()!!.declarations
+                .asSequence()
                 .filterIsInstance<IrSimpleFunction>()
-                .filter { it.attributeOwnerId == (declaration.callee as IrSimpleFunction).attributeOwnerId }
-                .filter { !inlineCall.hasDefaultArgs() || it.name.asString().endsWith("\$default") }
-            val nodeAndSmap = allNodeAndSmap.first().let { actualCallee ->
+                .filter { it.attributeOwnerId == declaration.callee } // original callee could be transformed after lowerings, so we must get correct one
+                .filter { if (inlineCall.hasDefaultArgs()) it.origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER else it.origin != IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER }
+                .filter { it.origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE } // filter functions with $$forInline postfix
+                .single()
+            val nodeAndSmap = callee.let { actualCallee ->
                 val callToActualCallee = IrCallImpl.fromSymbolOwner(inlineCall.startOffset, inlineCall.endOffset, inlineCall.type, actualCallee.symbol)
-                val callable = methodSignatureMapper.mapToCallableMethod(callToActualCallee, irFunction)
+                val callable = methodSignatureMapper.mapToCallableMethod(callToActualCallee, null)
                 val callGenerator = getOrCreateCallGenerator(callToActualCallee, data, callable.signature)
                 (callGenerator as InlineCodegen<*>).compileInline()
             }
-            // there can be several functions with given attributeOwnerId (for example default one, or with $$forInline postfix)
-            // we need to compile them all (to cache smap) but we are interested only in single smap for now
 
             val key = declaration.callee.parentClassOrNull!!
             val newSmap = if (localSmaps.isEmpty()) {
