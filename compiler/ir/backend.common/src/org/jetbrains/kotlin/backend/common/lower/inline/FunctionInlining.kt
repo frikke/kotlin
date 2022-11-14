@@ -319,6 +319,8 @@ class FunctionInlining(
                     functionArgument is IrFunctionReference ->
                         inlineFunctionReference(expression, functionArgument, functionArgument.symbol.owner)
 
+                    functionArgument is IrPropertyReference && functionArgument.field != null -> inlineField(expression, functionArgument)
+
                     functionArgument is IrPropertyReference -> inlinePropertyReference(expression, functionArgument)
 
                     functionArgument.isAdaptedFunctionReference() ->
@@ -343,6 +345,10 @@ class FunctionInlining(
                 ).addIrInlineMarker(irCall, irFunctionExpression.function, irFunctionExpression)
                 // Substitute lambda arguments with target function arguments.
                 return newExpression.transform(this, null)
+            }
+
+            private fun inlineField(invokeCall: IrCall, propertyReference: IrPropertyReference): IrExpression {
+                return wrapInStubFunction(invokeCall, invokeCall, propertyReference)
             }
 
             private fun inlinePropertyReference(expression: IrCall, propertyReference: IrPropertyReference): IrExpression {
@@ -384,9 +390,15 @@ class FunctionInlining(
                     isSuspend = reference.symbol.isSuspend
                 }.apply {
                     body = context.irFactory.createBlockBody(UNDEFINED_OFFSET, UNDEFINED_OFFSET).apply {
-                        statements += IrReturnImpl(
-                            UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingType, symbol, inlinedCall
-                        )
+                        val statement = if (reference is IrPropertyReference && reference.field != null) {
+                            val field = reference.field!!.owner
+                            val boundReceiver = reference.dispatchReceiver ?: reference.extensionReceiver
+                            val fieldReceiver = if (field.isStatic) null else boundReceiver
+                            IrGetFieldImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, field.symbol, field.type, fieldReceiver)
+                        } else {
+                            IrReturnImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingType, symbol, inlinedCall)
+                        }
+                        statements += statement
                     }
                     parent = callee.parent
                 }
@@ -710,6 +722,28 @@ class FunctionInlining(
             return evaluationStatements
         }
 
+        private fun evaluateReceiverForPropertyWithField(reference: IrPropertyReference): IrVariable? {
+            val argument = reference.dispatchReceiver ?: reference.extensionReceiver ?: return null
+            // Arguments may reference the previous ones - substitute them.
+            val irExpression = argument.transform(ParameterSubstitutor(), data = null)
+
+            val newVariable = currentScope.scope.createTemporaryVariable(
+                startOffset = UNDEFINED_OFFSET,
+                endOffset = UNDEFINED_OFFSET,
+                irExpression = irExpression,
+                nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_this",
+                isMutable = false
+            )
+
+            val newArgument = IrGetValueWithoutLocation(newVariable.symbol)
+            when {
+                reference.dispatchReceiver != null -> reference.dispatchReceiver = newArgument
+                reference.extensionReceiver != null -> reference.extensionReceiver = newArgument
+            }
+
+            return newVariable
+        }
+
         private fun IrValueParameter.getOriginalParameter(): IrValueParameter {
             if (this.parent !is IrFunction) return this
             val original = (this.parent as IrFunction).originalFunction
@@ -729,9 +763,12 @@ class FunctionInlining(
                  */
                 if (argument.isInlinableLambdaArgument || argument.isInlinablePropertyReference) {
                     substituteMap[argument.parameter] = argument.argumentExpression
-                    when (val arg = argument.argumentExpression) {
-                        is IrCallableReference<*> -> evaluationStatements += evaluateArguments(arg)
-                        is IrBlock -> if (arg.origin == IrStatementOrigin.ADAPTED_FUNCTION_REFERENCE) {
+                    val arg = argument.argumentExpression
+                    when {
+                        // This first branch is required to avoid assertion in `getArgumentsWithIr`
+                        arg is IrPropertyReference && arg.field != null -> evaluateReceiverForPropertyWithField(arg)?.let { evaluationStatements += it }
+                        arg is IrCallableReference<*> -> evaluationStatements += evaluateArguments(arg)
+                        arg is IrBlock -> if (arg.origin == IrStatementOrigin.ADAPTED_FUNCTION_REFERENCE) {
                             evaluationStatements += evaluateArguments(arg.statements.last() as IrFunctionReference)
                         }
                     }
