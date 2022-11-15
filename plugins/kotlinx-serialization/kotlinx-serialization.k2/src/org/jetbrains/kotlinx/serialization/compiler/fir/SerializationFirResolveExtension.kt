@@ -179,7 +179,7 @@ class SerializationFirResolveExtension(session: FirSession) : FirDeclarationGene
             symbol = FirNamedFunctionSymbol(callableId)
             origin = SerializationPluginKey.origin
             status = original.status.copy(modality = Modality.FINAL)
-
+            excludeFromJsExport()
         }
         return listOf(copy.symbol)
     }
@@ -220,6 +220,8 @@ class SerializationFirResolveExtension(session: FirSession) : FirDeclarationGene
                     isNullable = false
                 )
             }
+
+            excludeFromJsExport()
         }
         return f.symbol
     }
@@ -246,6 +248,7 @@ class SerializationFirResolveExtension(session: FirSession) : FirDeclarationGene
                 dispatchReceiverType = owner.defaultType()
                 propertySymbol = this@buildPropertyCopy.symbol
             }
+            excludeFromJsExport()
         }
         return listOf(copy.symbol)
     }
@@ -325,6 +328,8 @@ class SerializationFirResolveExtension(session: FirSession) : FirDeclarationGene
                     )
                 ), isNullable = false
             ).toFirResolvedTypeRef()
+
+            excludeFromJsExport()
         }
         return serializerFirClass.symbol
     }
@@ -348,10 +353,13 @@ class SerializationFirResolveExtension(session: FirSession) : FirDeclarationGene
             name = SpecialNames.DEFAULT_NAME_FOR_COMPANION_OBJECT
             symbol = FirRegularClassSymbol(classId)
             superTypeRefs += session.builtinTypes.anyType
+
             if (with(session) { owner.companionNeedsSerializerFactory }) {
                 val serializerFactoryClassId = ClassId(SerializationPackages.internalPackageFqName, SERIALIZER_FACTORY_INTERFACE_NAME)
                 superTypeRefs += serializerFactoryClassId.constructClassLikeType(emptyArray(), false).toFirResolvedTypeRef()
             }
+
+            excludeFromJsExport()
         }
         return regularClass.symbol
     }
