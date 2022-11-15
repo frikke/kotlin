@@ -11,6 +11,7 @@ import llvm.*
 import org.jetbrains.kotlin.backend.common.atMostOne
 import org.jetbrains.kotlin.backend.konan.*
 import org.jetbrains.kotlin.backend.konan.Context
+import org.jetbrains.kotlin.backend.konan.descriptors.isInteropLibrary
 import org.jetbrains.kotlin.library.resolver.TopologicalLibraryOrder
 import org.jetbrains.kotlin.backend.konan.ir.llvmSymbolOrigin
 import org.jetbrains.kotlin.descriptors.konan.*
@@ -464,9 +465,12 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
                             add(CacheSupport.cacheFileId(it.fqName, it.filePath))
                         }
                         val moduleDeserializer = moduleDeserializers[library]
-                                ?: error("No module deserializer for cached library ${library.uniqueName}")
-                        moduleDeserializer.eagerInitializedFiles.forEach {
-                            add(CacheSupport.cacheFileId(it.fqName.asString(), it.path))
+                        if (moduleDeserializer == null) {
+                            require(library.isInteropLibrary()) { "No module deserializer for cached library ${library.uniqueName}" }
+                        } else {
+                            moduleDeserializer.eagerInitializedFiles.forEach {
+                                add(CacheSupport.cacheFileId(it.fqName.asString(), it.path))
+                            }
                         }
                     }
 
