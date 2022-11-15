@@ -376,15 +376,11 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
 
         private fun findStdlibFile(fqName: FqName, fileName: String): LlvmImports.LibraryFile {
             val stdlib = (context.standardLlvmSymbolsOrigin as? DeserializedKlibModuleOrigin)?.library
-                    ?: context.config.libraryToCache?.klib
-                    ?: error("Can't find stdlib library")
-            val stdlibModuleFiles = if (context.moduleDescriptor.isNativeStdlib())
-                context.irModule!!.files
-            else
-                (context.irLinker.moduleDeserializers[context.stdlibModule] ?: error("No deserializer for stdlib"))
-                        .files
-            val file = stdlibModuleFiles.atMostOne { it.fqName == fqName && it.name == fileName }
-                    ?: error("Can't find $fileName")
+                    ?: error("Can't find stdlib")
+            val stdlibDeserializer = context.irLinker.moduleDeserializers[context.stdlibModule]
+                    ?: error("No deserializer for stdlib")
+            val file = stdlibDeserializer.files.atMostOne { it.fqName == fqName && it.name == fileName }
+                    ?: error("Can't find $fqName:$fileName in stdlib")
             return LlvmImports.LibraryFile(stdlib, file.fqName.asString(), file.path)
         }
 
