@@ -7,12 +7,12 @@ package kotlin.dom
 
 import org.w3c.dom.Element
 import org.w3c.dom.Node
-import kotlin.internal.LowPriorityInOverloadResolution
 import kotlinx.dom.appendText as newAppendText
 import kotlinx.dom.clear as newClear
 
 /** Removes all the children from this node. */
-@LowPriorityInOverloadResolution
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+@kotlin.internal.LowPriorityInOverloadResolution
 @Deprecated(
     message = "This API is moved to another package, use 'kotlinx.dom.clear' instead.",
     replaceWith = ReplaceWith("this.clear()", "kotlinx.dom.clear")
@@ -25,7 +25,8 @@ public inline fun Node.clear() = this.newClear()
  *
  * @return this element
  */
-@LowPriorityInOverloadResolution
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+@kotlin.internal.LowPriorityInOverloadResolution
 @Deprecated(
     message = "This API is moved to another package, use 'kotlinx.dom.appendText' instead.",
     replaceWith = ReplaceWith("this.appendText(text)", "kotlinx.dom.appendText")

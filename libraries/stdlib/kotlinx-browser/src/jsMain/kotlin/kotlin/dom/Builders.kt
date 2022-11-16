@@ -7,7 +7,6 @@ package kotlin.dom
 
 import org.w3c.dom.Document
 import org.w3c.dom.Element
-import kotlin.internal.LowPriorityInOverloadResolution
 import kotlinx.dom.appendElement as newAppendElement
 import kotlinx.dom.createElement as newCreateElement
 
@@ -16,7 +15,8 @@ import kotlinx.dom.createElement as newCreateElement
  *
  * The element is initialized with the specified [init] function.
  */
-@LowPriorityInOverloadResolution
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+@kotlin.internal.LowPriorityInOverloadResolution
 @Deprecated(
     message = "This API is moved to another package, use 'kotlinx.dom.createElement' instead.",
     replaceWith = ReplaceWith("this.createElement(name, init)", "kotlinx.dom.createElement")
@@ -29,7 +29,8 @@ public inline fun Document.createElement(name: String, noinline init: Element.()
  *
  * The element is initialized with the specified [init] function.
  */
-@LowPriorityInOverloadResolution
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+@kotlin.internal.LowPriorityInOverloadResolution
 @Deprecated(
     message = "This API is moved to another package, use 'kotlinx.dom.appendElement' instead.",
     replaceWith = ReplaceWith("this.appendElement(name, init)", "kotlinx.dom.appendElement")
