@@ -798,7 +798,7 @@ class FunctionInlining(
                             irExpression = IrBlockImpl(
                                 if (argument.isDefaultArg) variableInitializer.startOffset else UNDEFINED_OFFSET,
                                 if (argument.isDefaultArg) variableInitializer.endOffset else UNDEFINED_OFFSET,
-                                variableInitializer.type,
+                                argument.parameter.type,
                                 InlinerExpressionLocationHint((currentScope.irElement as IrSymbolOwner).symbol)
                             ).apply {
                                 statements.add(variableInitializer)

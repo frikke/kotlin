@@ -65,8 +65,8 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             private var processingBeforeInlineDeclaration = false
 
             fun IrContainerExpression.getInlinableParameters(): List<IrValueParameter> {
-                val call = (this.statements.first() as IrInlineMarker).inlineCall
-                return call.getAllArgumentsWithIr()
+                val marker = this.statements.first() as IrInlineMarker
+                return marker.inlineCall.getAllArgumentsWithIr(marker.callee)
                     .filter { (param, arg) ->
                         param.isInlineParameter() && (arg ?: param.defaultValue?.expression) is IrFunctionExpression ||
                                 arg is IrGetValue && arg.symbol.owner in inlinableParameters
@@ -75,9 +75,9 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             }
 
             fun IrContainerExpression.getReifiedArguments(): List<IrType> {
-                val call = (this.statements.first() as IrInlineMarker).inlineCall
-                return call.symbol.owner.typeParameters.mapIndexedNotNull { index, param ->
-                    call.getTypeArgument(index)?.takeIf { param.isReified }
+                val marker = this.statements.first() as IrInlineMarker
+                return marker.callee.typeParameters.mapIndexedNotNull { index, param ->
+                    marker.inlineCall.getTypeArgument(index)?.takeIf { param.isReified }
                 }
             }
 

@@ -96,7 +96,6 @@ fun IrFunctionAccessExpression.getArgumentsWithSymbols(): List<Pair<IrValueParam
  * The arguments are to be evaluated in the same order as they appear in the resulting list.
  */
 fun IrMemberAccessExpression<*>.getAllArgumentsWithIr(): List<Pair<IrValueParameter, IrExpression?>> {
-    val res = mutableListOf<Pair<IrValueParameter, IrExpression?>>()
     val irFunction = when (this) {
         is IrFunctionAccessExpression -> this.symbol.owner
         is IrFunctionReference -> this.symbol.owner
@@ -106,6 +105,16 @@ fun IrMemberAccessExpression<*>.getAllArgumentsWithIr(): List<Pair<IrValueParame
         }
         else -> error(this)
     }
+
+    return getAllArgumentsWithIr(irFunction)
+}
+
+/**
+ * Binds all arguments represented in the IR to the parameters of the explicitly given function.
+ * The arguments are to be evaluated in the same order as they appear in the resulting list.
+ */
+fun IrMemberAccessExpression<*>.getAllArgumentsWithIr(irFunction: IrFunction): List<Pair<IrValueParameter, IrExpression?>> {
+    val res = mutableListOf<Pair<IrValueParameter, IrExpression?>>()
 
     dispatchReceiver?.let { arg ->
         irFunction.dispatchReceiverParameter?.let { parameter -> res += (parameter to arg) }
