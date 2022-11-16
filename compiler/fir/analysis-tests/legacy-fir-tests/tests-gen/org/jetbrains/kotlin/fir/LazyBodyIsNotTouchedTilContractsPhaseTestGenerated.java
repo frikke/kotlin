@@ -3007,6 +3007,11 @@ public class LazyBodyIsNotTouchedTilContractsPhaseTestGenerated extends Abstract
             runTest("compiler/fir/analysis-tests/testData/resolve/problems/objectDerivedFromInnerClass.kt");
         }
 
+        @TestMetadata("propertyFieldShadow.kt")
+        public void testPropertyFieldShadow() throws Exception {
+            runTest("compiler/fir/analysis-tests/testData/resolve/problems/propertyFieldShadow.kt");
+        }
+
         @TestMetadata("questionableSmartCast.kt")
         public void testQuestionableSmartCast() throws Exception {
             runTest("compiler/fir/analysis-tests/testData/resolve/problems/questionableSmartCast.kt");

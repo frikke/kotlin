@@ -13,8 +13,13 @@ import org.jetbrains.kotlin.fir.languageVersionSettings
 import org.jetbrains.kotlin.fir.resolve.BodyResolveComponents
 import org.jetbrains.kotlin.fir.resolve.calls.AbstractConeCallConflictResolver
 import org.jetbrains.kotlin.fir.resolve.calls.Candidate
+import org.jetbrains.kotlin.fir.resolve.fullyExpandedType
 import org.jetbrains.kotlin.fir.resolve.inference.InferenceComponents
-import org.jetbrains.kotlin.fir.resolve.transformers.body.resolve.FirAbstractBodyResolveTransformer
+import org.jetbrains.kotlin.fir.resolve.lookupSuperTypes
+import org.jetbrains.kotlin.fir.resolve.toFirRegularClassSymbol
+import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTag
+import org.jetbrains.kotlin.fir.types.ConeClassLikeType
+import org.jetbrains.kotlin.fir.unwrapFakeOverrides
 import org.jetbrains.kotlin.resolve.calls.results.TypeSpecificityComparator
 
 class JvmPlatformOverloadsConflictResolver(
@@ -31,21 +36,57 @@ class JvmPlatformOverloadsConflictResolver(
             return candidates
         }
         val result = mutableSetOf<Candidate>()
-        outerLoop@ for (myCandidate in candidates) {
-            val me = myCandidate.symbol.fir
-            if (me is FirProperty && me.symbol.containingClassLookupTag() != null) {
-                for (otherCandidate in candidates) {
-                    val other = otherCandidate.symbol.fir
-                    if (other is FirField && other.symbol.containingClassLookupTag() != null) {
-                        // NB: FE 1.0 does class equivalence check here
-                        // However, in FIR container classes aren't the same for our samples (see fieldPropertyOverloads.kt)
-                        // E.g. we can have SomeConcreteJavaEnum for field and kotlin.Enum for static property 'name'
-                        continue@outerLoop
-                    }
+        for (myCandidate in candidates) {
+            when (val me = myCandidate.symbol.fir) {
+                is FirProperty -> if (!me.isShadowedByFieldCandidate(candidates)) {
+                    result += myCandidate
                 }
+                is FirField -> if (!me.isShadowedByPropertyCandidate(candidates)) {
+                    result += myCandidate
+                }
+                else -> result += myCandidate
             }
-            result += myCandidate
         }
         return result
+    }
+
+    private fun FirProperty.isShadowedByFieldCandidate(candidates: Set<Candidate>): Boolean {
+        val propertyContainingClassLookupTag = unwrapFakeOverrides().symbol.containingClassLookupTag() ?: return false
+        for (otherCandidate in candidates) {
+            val field = otherCandidate.symbol.fir as? FirField ?: continue
+            val fieldContainingClassLookupTag = field.unwrapFakeOverrides().symbol.containingClassLookupTag()
+            if (fieldContainingClassLookupTag != null) {
+                // NB: FE 1.0 does class equivalence check here
+                // However, in FIR container classes aren't the same for our samples (see fieldPropertyOverloads.kt)
+                // E.g. we can have SomeConcreteJavaEnum for field and kotlin.Enum for static property 'name'
+                return !propertyContainingClassLookupTag.strictlyDerivedFrom(fieldContainingClassLookupTag)
+            }
+        }
+        return false
+    }
+
+    private fun FirField.isShadowedByPropertyCandidate(candidates: Set<Candidate>): Boolean {
+        val fieldContainingClassLookupTag = unwrapFakeOverrides().symbol.containingClassLookupTag() ?: return false
+        for (otherCandidate in candidates) {
+            val property = otherCandidate.symbol.fir as? FirProperty ?: continue
+            val propertyContainingClassLookupTag = property.unwrapFakeOverrides().symbol.containingClassLookupTag()
+            if (propertyContainingClassLookupTag != null) {
+                // NB: FE 1.0 does class equivalence check here
+                // However, in FIR container classes aren't the same for our samples (see fieldPropertyOverloads.kt)
+                // E.g. we can have SomeConcreteJavaEnum for field and kotlin.Enum for static property 'name'
+                return propertyContainingClassLookupTag.strictlyDerivedFrom(fieldContainingClassLookupTag)
+            }
+        }
+        return false
+    }
+
+    private fun ConeClassLikeLookupTag.strictlyDerivedFrom(other: ConeClassLikeLookupTag): Boolean {
+        if (this == other) return false
+        val session = inferenceComponents.session
+        val thisClass = this.toFirRegularClassSymbol(session)?.fir ?: return false
+
+        return lookupSuperTypes(thisClass, lookupInterfaces = true, deep = true, session, substituteTypes = false).any { superType ->
+            (superType as? ConeClassLikeType)?.fullyExpandedType(session)?.lookupTag?.classId == other.classId
+        }
     }
 }

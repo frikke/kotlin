@@ -3416,6 +3416,12 @@ public class FirDiagnosticTestGenerated extends AbstractFirDiagnosticTest {
             }
 
             @Test
+            @TestMetadata("propertyFieldShadow.kt")
+            public void testPropertyFieldShadow() throws Exception {
+                runTest("compiler/fir/analysis-tests/testData/resolve/problems/propertyFieldShadow.kt");
+            }
+
+            @Test
             @TestMetadata("questionableSmartCast.kt")
             public void testQuestionableSmartCast() throws Exception {
                 runTest("compiler/fir/analysis-tests/testData/resolve/problems/questionableSmartCast.kt");
