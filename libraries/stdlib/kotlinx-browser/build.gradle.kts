@@ -5,11 +5,10 @@ plugins {
     kotlin("multiplatform")
 }
 
+group = "org.jetbrains.kotlinx"
+
 kotlin {
     js(BOTH) {
-//        nodejs {
-//        }
-
         val main by compilations.getting
         main.dependencies {
             api(project(":kotlin-stdlib-js"))
