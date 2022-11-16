@@ -6,13 +6,13 @@
 package kotlin.dom
 
 import org.w3c.dom.Element
-import kotlin.internal.LowPriorityInOverloadResolution
 import kotlinx.dom.addClass as newAddClass
 import kotlinx.dom.hasClass as newHasClass
 import kotlinx.dom.removeClass as newRemoveClass
 
 /** Returns true if the element has the given CSS class style in its 'class' attribute */
-@LowPriorityInOverloadResolution
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+@kotlin.internal.LowPriorityInOverloadResolution
 @Deprecated(
     message = "This API is moved to another package, use 'kotlinx.dom.hasClass' instead.",
     replaceWith = ReplaceWith("this.hasClass(cssClass)", "kotlinx.dom.hasClass")
@@ -25,7 +25,8 @@ inline fun Element.hasClass(cssClass: String): Boolean = this.newHasClass(cssCla
  *
  * @return true if at least one class has been added
  */
-@LowPriorityInOverloadResolution
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+@kotlin.internal.LowPriorityInOverloadResolution
 @Deprecated(
     message = "This API is moved to another package, use 'kotlinx.dom.addClass' instead.",
     replaceWith = ReplaceWith("this.addClass(cssClasses)", "kotlinx.dom.addClass")
@@ -38,7 +39,8 @@ inline fun Element.addClass(vararg cssClasses: String): Boolean = this.newAddCla
  *
  * @return true if at least one class has been removed
  */
-@LowPriorityInOverloadResolution
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+@kotlin.internal.LowPriorityInOverloadResolution
 @Deprecated(
     message = "This API is moved to another package, use 'kotlinx.dom.removeClass' instead.",
     replaceWith = ReplaceWith("this.removeClass(cssClasses)", "kotlinx.dom.removeClass")
