@@ -620,7 +620,7 @@ private class InteropLoweringPart1(val generationState: NativeGenerationState) :
             // handled in CodeGeneratorVisitor.callVirtual.
             val useKotlinDispatch = isInteropStubsFile &&
                     (builder.scope.scopeOwnerSymbol.owner as? IrAnnotationContainer)
-                            ?.hasAnnotation(FqName("kotlin.native.internal.ExportForCppRuntime")) == true
+                            ?.hasAnnotation(RuntimeNames.exportForCppRuntime) == true
 
             if (!useKotlinDispatch) {
                 val arguments = callee.valueParameters.map { expression.getValueArgument(it.index) }

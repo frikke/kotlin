@@ -23,10 +23,9 @@ import org.jetbrains.kotlin.backend.konan.serialization.KonanIrModuleSerializer
 import org.jetbrains.kotlin.backend.konan.serialization.KonanManglerDesc
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.languageVersionSettings
-import org.jetbrains.kotlin.ir.declarations.IrFile
-import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
+import org.jetbrains.kotlin.descriptors.konan.CompiledKlibFileOrigin
+import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFactoryImpl
-import org.jetbrains.kotlin.ir.declarations.path
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.konan.target.CompilerOutputKind
 import org.jetbrains.kotlin.name.FqName
@@ -351,6 +350,20 @@ internal val umbrellaCompilation = SameTypeNamedCompilerPhase(
                 module.files.clear()
                 val functionInterfaceFiles = files.filter { it.isFunctionInterfaceFile }
 
+                val filesReferencedByNativeRuntime = if (!context.shouldLinkRuntimeNativeLibraries)
+                    emptyList()
+                else {
+                    fun isReferencedByNativeRuntime(declarations: List<IrDeclaration>): Boolean =
+                            declarations.any {
+                                it.hasAnnotation(RuntimeNames.exportTypeInfoAnnotation)
+                                        || it.hasAnnotation(RuntimeNames.exportForCppRuntime)
+                            } || declarations.any {
+                                it is IrClass && isReferencedByNativeRuntime(it.declarations)
+                            }
+
+                    files.filter { isReferencedByNativeRuntime(it.declarations) }
+                }
+
                 for (file in files) {
                     if (file.isFunctionInterfaceFile) continue
 
@@ -359,6 +372,15 @@ internal val umbrellaCompilation = SameTypeNamedCompilerPhase(
                     module.files += file
                     if (context.generationState.shouldDefineFunctionClasses)
                         module.files += functionInterfaceFiles
+
+                    context.generationState = NativeGenerationState(context)
+                    if (context.shouldLinkRuntimeNativeLibraries) {
+                        filesReferencedByNativeRuntime.forEach {
+                            context.generationState.llvmImports.add(
+                                    origin = context.standardLlvmSymbolsOrigin,
+                                    fileOrigin = CompiledKlibFileOrigin.CertainFile(it.fqName.asString(), it.path))
+                        }
+                    }
 
                     entireBackend.invoke(phaseConfig, phaserState, context, Unit)
 
