@@ -29,53 +29,40 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
     }
 
     private val objcMsgSend = constPointer(
-            llvm.externalFunction(LlvmFunctionProto(
+            llvm.externalStdlibFunction(
                     "objc_msgSend",
                     LlvmRetType(llvm.int8PtrType),
                     listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType)),
-                    isVararg = true,
-                    origin = context.standardLlvmSymbolsOrigin,
-                    fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-            )).llvmValue
+                    isVararg = true
+            ).llvmValue
     )
 
-    val objcRelease = run {
-        val proto = LlvmFunctionProto(
-                "llvm.objc.release",
-                LlvmRetType(llvm.voidType),
-                listOf(LlvmParamType(llvm.int8PtrType)),
-                listOf(LlvmFunctionAttribute.NoUnwind),
-                origin = context.standardLlvmSymbolsOrigin,
-                fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-        )
-        llvm.externalFunction(proto)
-    }
+    val objcRelease = llvm.externalStdlibFunction(
+            "llvm.objc.release",
+            LlvmRetType(llvm.voidType),
+            listOf(LlvmParamType(llvm.int8PtrType)),
+            listOf(LlvmFunctionAttribute.NoUnwind)
+    )
 
-    val objcAlloc = llvm.externalFunction(LlvmFunctionProto(
+    val objcAlloc = llvm.externalStdlibFunction(
             "objc_alloc",
             LlvmRetType(llvm.int8PtrType),
-            listOf(LlvmParamType(llvm.int8PtrType)),
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    ))
+            listOf(LlvmParamType(llvm.int8PtrType))
+    )
 
-    val objcAutoreleaseReturnValue = llvm.externalFunction(LlvmFunctionProto(
+    val objcAutoreleaseReturnValue = llvm.externalStdlibFunction(
             "llvm.objc.autoreleaseReturnValue",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType)),
-            listOf(LlvmFunctionAttribute.NoUnwind),
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    ))
+            listOf(LlvmFunctionAttribute.NoUnwind)
+    )
 
-    val objcRetainAutoreleasedReturnValue = llvm.externalFunction(LlvmFunctionProto(
+    val objcRetainAutoreleasedReturnValue = llvm.externalStdlibFunction(
             "llvm.objc.retainAutoreleasedReturnValue",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType)),
-            listOf(LlvmFunctionAttribute.NoUnwind),
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    ))
+            listOf(LlvmFunctionAttribute.NoUnwind)
+    )
 
     val objcRetainAutoreleasedReturnValueMarker: LLVMValueRef? by lazy {
         // See emitAutoreleasedReturnValueMarker in Clang.

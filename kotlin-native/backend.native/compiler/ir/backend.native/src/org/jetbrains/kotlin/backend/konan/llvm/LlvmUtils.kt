@@ -185,6 +185,9 @@ internal fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef, origin: 
     }
 }
 
+internal fun ContextUtils.importStdlibGlobal(name: String, type: LLVMTypeRef) =
+        importGlobal(name, type, context.standardLlvmSymbolsOrigin, CompiledKlibFileOrigin.StdlibRuntime)
+
 internal abstract class AddressAccess {
     abstract fun getAddress(generationContext: FunctionGenerationContext?): LLVMValueRef
 }

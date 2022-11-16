@@ -363,6 +363,22 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
         }
     }
 
+    internal fun externalStdlibFunction(
+            name: String,
+            returnType: LlvmRetType,
+            parameterTypes: List<LlvmParamType> = emptyList(),
+            functionAttributes: List<LlvmFunctionAttribute> = emptyList(),
+            isVararg: Boolean = false
+    ) = externalFunction(
+            LlvmFunctionProto(name, returnType, parameterTypes, functionAttributes,
+                    origin = context.standardLlvmSymbolsOrigin,
+                    fileOrigin = CompiledKlibFileOrigin.StdlibRuntime,
+                    isVararg, independent = false)
+    )
+
+    internal fun externalStdlibFunction(name: String, signature: LlvmFunctionSignature) =
+            externalStdlibFunction(name, signature.returnType, signature.parameterTypes, signature.functionAttributes, signature.isVararg)
+
     val imports get() = generationState.llvmImports
 
     class ImportsImpl(private val context: Context) : LlvmImports {
@@ -763,39 +779,31 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
         else -> "__gxx_personality_v0"
     }
 
-    val cxxStdTerminate = externalFunction(LlvmFunctionProto(
+    val cxxStdTerminate = externalStdlibFunction(
             "_ZSt9terminatev", // mangled C++ 'std::terminate'
             returnType = LlvmRetType(voidType),
-            functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind),
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    ))
+            functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind)
+    )
 
-    val gxxPersonalityFunction = externalFunction(LlvmFunctionProto(
+    val gxxPersonalityFunction = externalStdlibFunction(
             personalityFunctionName,
             returnType = LlvmRetType(int32Type),
             functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind),
-            isVararg = true,
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    ))
+            isVararg = true
+    )
 
-    val cxaBeginCatchFunction = externalFunction(LlvmFunctionProto(
+    val cxaBeginCatchFunction = externalStdlibFunction(
             "__cxa_begin_catch",
             returnType = LlvmRetType(int8PtrType),
             functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind),
-            parameterTypes = listOf(LlvmParamType(int8PtrType)),
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    ))
+            parameterTypes = listOf(LlvmParamType(int8PtrType))
+    )
 
-    val cxaEndCatchFunction = externalFunction(LlvmFunctionProto(
+    val cxaEndCatchFunction = externalStdlibFunction(
             "__cxa_end_catch",
             returnType = LlvmRetType(voidType),
-            functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind),
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    ))
+            functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind)
+    )
 
     private fun getSizeOfReturnTypeInBits(functionPointer: LLVMValueRef): Long {
         // LLVMGetElementType is called because we need to dereference a pointer to function.

@@ -441,24 +441,18 @@ internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnv
         val functionReturnType = LlvmRetType(llvm.int8PtrType)
         val functionParameterTypes = listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType))
 
-        val libobjc = context.standardLlvmSymbolsOrigin
-        val fileRuntime = CompiledKlibFileOrigin.StdlibRuntime
-        val normalMessenger = codegen.llvm.externalFunction(LlvmFunctionProto(
+        val normalMessenger = codegen.llvm.externalStdlibFunction(
                 "objc_msgSend$messengerNameSuffix",
                 functionReturnType,
                 functionParameterTypes,
-                isVararg = true,
-                origin = libobjc,
-                fileOrigin = fileRuntime
-        ))
-        val superMessenger = codegen.llvm.externalFunction(LlvmFunctionProto(
+                isVararg = true
+        )
+        val superMessenger = codegen.llvm.externalStdlibFunction(
                 "objc_msgSendSuper$messengerNameSuffix",
                 functionReturnType,
                 functionParameterTypes,
-                isVararg = true,
-                origin = libobjc,
-                fileOrigin = fileRuntime
-        ))
+                isVararg = true
+        )
 
         val superClass = args.single()
         val messenger = LLVMBuildSelect(builder,

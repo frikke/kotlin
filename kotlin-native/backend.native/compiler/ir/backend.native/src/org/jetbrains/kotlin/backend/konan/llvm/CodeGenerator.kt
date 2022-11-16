@@ -1273,13 +1273,11 @@ internal abstract class FunctionGenerationContext(
                 val name = irClass.descriptor.getExternalObjCMetaClassBinaryName()
                 val objCClass = getObjCClass(name, llvmSymbolOrigin, fileOrigin)
 
-                val getClass = llvm.externalFunction(LlvmFunctionProto(
+                val getClass = llvm.externalStdlibFunction(
                         "object_getClass",
                         LlvmRetType(llvm.int8PtrType),
-                        listOf(LlvmParamType(llvm.int8PtrType)),
-                        origin = context.standardLlvmSymbolsOrigin,
-                        fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-                ))
+                        listOf(LlvmParamType(llvm.int8PtrType))
+                )
                 call(getClass, listOf(objCClass), exceptionHandler = exceptionHandler)
             } else {
                 getObjCClass(irClass.descriptor.getExternalObjCClassBinaryName(), llvmSymbolOrigin, fileOrigin)
@@ -1470,19 +1468,15 @@ internal abstract class FunctionGenerationContext(
     }
 
     private val kotlinExceptionRtti: ConstPointer
-        get() = constPointer(importGlobal(
+        get() = constPointer(importStdlibGlobal(
                 "_ZTI18ExceptionObjHolder", // typeinfo for ObjHolder
-                llvm.int8PtrType,
-                origin = context.standardLlvmSymbolsOrigin,
-                fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
+                llvm.int8PtrType
         )).bitcast(llvm.int8PtrType)
 
     private val objcNSExceptionRtti: ConstPointer by lazy {
-        constPointer(importGlobal(
+        constPointer(importStdlibGlobal(
                 "OBJC_EHTYPE_\$_NSException", // typeinfo for NSException*
-                llvm.int8PtrType,
-                origin = context.standardLlvmSymbolsOrigin,
-                fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
+                llvm.int8PtrType
         )).bitcast(llvm.int8PtrType)
     }
 

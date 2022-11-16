@@ -915,12 +915,8 @@ private fun ObjCExportCodeGenerator.emitSpecialClassesConvertions() {
 
 private fun ObjCExportCodeGenerator.emitCollectionConverters() {
 
-    fun importConverter(name: String): ConstPointer = constPointer(llvm.externalFunction(LlvmFunctionProto(
-            name,
-            kotlinToObjCFunctionType,
-            origin = context.standardLlvmSymbolsOrigin,
-            fileOrigin = CompiledKlibFileOrigin.StdlibRuntime
-    )).llvmValue)
+    fun importConverter(name: String): ConstPointer =
+            constPointer(llvm.externalStdlibFunction(name, kotlinToObjCFunctionType).llvmValue)
 
     setObjCExportTypeInfo(
             symbols.list.owner,

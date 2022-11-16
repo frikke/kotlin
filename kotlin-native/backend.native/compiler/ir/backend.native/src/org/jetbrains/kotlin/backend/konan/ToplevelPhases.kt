@@ -350,7 +350,7 @@ internal val umbrellaCompilation = SameTypeNamedCompilerPhase(
                 module.files.clear()
                 val functionInterfaceFiles = files.filter { it.isFunctionInterfaceFile }
 
-                val filesReferencedByNativeRuntime = if (!context.shouldLinkRuntimeNativeLibraries)
+                val filesReferencedByNativeRuntime = if (module.descriptor != context.stdlibModule)
                     emptyList()
                 else {
                     fun isReferencedByNativeRuntime(declarations: List<IrDeclaration>): Boolean =
@@ -367,16 +367,16 @@ internal val umbrellaCompilation = SameTypeNamedCompilerPhase(
                 for (file in files) {
                     if (file.isFunctionInterfaceFile) continue
 
-                    context.generationState = NativeGenerationState(context, CacheDeserializationStrategy.SingleFile(file.path, file.fqName.asString()))
+                    val generationState = NativeGenerationState(context, CacheDeserializationStrategy.SingleFile(file.path, file.fqName.asString()))
+                    context.generationState = generationState
 
                     module.files += file
-                    if (context.generationState.shouldDefineFunctionClasses)
+                    if (generationState.shouldDefineFunctionClasses)
                         module.files += functionInterfaceFiles
 
-                    context.generationState = NativeGenerationState(context)
-                    if (context.shouldLinkRuntimeNativeLibraries) {
+                    if (generationState.shouldLinkRuntimeNativeLibraries) {
                         filesReferencedByNativeRuntime.forEach {
-                            context.generationState.llvmImports.add(
+                            generationState.llvmImports.add(
                                     origin = context.standardLlvmSymbolsOrigin,
                                     fileOrigin = CompiledKlibFileOrigin.CertainFile(it.fqName.asString(), it.path))
                         }
