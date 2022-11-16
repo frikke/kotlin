@@ -5,13 +5,12 @@
 
 package org.jetbrains.kotlin.backend.jvm.ir
 
+import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.expressions.IrCall
-import org.jetbrains.kotlin.ir.expressions.IrFunctionAccessExpression
-import org.jetbrains.kotlin.ir.expressions.IrFunctionReference
+import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.util.getPackageFragment
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 import org.jetbrains.kotlin.name.FqName
@@ -19,6 +18,20 @@ import org.jetbrains.kotlin.name.FqName
 abstract class IrInlineReferenceLocator(private val context: JvmBackendContext) : IrElementVisitor<Unit, IrDeclaration?> {
     override fun visitElement(element: IrElement, data: IrDeclaration?) =
         element.acceptChildren(this, if (element is IrDeclaration && element !is IrVariable) element else data)
+
+//    override fun visitBlock(expression: IrBlock, data: IrDeclaration?) {
+//        if (expression !is IrReturnableBlock) return super.visitBlock(expression, data)
+//
+//        if (expression.wasExplicitlyInlined()) {
+//            val marker = expression.statements.first() as IrInlineMarker
+//            for (parameter in marker.callee.valueParameters) {
+//                val lambda = marker.inlineCall.getValueArgument(parameter.index)?.unwrapInlineLambda() ?: continue
+//                visitInlineLambda(lambda, marker.callee, parameter, data!!)
+//            }
+//        }
+//
+//        super.visitBlock(expression, data)
+//    }
 
     override fun visitFunctionAccess(expression: IrFunctionAccessExpression, data: IrDeclaration?) {
         val function = expression.symbol.owner
