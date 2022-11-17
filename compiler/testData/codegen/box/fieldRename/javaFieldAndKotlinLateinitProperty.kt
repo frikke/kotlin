@@ -1,8 +1,5 @@
 // TARGET_BACKEND: JVM_IR
-// IGNORE_BACKEND_K1: JVM_IR
-// Field VS property: case 4.1
-// See KT-50082
-// DUMP_IR
+// Field VS property: case "lateinit"
 
 // FILE: BaseJava.java
 public class BaseJava {
@@ -11,7 +8,11 @@ public class BaseJava {
 
 // FILE: Derived.kt
 class Derived : BaseJava() {
-    val a = "OK"
+    lateinit var a: String
 }
 
-fun box() = Derived().a
+fun box(): String {
+    val d = Derived()
+    d.a = "OK"
+    return d.a
+}
