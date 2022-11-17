@@ -620,35 +620,6 @@ abstract class AbstractKotlin2JsGradlePluginIT(protected val irBackend: Boolean)
         }
     }
 
-    @DisplayName("works with custom source sets")
-    @GradleTest
-    fun testJsCustomSourceSet(gradleVersion: GradleVersion) {
-        project("kotlin2JsProjectWithCustomSourceset", gradleVersion) {
-            build("build") {
-                checkIrCompilationMessage()
-
-                assertTasksExecuted(
-                    ":compileKotlin2Js",
-                    ":compileIntegrationTestKotlin2Js"
-                )
-
-                if (!irBackend) {
-                    assertFileInProjectExists("build/kotlin2js/main/module.js")
-                }
-                assertFileInProjectExists("build/kotlin2js/integrationTest/module-inttests.js")
-
-                val jarPath = projectPath.resolve("build/libs/kotlin2JsProjectWithCustomSourceset-inttests.jar")
-                assertFileExists(jarPath)
-                ZipFile(jarPath.toFile()).use { jar ->
-                    assertEquals(
-                        1, jar.entries().asSequence().count { it.name == "module-inttests.js" },
-                        "The jar should contain an entry `module-inttests.js` with no duplicates"
-                    )
-                }
-            }
-        }
-    }
-
     @DisplayName("source map is generated")
     @GradleTest
     fun testKotlinJsSourceMap(gradleVersion: GradleVersion) {
