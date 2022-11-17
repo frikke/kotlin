@@ -18,6 +18,7 @@ export BUILD_NUMBER=1.7.20-release-201
 export KOTLIN_NATIVE_VERSION=1.7.20
 export DOCKER_CONTAINER_URL=kotlin.registry.jetbrains.space/p/kotlin/containers/kotlin-build-env:v5
 ```
+## Clone Kotlin repository
 
 In a new folder, clone the release tag from the Kotlin repository, and change directory to the build folder:
 
