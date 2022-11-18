@@ -8,7 +8,7 @@ plugins {
 group = "org.jetbrains.kotlinx"
 
 kotlin {
-    js(BOTH) {
+    js(IR) {
         val main by compilations.getting
         main.dependencies {
             api(project(":kotlin-stdlib-js"))

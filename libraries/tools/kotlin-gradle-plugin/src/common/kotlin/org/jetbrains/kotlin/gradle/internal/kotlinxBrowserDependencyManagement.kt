@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.GradleKpmModule
 import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.KotlinPm20ProjectExtension
 import org.jetbrains.kotlin.gradle.plugin.sources.KotlinDependencyScope
 import org.jetbrains.kotlin.gradle.plugin.sources.sourceSetDependencyConfigurationByScope
+import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrCompilation
 import org.jetbrains.kotlin.gradle.targets.js.npm.SemVer
 
 private const val KOTLINX_MODULE_GROUP = "org.jetbrains.kotlinx"
@@ -88,6 +89,7 @@ private fun KotlinTarget.addKotlinxBrowserDependency(
                 if (isKotlinxBrowserAddedByUser(configurations, kotlinSourceSet)) return@withDependencies
 
                 if (compilation.platformType != KotlinPlatformType.js) return@withDependencies
+                if (compilation !is KotlinJsIrCompilation) return@withDependencies
 
                 val stdlibDependency = KotlinDependencyScope.values()
                     .map { scope ->
