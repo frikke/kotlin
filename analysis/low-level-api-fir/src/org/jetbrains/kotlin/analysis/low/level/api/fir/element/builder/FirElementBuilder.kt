@@ -115,6 +115,7 @@ internal inline fun PsiElement.getNonLocalContainingOrThisDeclaration(predicate:
         if (container is KtDestructuringDeclaration && container.parent is KtFile) {
             return container
         }
+
         container = container.parent
     }
     return null

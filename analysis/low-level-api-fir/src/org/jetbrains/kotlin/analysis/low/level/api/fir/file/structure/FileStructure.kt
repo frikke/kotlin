@@ -6,9 +6,13 @@
 package org.jetbrains.kotlin.analysis.low.level.api.fir.file.structure
 
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirModuleResolveComponents
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.DiagnosticCheckerFilter
 import org.jetbrains.kotlin.analysis.low.level.api.fir.element.builder.getNonLocalContainingOrThisDeclaration
+import org.jetbrains.kotlin.analysis.low.level.api.fir.util.errorWithFirSpecificEntries
+import org.jetbrains.kotlin.analysis.low.level.api.fir.util.findSourceByTraversingWholeTree
 import org.jetbrains.kotlin.analysis.low.level.api.fir.util.findSourceNonLocalFirDeclaration
 import org.jetbrains.kotlin.analysis.utils.printer.getElementTextInContext
 import org.jetbrains.kotlin.diagnostics.KtPsiDiagnostic
@@ -36,14 +40,23 @@ internal class FileStructure private constructor(
 
     private val firProvider = firFile.moduleData.session.firProvider
 
-    private val structureElements = ConcurrentHashMap<KtAnnotated, FileStructureElement>()
+    private val structureElements = ConcurrentHashMap<KtElement, FileStructureElement>()
 
     fun getStructureElementFor(element: KtElement): FileStructureElement {
-        val container: KtAnnotated = element.getNonLocalContainingOrThisDeclaration() ?: element.containingKtFile
+        val declaration = element.getNonLocalContainingOrThisDeclaration()
+        val container: KtElement
+        if (declaration != null) {
+            container = declaration
+        } else {
+            val modifierList = PsiTreeUtil.getParentOfType(element, KtModifierList::class.java, false)
+            container = if (modifierList != null && modifierList.nextSibling is PsiErrorElement) {
+                modifierList
+            } else element.containingKtFile
+        }
         return getStructureElementForDeclaration(container)
     }
 
-    private fun getStructureElementForDeclaration(declaration: KtAnnotated): FileStructureElement {
+    private fun getStructureElementForDeclaration(declaration: KtElement): FileStructureElement {
         @Suppress("CANNOT_CHECK_FOR_ERASED")
         val structureElement = structureElements.compute(declaration) { _, structureElement ->
             when {
@@ -91,6 +104,12 @@ internal class FileStructure private constructor(
                     dcl.acceptChildren(this)
                 }
             }
+
+            override fun visitModifierList(list: KtModifierList) {
+                if (list.parent == ktFile) {
+                    structureElements += getStructureElementFor(list)
+                }
+            }
         })
 
         return structureElements
@@ -112,8 +131,15 @@ internal class FileStructure private constructor(
         )
     }
 
-    private fun createStructureElement(container: KtAnnotated): FileStructureElement = when (container) {
-        is KtFile -> {
+    private fun createDanglingModifierListStructure(container: KtElement): FileStructureElement {
+        val firDeclaration = container.findSourceByTraversingWholeTree(moduleComponents.firFileBuilder, firFile)
+            ?: errorWithFirSpecificEntries("no declaration found", psi = container)
+        firDeclaration.lazyResolveToPhase(FirResolvePhase.BODY_RESOLVE)
+        return DanglingModifierListStructureElement(firFile, firDeclaration, moduleComponents, container.containingKtFile)
+    }
+
+    private fun createStructureElement(container: KtElement): FileStructureElement = when {
+        container is KtFile -> {
             val firFile = moduleComponents.firFileBuilder.buildRawFirFileWithCaching(ktFile)
             moduleComponents.firModuleLazyDeclarationResolver.resolveFileAnnotations(
                 firFile = firFile,
@@ -123,7 +149,8 @@ internal class FileStructure private constructor(
             )
             RootStructureElement(firFile, container, moduleComponents)
         }
-        is KtDeclaration -> createDeclarationStructure(container)
+        container is KtDeclaration -> createDeclarationStructure(container)
+        container is KtModifierList && container.nextSibling is PsiErrorElement -> createDanglingModifierListStructure(container)
         else -> error("Invalid container $container")
     }
 }

@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTag
 import org.jetbrains.kotlin.fir.symbols.impl.ConeClassLookupTagWithFixedSymbol
 import org.jetbrains.kotlin.analysis.utils.errors.buildErrorWithAttachment
 import org.jetbrains.kotlin.analysis.utils.errors.checkWithAttachmentBuilder
+import org.jetbrains.kotlin.fir.containingClass
 import org.jetbrains.kotlin.fir.diagnostics.ConeDestructuringDeclarationsOnTopLevel
 import org.jetbrains.kotlin.fir.java.javaSymbolProvider
 
@@ -85,6 +86,11 @@ private fun collectDesignationPath(declaration: FirDeclaration): List<FirDeclara
             val outerClassId = declaration.symbol.classId.outerClassId
             outerClassId?.let(declaration.moduleData.session.firProvider::getFirClassifierByFqName)
                 ?: outerClassId?.let(declaration.moduleData.session.javaSymbolProvider::getClassLikeSymbolByClassId)?.fir
+        }
+        is FirDanglingModifierList -> {
+            val klass = declaration.containingClass() ?: return emptyList()
+            if (klass.classId.isLocal) return null
+            klass.toFirRegularClassFromSameSession(declaration.moduleData.session)
         }
         else -> return null
     } ?: return emptyList()

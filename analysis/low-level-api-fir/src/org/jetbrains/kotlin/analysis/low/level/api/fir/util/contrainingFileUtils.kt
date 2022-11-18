@@ -5,10 +5,7 @@
 
 package org.jetbrains.kotlin.analysis.low.level.api.fir.util
 
-import org.jetbrains.kotlin.fir.declarations.FirCallableDeclaration
-import org.jetbrains.kotlin.fir.declarations.FirClassLikeDeclaration
-import org.jetbrains.kotlin.fir.declarations.FirDeclaration
-import org.jetbrains.kotlin.fir.declarations.FirFile
+import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.resolve.providers.firProvider
 
 fun FirDeclaration.getContainingFile(): FirFile? {
@@ -17,6 +14,7 @@ fun FirDeclaration.getContainingFile(): FirFile? {
         is FirFile -> this
         is FirCallableDeclaration -> provider.getFirCallableContainerFile(symbol)
         is FirClassLikeDeclaration -> provider.getFirClassifierContainerFile(symbol)
+        is FirDanglingModifierList -> null
         else -> errorWithFirSpecificEntries("Unsupported declaration ${this::class.java}", fir = this)
     }
 }
