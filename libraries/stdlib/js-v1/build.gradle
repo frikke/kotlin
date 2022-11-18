@@ -26,6 +26,7 @@ def builtinsDir = "${rootDir}/core/builtins"
 
 def jsSrcDir = "src"
 def jsCommonSrcDir = "${jsCommonDir}/src"
+def jsKotlinxBrowser = "${projectDir}/../kotlinx-browser/src/jsMain/kotlin"
 def jsTestSrcDir = "test"
 def jsCommonTestSrcDir = "${jsCommonDir}/test"
 
@@ -53,10 +54,7 @@ sourceSets {
         kotlin {
             srcDir builtinsSrcDir
             srcDir jsCommonSrcDir
-            exclude 'kotlin/browser/**'
-            exclude 'kotlin/dom/**'
-            exclude 'kotlinx/**'
-            exclude 'org.w3c/**'
+            srcDir jsKotlinxBrowser
             srcDir jsSrcDir
         }
     }
@@ -160,12 +158,8 @@ task compileJs(type: NoDebugJavaExec) {
     inputs.files(compileBuiltinsKotlin2Js.outputs.files).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.files(compileKotlin2Js.outputs.files).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(jsSrcDir).withPathSensitivity(PathSensitivity.RELATIVE)
-    def jsCommonSrcDirFileTree = fileTree(jsCommonSrcDir)
-    jsCommonSrcDirFileTree.exclude("kotlin/browser")
-    jsCommonSrcDirFileTree.exclude("kotlin/dom")
-    jsCommonSrcDirFileTree.exclude("org.w3c")
-    jsCommonSrcDirFileTree.exclude("kotlinx")
-    inputs.files(jsCommonSrcDirFileTree).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(jsCommonSrcDir).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(jsKotlinxBrowser)
 
     outputs.file(jsOutputFileName)
     outputs.file(jsOutputMapFileName)
