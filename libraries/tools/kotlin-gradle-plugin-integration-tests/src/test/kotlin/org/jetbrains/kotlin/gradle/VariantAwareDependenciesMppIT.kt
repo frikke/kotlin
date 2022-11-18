@@ -132,31 +132,6 @@ class VariantAwareDependenciesMppIT : BaseGradleIT() {
     }
 
     @Test
-    fun testJsKtAppResolvesJsKtApp() {
-        val outerProject = Project("kotlin2JsInternalTest", gradleVersion)
-        val innerProject = Project("kotlin2JsNoOutputFileProject")
-
-        with(outerProject) {
-            embedProject(innerProject)
-            gradleBuildScript(innerProject.projectName).appendText("\ndependencies { implementation rootProject }")
-
-            gradleBuildScript(innerProject.projectName).appendText(
-                // Newer Gradle versions fail to resolve the deprecated configurations because of variant-aware resolution ambiguity between
-                // the *Elements configuration and its sub-variants (classes, resources)
-                "\n" + """
-                configurations {
-                    configure([compile, runtime, testCompile, testRuntime, getByName('default')]) {
-                        canBeResolved = false
-                    }
-                }
-                """.trimIndent()
-            )
-
-            testResolveAllConfigurations(innerProject.projectName, options = defaultBuildOptions().copy(warningMode = WarningMode.Summary))
-        }
-    }
-
-    @Test
     fun testMppResolvesJvmAndJsKtLibs() {
         val outerProject = Project("sample-lib", gradleVersion, "new-mpp-lib-and-app")
         val innerJvmProject = Project("simpleProject")

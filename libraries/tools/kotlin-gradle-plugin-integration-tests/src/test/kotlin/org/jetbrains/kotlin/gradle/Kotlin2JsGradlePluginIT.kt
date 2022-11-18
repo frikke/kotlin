@@ -523,28 +523,6 @@ abstract class AbstractKotlin2JsGradlePluginIT(protected val irBackend: Boolean)
         }
     }
 
-    @DisplayName("js default output is included into jar")
-    @GradleTest
-    fun testJarIncludesJsDefaultOutput(gradleVersion: GradleVersion) {
-        project("kotlin2JsNoOutputFileProject", gradleVersion) {
-            build("jar") {
-                checkIrCompilationMessage()
-
-                assertTasksExecuted(":compileKotlin2Js")
-                val jarPath = projectPath.resolve("build/libs/kotlin2JsNoOutputFileProject.jar")
-                assertFileExists(jarPath)
-                ZipFile(jarPath.toFile()).use { jar ->
-                    if (!irBackend) {
-                        assertEquals(
-                            1, jar.entries().asSequence().count { it.name == "kotlin2JsNoOutputFileProject.js" },
-                            "The jar should contain an entry `kotlin2JsNoOutputFileProject.js` with no duplicates"
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     @DisplayName("js customized output is included into jar")
     @GradleTest
     fun testJarIncludesJsOutputSetExplicitly(gradleVersion: GradleVersion) {
@@ -561,30 +539,6 @@ abstract class AbstractKotlin2JsGradlePluginIT(protected val irBackend: Boolean)
                         "The jar should contain an entry `app.js` with no duplicates"
                     )
                 }
-            }
-        }
-    }
-
-    @DisplayName("moduleKind option works")
-    @GradleTest
-    fun testModuleKind(gradleVersion: GradleVersion) {
-        project("kotlin2JsModuleKind", gradleVersion) {
-            build("runRhino") {
-                checkIrCompilationMessage()
-            }
-        }
-    }
-
-    @DisplayName("default output file is generated")
-    @GradleTest
-    fun testDefaultOutputFile(gradleVersion: GradleVersion) {
-        project("kotlin2JsNoOutputFileProject", gradleVersion) {
-            build("build") {
-                checkIrCompilationMessage()
-                if (!irBackend) {
-                    assertFileExists(kotlinClassesDir().resolve("kotlin2JsNoOutputFileProject.js"))
-                }
-                assertFileExists(kotlinClassesDir(sourceSet = "test").resolve("kotlin2JsNoOutputFileProject_test.js"))
             }
         }
     }

@@ -10,12 +10,17 @@ buildscript {
 
 plugins {
     id "maven-publish"
+    id "org.jetbrains.kotlin.js"
 }
-
-apply plugin: 'org.jetbrains.kotlin.platform.js'
 
 group = "com.example"
 version = "1.0"
+
+kotlin {
+    js {
+        nodejs()
+    }
+}
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-js"
@@ -41,8 +46,8 @@ if (project.findProperty("mppProjectDependency") == "true") {
 
 publishing {
     publications {
-        main(MavenPublication) {
-            from components.java
+        maven(MavenPublication) {
+            from components["kotlin"]
         }
     }
     repositories {
