@@ -97,6 +97,7 @@ class DeclarationsConverter(
         val fileAnnotationList = mutableListOf<FirAnnotation>()
         val importList = mutableListOf<FirImport>()
         val firDeclarationList = mutableListOf<FirDeclaration>()
+        val modifierList = mutableListOf<LighterASTNode>()
         context.packageFqName = FqName.ROOT
         var packageDirective: FirPackageDirective? = null
         file.forEachChildren { child ->
@@ -116,7 +117,16 @@ class DeclarationsConverter(
                 SCRIPT -> {
                     // TODO: scripts aren't supported yet
                 }
+                MODIFIER_LIST -> modifierList += child
             }
+        }
+
+        modifierList.forEach {
+            firDeclarationList += buildErrorTopLevelDeclarationForDanglingModifierList(
+                it.toFirSourceElement(
+                    KtFakeSourceElementKind.DanglingModifierList
+                )
+            )
         }
 
         return buildFile {
@@ -826,7 +836,8 @@ class DeclarationsConverter(
      * @see org.jetbrains.kotlin.parsing.KotlinParsing.parseEnumClassBody
      */
     private fun convertClassBody(classBody: LighterASTNode, classWrapper: ClassWrapper): List<FirDeclaration> {
-        return classBody.forEachChildrenReturnList { node, container ->
+        val modifierLists = mutableListOf<LighterASTNode>()
+        val firDeclarations = classBody.forEachChildrenReturnList { node, container ->
             @Suppress("RemoveRedundantQualifierName")
             when (node.tokenType) {
                 ENUM_ENTRY -> container += convertEnumEntry(node, classWrapper)
@@ -837,8 +848,13 @@ class DeclarationsConverter(
                 OBJECT_DECLARATION -> container += convertClass(node)
                 CLASS_INITIALIZER -> container += convertAnonymousInitializer(node) //anonymousInitializer
                 SECONDARY_CONSTRUCTOR -> container += convertSecondaryConstructor(node, classWrapper)
+                MODIFIER_LIST -> modifierLists += node
             }
         }
+        for (node in modifierLists) {
+            firDeclarations += buildErrorTopLevelDeclarationForDanglingModifierList(node.toFirSourceElement(KtFakeSourceElementKind.DanglingModifierList))
+        }
+        return firDeclarations
     }
 
     /**

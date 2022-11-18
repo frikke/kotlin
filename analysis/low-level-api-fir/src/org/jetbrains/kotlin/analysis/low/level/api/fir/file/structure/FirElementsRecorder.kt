@@ -113,6 +113,7 @@ internal open class FirElementsRecorder : FirVisitor<Unit, MutableMap<KtElement,
                         it.kind == KtFakeSourceElementKind.DesugaredPrefixNameReference ||
                         it.kind == KtFakeSourceElementKind.DesugaredPostfixNameReference ||
                         it.kind == KtFakeSourceElementKind.SmartCastExpression ||
+                        it.kind == KtFakeSourceElementKind.DanglingModifierList ||
                         it.isSourceForCompoundAccess(element)
             }.psi as? KtElement
             ?: return

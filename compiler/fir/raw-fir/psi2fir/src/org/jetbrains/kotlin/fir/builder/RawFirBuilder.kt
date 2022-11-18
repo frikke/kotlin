@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.fir.builder
 import com.intellij.psi.PsiElement
 import com.intellij.psi.tree.IElementType
 import com.intellij.util.AstLoadingFilter
+import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.*
 import org.jetbrains.kotlin.builtins.StandardNames
 import org.jetbrains.kotlin.builtins.StandardNames.BACKING_FIELD
@@ -998,6 +999,14 @@ open class RawFirBuilder(
                         else -> declaration.convert()
                     }
                 }
+
+                for (danglingModifierList in PsiTreeUtil.getChildrenOfTypeAsList(file, KtModifierList::class.java)) {
+                    declarations += buildErrorTopLevelDeclarationForDanglingModifierList(
+                        danglingModifierList.toFirSourceElement(
+                            KtFakeSourceElementKind.DanglingModifierList
+                        )
+                    )
+                }
             }
         }
 
@@ -1190,7 +1199,16 @@ open class RawFirBuilder(
                                     classOrObject,
                                     this,
                                     typeParameters
-                                ),
+                                )
+                            )
+                        }
+                        for (danglingModifier in PsiTreeUtil.getChildrenOfTypeAsList(classOrObject.body, KtModifierList::class.java)) {
+                            addDeclaration(
+                                buildErrorTopLevelDeclarationForDanglingModifierList(
+                                    danglingModifier.toFirSourceElement(
+                                        KtFakeSourceElementKind.DanglingModifierList
+                                    )
+                                )
                             )
                         }
 

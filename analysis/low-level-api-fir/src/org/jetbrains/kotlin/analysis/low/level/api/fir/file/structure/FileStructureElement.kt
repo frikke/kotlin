@@ -232,6 +232,12 @@ internal class NonReanalyzableDeclarationStructureElement(
     }
 }
 
+internal class DanglingModifierListStructureElement(firFile: FirFile, val fir: FirDeclaration, moduleComponents: LLFirModuleResolveComponents, override val psi: KtAnnotated) :
+    FileStructureElement(firFile, moduleComponents) {
+    override val mappings = KtToFirMapping(firFile, FirElementsRecorder())
+
+    override val diagnostics = FileStructureElementDiagnostics(firFile, SingleNonLocalDeclarationDiagnosticRetriever(fir), moduleComponents)
+}
 
 internal class RootStructureElement(
     firFile: FirFile,

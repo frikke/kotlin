@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.analysis.low.level.api.fir.element.builder
 
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiErrorElement
 import org.jetbrains.annotations.TestOnly
 import org.jetbrains.kotlin.analysis.api.impl.barebone.annotations.ThreadSafe
 import org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirModuleResolveComponents
@@ -118,6 +119,11 @@ internal inline fun PsiElement.getNonLocalContainingOrThisDeclaration(predicate:
         }
         if (container is KtDestructuringDeclaration && container.parent is KtFile) {
             return container
+        }
+
+        if (container is KtModifierList && container.nextSibling is PsiErrorElement) {
+            //do not return parent container for dangling modifier list
+            return null
         }
         container = container.parent
     }

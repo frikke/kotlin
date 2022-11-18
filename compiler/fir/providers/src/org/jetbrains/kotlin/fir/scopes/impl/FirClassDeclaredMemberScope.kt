@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.fir.scopes.impl
 
+import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.utils.classId
@@ -35,6 +36,10 @@ class FirClassDeclaredMemberScopeImpl(
     private val callablesIndex: Map<Name, List<FirCallableSymbol<*>>> = run {
         val result = mutableMapOf<Name, MutableList<FirCallableSymbol<*>>>()
         loop@ for (declaration in klass.declarations) {
+            if (declaration is FirErrorProperty &&
+                declaration.source?.kind == KtFakeSourceElementKind.DanglingModifierList) {
+                continue
+            }
             if (declaration is FirCallableDeclaration) {
                 val name = when (declaration) {
                     is FirConstructor -> SpecialNames.INIT
