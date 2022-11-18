@@ -439,6 +439,9 @@ internal class PropertiesProvider private constructor(private val project: Proje
     val kotlinDaemonUseFallbackStrategy: Boolean
         get() = booleanProperty("kotlin.daemon.useFallbackStrategy") ?: true
 
+    val preciseCompilationResultsBackup: Boolean
+        get() = booleanProperty("kotlin.compiler.preciseCompilationResultsBackup") ?: false
+
     /**
      * Retrieves a comma-separated list of browsers to use when running karma tests for [target]
      * @see KOTLIN_JS_KARMA_BROWSERS
