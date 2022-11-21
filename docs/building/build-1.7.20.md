@@ -57,7 +57,3 @@ A ZIP file is generated: `build/repo-reproducible/reproducible-maven-1.7.20.zip`
 
 **Note:** Instructions for checking reproducibility will be covered in the upcoming release. There are already many JAR files on Maven
 central that are reproducible with this tutorial.
-
-## Kotlin Native artifacts
-
-This tutorial will be finished later. 
