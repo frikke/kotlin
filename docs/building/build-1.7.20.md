@@ -42,7 +42,6 @@ A ZIP file is generated: `dist/kotlin-compiler-1.7.20.zip`.
 
 Check that the SHA 256 checksum is the same as the ZIP file [published on GitHub](https://github.com/JetBrains/kotlin/releases/download/v1.7.20/kotlin-compiler-1.7.20.zip): 5e3c8d0f965410ff12e90d6f8dc5df2fc09fd595a684d514616851ce7e94ae7d
 
-
 ## Maven artifact
 
 Download and save [scripts/build-kotlin-maven.sh](https://github.com/JetBrains/kotlin/blob/1.7.20/scripts/build-kotlin-maven.sh) to 
