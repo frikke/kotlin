@@ -33,13 +33,16 @@ class IncrementalCompilationJsMultiProjectIT : BaseIncrementalCompilationMultiPr
         "implementation \"org.jetbrains.kotlin:kotlin-test-js:${'$'}kotlin_version\""
 
     override val compileKotlinTaskName: String
-        get() = "compileKotlin2Js"
+        get() = "compileKotlinJs"
 
     override val compileCacheFolderName: String
         get() = "caches-js"
 
-    //compileKotlin2Js's modification doe not work
+    //compileKotlinJs's modification does not work
     override fun testFailureHandling_ToolError(gradleVersion: GradleVersion) {}
+
+    // In JS IR all dependencies effectively api, not implementation
+    override fun testAddDependencyInLib(gradleVersion: GradleVersion) {}
 }
 
 @JvmGradlePluginTests

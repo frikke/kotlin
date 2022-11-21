@@ -17,11 +17,12 @@ repositories {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-js:$kotlin_version"
-    implementation "org.mozilla:rhino:1.7.7.1"
 }
 
 kotlin {
     js {
+        nodejs {
 
+        }
     }
 }
