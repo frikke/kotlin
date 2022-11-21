@@ -14,6 +14,8 @@ import org.jetbrains.kotlin.fir.declarations.builder.buildErrorProperty
 import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnostic
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.moduleData
+import org.jetbrains.kotlin.fir.references.FirErrorNamedReference
+import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeInapplicableCandidateError
 import org.jetbrains.kotlin.fir.resolve.isIntegerLiteralOrOperatorCall
 import org.jetbrains.kotlin.fir.returnExpressions
 import org.jetbrains.kotlin.fir.scopes.FirScope
@@ -24,6 +26,7 @@ import org.jetbrains.kotlin.fir.types.classId
 import org.jetbrains.kotlin.resolve.calls.components.PostponedArgumentsAnalyzerContext
 import org.jetbrains.kotlin.resolve.calls.inference.model.ConstraintStorage
 import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind
+import org.jetbrains.kotlin.resolve.calls.tower.CandidateApplicability
 
 class CandidateFactory private constructor(
     val context: ResolutionContext,
@@ -89,10 +92,13 @@ class CandidateFactory private constructor(
         ) {
             result.addDiagnostic(NoCompanionObject)
         }
+
         if (callInfo.origin == FirFunctionCallOrigin.Operator && symbol is FirPropertySymbol) {
             // Flag all property references that are resolved from an convention operator call.
             result.addDiagnostic(PropertyAsOperator)
         }
+
+        result.preserveCalleeInapplicability(callInfo)
         return result
     }
 
@@ -113,6 +119,15 @@ class CandidateFactory private constructor(
         val resolvedQualifier = (expressionReceiverValue.explicitReceiver as? FirResolvedQualifier) ?: return false
         val originClassOfCandidate = expressionReceiverValue.type.classId ?: return false
         return (resolvedQualifier.symbol?.fir as? FirRegularClass)?.companionObjectSymbol?.classId == originClassOfCandidate
+    }
+
+    private fun Candidate.preserveCalleeInapplicability(callInfo: CallInfo) {
+        val callSite = callInfo.callSite as? FirQualifiedAccess ?: return
+        val calleeReference = callSite.calleeReference as? FirErrorNamedReference ?: return
+        val diagnostic = calleeReference.diagnostic as? ConeInapplicableCandidateError ?: return
+        if (diagnostic.applicability == CandidateApplicability.INAPPLICABLE) {
+            addDiagnostic(InapplicableCandidate)
+        }
     }
 
     fun createErrorCandidate(callInfo: CallInfo, diagnostic: ConeDiagnostic): Candidate {

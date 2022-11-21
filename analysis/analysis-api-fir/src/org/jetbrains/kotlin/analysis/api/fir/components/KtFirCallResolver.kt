@@ -805,15 +805,19 @@ internal class KtFirCallResolver(
     ): Map<KtTypeParameterSymbol, KtType> {
         val typeParameters = partiallyAppliedSymbol.symbol.typeParameters
         if (typeParameters.isEmpty()) return emptyMap()
-        if (typeParameters.size != typeArguments.size) return emptyMap()
+
+        // If too many type arguments are provided, we can still create the mapping. Extra type arguments should be ignored. Otherwise, the
+        // resulting KtCall contains no type arguments at all, which can cause problems later. The case where too few type arguments are
+        // provided does not usually occur, because call completion infers an error type argument for an uninferable type parameter.
+        if (typeArguments.size < typeParameters.size) return emptyMap()
 
         val result = mutableMapOf<KtTypeParameterSymbol, KtType>()
 
-        for ((index, argument) in typeArguments.withIndex()) {
+        for ((index, typeParameter) in typeParameters.withIndex()) {
             // After resolution all type arguments should be usual types (not FirPlaceholderProjection)
-            if (argument !is FirTypeProjectionWithVariance || argument.variance != Variance.INVARIANT) return emptyMap()
-            val argumentKtType = argument.typeRef.coneType.asKtType()
-            result[typeParameters[index]] = argumentKtType
+            val typeArgument = typeArguments[index]
+            if (typeArgument !is FirTypeProjectionWithVariance || typeArgument.variance != Variance.INVARIANT) return emptyMap()
+            result[typeParameter] = typeArgument.typeRef.coneType.asKtType()
         }
 
         return result

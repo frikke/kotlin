@@ -45,14 +45,14 @@ internal object MapTypeArguments : ResolutionStage() {
             return
         }
 
+        // Even an illegal number of type arguments must be passed on so that each type argument can still be resolved later (e.g. for
+        // navigation in the IDE).
+        candidate.typeArgumentMapping = TypeArgumentMapping.Mapped(typeArguments)
         if (
-            typeArguments.size == owner.typeParameters.size ||
-            callInfo.callKind == CallKind.DelegatingConstructorCall ||
-            (owner as? FirDeclaration)?.origin is FirDeclarationOrigin.DynamicScope
+            typeArguments.size != owner.typeParameters.size &&
+            callInfo.callKind != CallKind.DelegatingConstructorCall &&
+            (owner as? FirDeclaration)?.origin !is FirDeclarationOrigin.DynamicScope
         ) {
-            candidate.typeArgumentMapping = TypeArgumentMapping.Mapped(typeArguments)
-        } else {
-            candidate.typeArgumentMapping = TypeArgumentMapping.Mapped(emptyList())
             sink.yieldDiagnostic(InapplicableCandidate)
         }
     }
