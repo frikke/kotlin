@@ -386,10 +386,6 @@ class MethodSignatureMapper(private val context: JvmBackendContext, private val 
         val callee = expression.symbol.owner
         val calleeParent = expression.superQualifierSymbol?.owner
             ?: expression.dispatchReceiver?.type?.classOrNull?.owner?.let {
-                // TODO find better solution. see boundFunctionReference.kt
-                if (callee.parentClassOrNull?.defaultType?.isFunction() == true && it.defaultType.isKFunction()) {
-                    return@let callee.parentAsClass
-                }
                 // Calling Object class methods on interfaces is permitted, but they're not interface methods.
                 if (it.isJvmInterface && callee.isMethodOfAny()) context.irBuiltIns.anyClass.owner else it
             }

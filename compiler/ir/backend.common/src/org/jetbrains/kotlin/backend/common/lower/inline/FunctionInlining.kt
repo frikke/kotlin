@@ -705,6 +705,7 @@ class FunctionInlining(
                             startOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
                             endOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
                             irExpression = irExpression,
+                            irType = it.parameter.getOriginalType(),
                             nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + it.parameter.name.asStringStripSpecialMarkers(),
                             isMutable = false
                         )
@@ -748,6 +749,34 @@ class FunctionInlining(
             if (this.parent !is IrFunction) return this
             val original = (this.parent as IrFunction).originalFunction
             return original.allParameters.single { it.name == this.name && it.startOffset == this.startOffset }
+        }
+
+        private fun IrValueParameter.getOriginalType(): IrType {
+            if (this.parent !is IrFunction) return type
+            val callee = this.parent as IrFunction
+            val original = callee.originalFunction
+
+            fun IrValueParameter?.getTypeIfFromTypeParameter(): IrType? {
+                val typeClassifier = this?.type?.classifierOrNull?.owner as? IrTypeParameter ?: return null
+                if (typeClassifier.parent != this.parent) return null
+                return callee.typeParameters[typeClassifier.index].defaultType
+            }
+
+            if (callee.dispatchReceiverParameter == this) {
+                return original.dispatchReceiverParameter?.getTypeIfFromTypeParameter() ?: callee.dispatchReceiverParameter!!.type
+            }
+
+            if (callee.extensionReceiverParameter == this) {
+                return original.extensionReceiverParameter?.getTypeIfFromTypeParameter() ?: callee.extensionReceiverParameter!!.type
+            }
+
+            for (valueParameter in callee.valueParameters) {
+                if (valueParameter == this) {
+                    return original.valueParameters[valueParameter.index].getTypeIfFromTypeParameter() ?: valueParameter.type
+                }
+            }
+
+            throw AssertionError("type not found")
         }
 
         private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): IrComposite {
@@ -798,7 +827,7 @@ class FunctionInlining(
                             irExpression = IrBlockImpl(
                                 if (argument.isDefaultArg) variableInitializer.startOffset else UNDEFINED_OFFSET,
                                 if (argument.isDefaultArg) variableInitializer.endOffset else UNDEFINED_OFFSET,
-                                argument.parameter.type,
+                                argument.parameter.getOriginalType(),
                                 InlinerExpressionLocationHint((currentScope.irElement as IrSymbolOwner).symbol)
                             ).apply {
                                 statements.add(variableInitializer)
