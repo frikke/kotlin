@@ -591,7 +591,7 @@ class ExpressionCodegen(
                 exp.accept(this, data).discard()
             }
 
-            if (marker.inlineCall.hasDefaultArgs()) {
+            if (marker.inlineCall.usesDefaultArguments()) {
                 // we must reset LN because at this point in original inliner we will inline non default call
                 lastLineNumber = -1
             }
@@ -1071,13 +1071,6 @@ class ExpressionCodegen(
         return parent.declarations.singleOrNull { it.origin == JvmLoweredDeclarationOrigin.DEFAULT_IMPLS } as IrClass
     }
 
-    private fun IrCall.hasDefaultArgs(): Boolean {
-        val owner = this.symbol.owner
-        return (0 until this.valueArgumentsCount).any {
-            this.getValueArgument(it) == null && owner.valueParameters[it].defaultValue != null
-        }
-    }
-
     private fun IrCall.isInvokeOnDefaultArg(expected: IrFunction): Boolean {
         if (this.symbol.owner.name != OperatorNameConventions.INVOKE) return false
 
@@ -1134,7 +1127,7 @@ class ExpressionCodegen(
                 .asSequence()
                 .filterIsInstance<IrSimpleFunction>()
                 .filter { it.attributeOwnerId == declaration.callee } // original callee could be transformed after lowerings, so we must get correct one
-                .filter { if (inlineCall.hasDefaultArgs()) it.origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER else it.origin != IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER }
+                .filter { if (inlineCall.usesDefaultArguments()) it.origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER else it.origin != IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER }
                 .filter { it.origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE } // filter functions with $$forInline postfix
                 .single()
             val nodeAndSmap = callee.let { actualCallee ->
@@ -1166,7 +1159,7 @@ class ExpressionCodegen(
             )
 
         }
-        if (inlineCall.hasDefaultArgs()) {
+        if (inlineCall.usesDefaultArguments()) {
             // $default function has first LN pointing to original callee
             declaration.callee.markLineNumber(startOffset = true)
             mv.nop()
