@@ -192,7 +192,8 @@ class Fir2IrDeclarationStorage(
             declaration is IrConstructor ||
             declaration is IrAnonymousInitializer ||
             declaration is IrProperty ||
-            declaration is IrEnumEntry
+            declaration is IrEnumEntry ||
+            declaration is IrScript
         ) {
             localStorage.enterCallable()
         }
@@ -203,7 +204,8 @@ class Fir2IrDeclarationStorage(
             declaration is IrConstructor ||
             declaration is IrAnonymousInitializer ||
             declaration is IrProperty ||
-            declaration is IrEnumEntry
+            declaration is IrEnumEntry ||
+            declaration is IrScript
         ) {
             localStorage.leaveCallable()
         }
@@ -766,7 +768,7 @@ class Fir2IrDeclarationStorage(
                 name, inferredType,
                 visibility, isFinal = isFinal,
                 isExternal = property.isExternal,
-                isStatic = property.isStatic || parent !is IrClass,
+                isStatic = property.isStatic || !(parent is IrClass || parent is IrScript),
             ).also {
                 it.correspondingPropertySymbol = this@createBackingField.symbol
             }.apply {
@@ -1577,7 +1579,6 @@ class Fir2IrDeclarationStorage(
                 IrScriptImpl(symbol, script.name, irFactory, startOffset, endOffset).also { irScript ->
                     irScript.origin = SCRIPT_K2_ORIGIN
                     irScript.metadata = FirMetadataSource.Script(script)
-                    irScript.explicitCallParameters = emptyList()
                     irScript.implicitReceiversParameters = emptyList()
                     irScript.providedProperties = emptyList()
                     irScript.providedPropertiesParameters = emptyList()

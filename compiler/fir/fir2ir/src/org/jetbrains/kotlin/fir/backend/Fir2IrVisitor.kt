@@ -195,7 +195,10 @@ class Fir2IrVisitor(
     override fun visitScript(script: FirScript, data: Any?): IrElement {
         return declarationStorage.getCachedIrScript(script)!!.also { irScript ->
             irScript.parent = conversionScope.parentFromStack()
-            symbolTable.enterScope(irScript)
+            declarationStorage.enterScope(irScript)
+            irScript.explicitCallParameters = script.parameters.map { parameter ->
+                declarationStorage.createIrVariable(parameter, irScript)
+            }
             conversionScope.withParent(irScript) {
                 for (statement in script.statements) {
                     if (statement is FirDeclaration) {
@@ -207,7 +210,7 @@ class Fir2IrVisitor(
                     }
                 }
             }
-            symbolTable.leaveScope(irScript)
+            declarationStorage.leaveScope(irScript)
         }
     }
 
