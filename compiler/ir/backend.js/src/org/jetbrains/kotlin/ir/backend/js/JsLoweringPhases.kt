@@ -676,13 +676,6 @@ private val es6ConstructorLowering = makeDeclarationTransformerPhase(
     prerequisite = setOf(primaryConstructorLoweringPhase)
 )
 
-private val es6ConstructorUsageLowering = makeBodyLoweringPhase(
-    ::ES6ConstructorUsageLowering,
-    name = "ES6ConstructorUsageLowering",
-    description = "Lower constructors usages to support ES classes",
-    prerequisite = setOf(es6ConstructorLowering)
-)
-
 private val secondaryConstructorLoweringPhase = makeDeclarationTransformerPhase(
     ::SecondaryConstructorLowering,
     name = "SecondaryConstructorLoweringPhase",
@@ -898,20 +891,19 @@ val loweringList = listOf<Lowering>(
     computeStringTrimPhase,
     privateMembersLoweringPhase,
     privateMemberUsagesLoweringPhase,
+    throwableSuccessorsLoweringPhase,
+    captureStackTraceInThrowablesPhase,
+    es6ConstructorLowering,
     defaultArgumentStubGeneratorPhase,
     defaultArgumentPatchOverridesPhase,
     defaultParameterInjectorPhase,
     defaultParameterCleanerPhase,
-    throwableSuccessorsLoweringPhase,
     varargLoweringPhase,
     multipleCatchesLoweringPhase,
     errorExpressionLoweringPhase,
     errorDeclarationLoweringPhase,
     bridgesConstructionPhase,
     typeOperatorLoweringPhase,
-    captureStackTraceInThrowablesPhase,
-    es6ConstructorLowering,
-    es6ConstructorUsageLowering,
     secondaryConstructorLoweringPhase,
     secondaryFactoryInjectorLoweringPhase,
     classReferenceLoweringPhase,
