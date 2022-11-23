@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.backend.jvm.lower
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.ScopeWithIr
+import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.ir.IrInlineScopeResolver
 import org.jetbrains.kotlin.backend.jvm.ir.findInlineCallSites
@@ -272,6 +273,21 @@ private class SyntheticAccessorTransformer(
         }
 
         return super.visitFunctionReference(expression)
+    }
+
+    override fun visitBlock(expression: IrBlock): IrExpression {
+        if (expression.wasExplicitlyInlined()) {
+            val marker = expression.statements.first() as IrInlineMarker
+            val callee = marker.callee
+            val parentClass = callee.parentClassOrNull ?: return super.visitBlock(expression)
+            return withinScope(parentClass) {
+                withinScope(callee) {
+                    super.visitBlock(expression)
+                }
+            }
+        }
+
+        return super.visitBlock(expression)
     }
 
     private fun modifyFunctionAccessExpression(

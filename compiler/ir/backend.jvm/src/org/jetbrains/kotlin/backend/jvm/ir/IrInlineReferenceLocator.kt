@@ -74,6 +74,18 @@ class IrInlineScopeResolver(context: JvmBackendContext) : IrInlineReferenceLocat
         super.visitCall(expression, data)
     }
 
+    override fun visitBlock(expression: IrBlock, data: IrDeclaration?) {
+        if (expression.wasExplicitlyInlined()) {
+            val marker = expression.statements.first() as IrInlineMarker
+            val callee = marker.callee
+            if (callee is IrSimpleFunction && callee.isPrivateInline && data != null) {
+                (inlineFunctionCallSites.getOrPut(callee) { mutableSetOf() } as MutableSet).add(data)
+            }
+        }
+
+        super.visitBlock(expression, data)
+    }
+
     private inline val IrSimpleFunction.isPrivateInline
         get() = isInline && DescriptorVisibilities.isPrivate(visibility)
 

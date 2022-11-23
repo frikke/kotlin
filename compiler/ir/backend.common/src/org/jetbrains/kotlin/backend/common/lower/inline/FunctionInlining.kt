@@ -535,12 +535,13 @@ class FunctionInlining(
             override fun visitElement(element: IrElement) = element.accept(this, null)
         }
 
-        private fun IrExpression.implicitCastIfNeededTo(type: IrType) =
+        private fun IrExpression.implicitCastIfNeededTo(type: IrType): IrExpression {
             // No need to cast expressions of type nothing
-            if (type == this.type || (insertAdditionalImplicitCasts && this.type == context.irBuiltIns.nothingType))
+            return if (type == this.type || !insertAdditionalImplicitCasts || this.type == context.irBuiltIns.nothingType)
                 this
             else
                 IrTypeOperatorCallImpl(startOffset, endOffset, type, IrTypeOperator.IMPLICIT_CAST, type, this)
+        }
 
         private fun isLambdaCall(irCall: IrCall): Boolean {
             val callee = irCall.symbol.owner
