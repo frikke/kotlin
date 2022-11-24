@@ -84,6 +84,7 @@ class FunctionInlining(
     val insertAdditionalImplicitCasts: Boolean = false,
     val inlinePureArguments: Boolean = true,
     val regenerateInlinedAnonymousObjects: Boolean = false,
+    val inlineArgumentsWithTheirOriginalType: Boolean = false
 ) : IrElementTransformerVoidWithContext(), BodyLoweringPass {
     constructor(context: CommonBackendContext) : this(context, DefaultInlineFunctionResolver(context), null)
     constructor(context: CommonBackendContext, innerClassesSupport: InnerClassesSupport) : this(
@@ -210,12 +211,6 @@ class FunctionInlining(
             performRecursiveInline: Boolean
         ): IrReturnableBlock {
             val copiedCallee = (callee.copy() as IrFunction).apply {
-
-                // It's a hack to overtake another hack in PIR. Due to PersistentIrFactory registers every created declaration
-                // there also get temporary declaration like this which leads to some unclear behaviour. Since I am not aware
-                // enough about PIR internals the simplest way seemed to me is to unregister temporary function. Hope it is going
-                // to be removed ASAP along with registering every PIR declaration.
-
                 parent = callee.parent
                 if (performRecursiveInline) {
                     body?.transformChildrenVoid()
@@ -443,32 +438,30 @@ class FunctionInlining(
                     typeParam.symbol to superType.arguments[typeParam.index].typeOrNull!!
                 }
 
-                val immediateCall = with(irCall) {
-                    when (inlinedFunction) {
-                        is IrConstructor -> {
-                            val classTypeParametersCount = inlinedFunction.parentAsClass.typeParameters.size
-                            IrConstructorCallImpl.fromSymbolOwner(
-                                irFunctionReference.startOffset,
-                                irFunctionReference.endOffset,
-                                inlinedFunction.returnType,
-                                inlinedFunction.symbol,
-                                classTypeParametersCount,
-                                InlinedFunctionReference
-                            )
-                        }
-                        is IrSimpleFunction ->
-                            IrCallImpl(
-                                irFunctionReference.startOffset,
-                                irFunctionReference.endOffset,
-                                inlinedFunction.returnType,
-                                inlinedFunction.symbol,
-                                inlinedFunction.typeParameters.size,
-                                inlinedFunction.valueParameters.size,
-                                InlinedFunctionReference
-                            )
-                        else ->
-                            error("Unknown function kind : ${inlinedFunction.render()}")
+                val immediateCall = when (inlinedFunction) {
+                    is IrConstructor -> {
+                        val classTypeParametersCount = inlinedFunction.parentAsClass.typeParameters.size
+                        IrConstructorCallImpl.fromSymbolOwner(
+                            irFunctionReference.startOffset,
+                            irFunctionReference.endOffset,
+                            inlinedFunction.returnType,
+                            inlinedFunction.symbol,
+                            classTypeParametersCount,
+                            InlinedFunctionReference
+                        )
                     }
+                    is IrSimpleFunction ->
+                        IrCallImpl(
+                            irFunctionReference.startOffset,
+                            irFunctionReference.endOffset,
+                            inlinedFunction.returnType,
+                            inlinedFunction.symbol,
+                            inlinedFunction.typeParameters.size,
+                            inlinedFunction.valueParameters.size,
+                            InlinedFunctionReference
+                        )
+                    else ->
+                        error("Unknown function kind : ${inlinedFunction.render()}")
                 }.apply {
                     for (parameter in functionParameters) {
                         val argument =
@@ -706,7 +699,7 @@ class FunctionInlining(
                             startOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
                             endOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
                             irExpression = irExpression,
-                            irType = it.parameter.getOriginalType(),
+                            irType = if (inlineArgumentsWithTheirOriginalType) it.parameter.getOriginalType() else irExpression.type,
                             nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + it.parameter.name.asStringStripSpecialMarkers(),
                             isMutable = false
                         )
@@ -809,12 +802,16 @@ class FunctionInlining(
                 // Arguments may reference the previous ones - substitute them.
                 val variableInitializer = argument.argumentExpression.transform(substitutor, data = null)
 
-                // TODO documnent why we need '>= 0'
+                // TODO document why we need '>= 0'
                 //  basically this is needed for jvm
                 //  see org/jetbrains/kotlin/backend/jvm/codegen/IrInlineCodegen.kt:138
                 //  val onStack = ... else ... if (irValueParameter.index >= 0) ..
                 if (argument.isImmutableVariableLoad && argument.parameter.index >= 0) {
-                    substituteMap[argument.parameter] = IrGetValueWithoutLocation((variableInitializer as IrGetValue).symbol)
+                    substituteMap[argument.parameter] = if (variableInitializer is IrGetValue) {
+                        IrGetValueWithoutLocation(variableInitializer.symbol)
+                    } else {
+                        variableInitializer
+                    }
                     return@forEach
                 }
 
@@ -822,24 +819,25 @@ class FunctionInlining(
 
                 if (argumentIsPure && inlinePureArguments) {
                     substituteMap[argument.parameter] = variableInitializer
-                } else {
-                    val newVariable =
-                        currentScope.scope.createTemporaryVariable(
-                            irExpression = IrBlockImpl(
-                                if (argument.isDefaultArg) variableInitializer.startOffset else UNDEFINED_OFFSET,
-                                if (argument.isDefaultArg) variableInitializer.endOffset else UNDEFINED_OFFSET,
-                                argument.parameter.getOriginalType(),
-                                InlinerExpressionLocationHint((currentScope.irElement as IrSymbolOwner).symbol)
-                            ).apply {
-                                statements.add(variableInitializer)
-                            },
-                            nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + argument.parameter.name.asStringStripSpecialMarkers(),
-                            isMutable = false
-                        )
-
-                    if (argument.isDefaultArg) evaluationStatementsFromDefault.add(newVariable) else evaluationStatements.add(newVariable)
-                    substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol)
+                    return@forEach
                 }
+
+                val newVariable =
+                    currentScope.scope.createTemporaryVariable(
+                        irExpression = IrBlockImpl(
+                            if (argument.isDefaultArg) variableInitializer.startOffset else UNDEFINED_OFFSET,
+                            if (argument.isDefaultArg) variableInitializer.endOffset else UNDEFINED_OFFSET,
+                            if (inlineArgumentsWithTheirOriginalType) argument.parameter.getOriginalType() else variableInitializer.type,
+                            InlinerExpressionLocationHint((currentScope.irElement as IrSymbolOwner).symbol)
+                        ).apply {
+                            statements.add(variableInitializer)
+                        },
+                        nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + argument.parameter.name.asStringStripSpecialMarkers(),
+                        isMutable = false
+                    )
+
+                if (argument.isDefaultArg) evaluationStatementsFromDefault.add(newVariable) else evaluationStatements.add(newVariable)
+                substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol)
             }
             val blockForNewStatements = IrCompositeImpl(
                 callSite.startOffset, callSite.endOffset, context.irBuiltIns.unitType, null, statements = evaluationStatements
