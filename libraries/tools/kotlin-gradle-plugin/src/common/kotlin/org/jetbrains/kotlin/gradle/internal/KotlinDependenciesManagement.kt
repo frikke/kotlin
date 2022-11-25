@@ -43,7 +43,9 @@ internal fun customizeKotlinDependencies(project: Project) {
         )
     }
 
-    project.configureKotlinxBrowserDefaultDependency(topLevelExtension, coreLibrariesVersion)
+    if (propertiesProvider.stdlibDefaultDependency && propertiesProvider.kotlinxBrowserDefaultDependency) {
+        project.configureKotlinxBrowserDefaultDependency(topLevelExtension, coreLibrariesVersion)
+    }
 
     project.configurations.configureDefaultVersionsResolutionStrategy(
         coreLibrariesVersion
