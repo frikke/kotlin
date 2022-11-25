@@ -1088,12 +1088,6 @@ open class RawFirBuilder(
             }
         }
 
-        override fun visitClassInitializer(initializer: KtClassInitializer, data: Unit?): FirElement {
-            return disabledLazyMode {
-                super.visitClassInitializer(initializer, data)
-            }
-        }
-
         private fun convertContextReceivers(receivers: List<KtContextReceiver>): List<FirContextReceiver> {
             return receivers.map { contextReceiverElement ->
                 buildContextReceiver {
@@ -1760,7 +1754,7 @@ open class RawFirBuilder(
                 source = initializer.toFirSourceElement()
                 moduleData = baseModuleData
                 origin = FirDeclarationOrigin.Source
-                body = initializer.body.toFirBlock()
+                body = buildOrLazyBlock { initializer.body.toFirBlock() }
             }
         }
 
