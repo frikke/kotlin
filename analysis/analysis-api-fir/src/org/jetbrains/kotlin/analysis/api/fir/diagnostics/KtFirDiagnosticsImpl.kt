@@ -3854,6 +3854,13 @@ internal class JavaSamInterfaceConstructorReferenceImpl(
     override val token: KtLifetimeToken,
 ) : KtFirDiagnostic.JavaSamInterfaceConstructorReference(), KtAbstractFirDiagnostic<PsiElement>
 
+internal class JavaShadowedProtectedFieldReferenceImpl(
+    override val containerClass: ClassId,
+    override val shadowingClass: ClassId,
+    override val firDiagnostic: KtPsiDiagnostic,
+    override val token: KtLifetimeToken,
+) : KtFirDiagnostic.JavaShadowedProtectedFieldReference(), KtAbstractFirDiagnostic<PsiElement>
+
 internal class SyntaxImpl(
     override val firDiagnostic: KtPsiDiagnostic,
     override val token: KtLifetimeToken,

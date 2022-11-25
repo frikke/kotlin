@@ -86,8 +86,11 @@ abstract class CheckerContext : MutableDiagnosticContext() {
     override val languageVersionSettings: LanguageVersionSettings
         get() = session.languageVersionSettings
 
+    val containingFile: FirFile?
+        get() = containingDeclarations.firstOrNull() as? FirFile
+
     override val containingFilePath: String?
-        get() = containingDeclarations.firstOrNull()?.let { (it as? FirFile)?.sourceFile?.path }
+        get() = containingFile?.sourceFile?.path
 }
 
 /**

@@ -400,6 +400,12 @@ public class FirOldFrontendDiagnosticsTestGenerated extends AbstractFirDiagnosti
         }
 
         @Test
+        @TestMetadata("javaProtectedFieldAndKotlinInvisiblePropertyReference.kt")
+        public void testJavaProtectedFieldAndKotlinInvisiblePropertyReference() throws Exception {
+            runTest("compiler/testData/diagnostics/tests/javaProtectedFieldAndKotlinInvisiblePropertyReference.kt");
+        }
+
+        @Test
         @TestMetadata("kt11167.kt")
         public void testKt11167() throws Exception {
             runTest("compiler/testData/diagnostics/tests/kt11167.kt");
