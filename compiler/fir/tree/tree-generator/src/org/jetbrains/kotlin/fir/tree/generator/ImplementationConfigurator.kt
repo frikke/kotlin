@@ -102,6 +102,9 @@ object ImplementationConfigurator : AbstractFirTreeImplementationConfigurator() 
             default("argumentMapping") {
                 needAcceptAndTransform = false
             }
+            default("annotationResolvePhase") {
+                value = "FirAnnotationResolvePhase.Types"
+            }
         }
 
         impl(arrayOfCall)
