@@ -1278,13 +1278,12 @@ abstract class BaseFirBuilder<T>(val baseSession: FirSession, val context: Conte
         symbol = FirErrorPropertySymbol(diagnostic)
     }
 
-    protected fun buildErrorTopLevelDeclarationForDanglingModifierList(source: KtSourceElement) = buildErrorProperty {
+    protected fun buildErrorTopLevelDeclarationForDanglingModifierList(source: KtSourceElement) = buildDanglingModifierList {
         this.source = source
         moduleData = baseModuleData
         origin = FirDeclarationOrigin.Source
-        name = Name.special("<dangling modifier list>")
         diagnostic = ConeDanglingModifierOnTopLevel
-        symbol = FirErrorPropertySymbol(diagnostic)
+        symbol = FirDanglingModifierSymbol()
     }
 
     protected fun createNoTypeForParameterTypeRef(): FirErrorTypeRef {

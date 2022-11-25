@@ -441,6 +441,10 @@ object NodeConfigurator : AbstractFieldConfigurator<FirTreeBuilder>(FirTreeBuild
             +symbol("FirAnonymousInitializerSymbol")
         }
 
+        danglingModifierList.configure {
+            +symbol("FirDanglingModifierSymbol")
+        }
+
         file.configure {
             +field("packageDirective", packageDirective)
             +fieldList(import).withTransform()

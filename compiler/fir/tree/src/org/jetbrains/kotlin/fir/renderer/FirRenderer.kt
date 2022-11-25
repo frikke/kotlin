@@ -387,6 +387,10 @@ class FirRenderer(
             bodyRenderer?.renderBody(anonymousInitializer.body)
         }
 
+        override fun visitDanglingModifierList(danglingModifierList: FirDanglingModifierList) {
+            print(danglingModifierList.diagnostic.reason)
+        }
+
         override fun visitBlock(block: FirBlock) {
             bodyRenderer?.renderBody(block)
         }
