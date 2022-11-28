@@ -7,6 +7,8 @@ package org.jetbrains.kotlin.backend.common.ir
 
 import org.jetbrains.kotlin.backend.common.lower.VariableRemapper
 import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunction
+import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionArguments
+import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionDefaultArguments
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.IrStatementsBuilder
@@ -150,33 +152,43 @@ fun IrExpression.wasInlinedFromLambda(): Boolean {
 
 fun IrExpression.getAdditionalStatementsFromInlinedBlock(): List<IrStatement> {
     this.checkForLoweredInlinedFunctionOrThrowException()
-    return ((this as IrBlock).statements[1] as IrComposite).statements.flatMap { (it as IrComposite).statements }
+    return (this as IrBlock).statements
+        .filterIsInstance<IrComposite>()
+        .filter { it.origin is InlinedFunctionArguments || it.origin is InlinedFunctionDefaultArguments }
+        .flatMap { it.statements }
 }
 
 fun IrExpression.getNonDefaultAdditionalStatementsFromInlinedBlock(): List<IrStatement> {
     this.checkForLoweredInlinedFunctionOrThrowException()
-    val allAdditionalStatements = ((this as IrBlock).statements[1] as IrComposite).statements
-    return (allAdditionalStatements[0] as IrComposite).statements
+    return (this as IrBlock).statements
+        .filterIsInstance<IrComposite>()
+        .single { it.origin is InlinedFunctionArguments }.statements
 }
 
 fun IrExpression.getDefaultAdditionalStatementsFromInlinedBlock(): List<IrStatement> {
     this.checkForLoweredInlinedFunctionOrThrowException()
-    val allAdditionalStatements = ((this as IrBlock).statements[1] as IrComposite).statements
-    return (allAdditionalStatements[1] as IrComposite).statements
+    return (this as IrBlock).statements
+        .filterIsInstance<IrComposite>()
+        .single { it.origin is InlinedFunctionDefaultArguments }.statements
 }
 
 fun IrExpression.getOriginalStatementsFromInlinedBlock(): List<IrStatement> {
     this.checkForLoweredInlinedFunctionOrThrowException()
-    return (this as IrBlock).statements.drop(2)
+    return (this as IrBlock).statements.drop(1)
+        .filter { it !is IrComposite || !(it.origin is InlinedFunctionArguments || it.origin is InlinedFunctionDefaultArguments) }
 }
 
 fun IrExpression.putStatementsBeforeActualInline(statements: List<IrStatement>) {
     this.checkForLoweredInlinedFunctionOrThrowException()
-    val additionalStatements = ((this as IrBlock).statements[1] as IrComposite).statements
-    (additionalStatements[0] as IrComposite).statements.addAll(0, statements)
+    (this as IrBlock).statements
+        .filterIsInstance<IrComposite>()
+        .single { it.origin is InlinedFunctionArguments }.statements.addAll(0, statements)
 }
 
 fun IrExpression.putStatementsInFrontOfInlinedFunction(statements: List<IrStatement>) {
     this.checkForLoweredInlinedFunctionOrThrowException()
-    (this as IrBlock).statements.addAll(2, statements)
+    val insertAfter = (this as IrBlock).statements
+        .indexOfLast { it is IrComposite && (it.origin is InlinedFunctionArguments || it.origin is InlinedFunctionDefaultArguments) }
+
+    this.statements.addAll(if (insertAfter == -1) 1 else insertAfter + 1, statements)
 }
