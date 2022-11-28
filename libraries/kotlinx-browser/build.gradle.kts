@@ -1,17 +1,21 @@
-import plugins.configureDefaultPublishing
-
 plugins {
     `maven-publish`
     kotlin("multiplatform")
 }
 
 group = "org.jetbrains.kotlinx"
+val deployVersion = findProperty("kotlinxBrowserDeployVersion") as String?
+version = deployVersion ?: "0.1-SNAPSHOT"
 
 kotlin {
     js(IR) {
-        val main by compilations.getting
-        main.dependencies {
-            api(project(":kotlin-stdlib-js"))
+    }
+
+    sourceSets {
+        val jsMain by getting {
+            dependencies {
+                api(kotlinStdlib("js"))
+            }
         }
     }
 }
@@ -26,5 +30,3 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.Kotlin2JsCompile>().configureEa
     )
     kotlinOptions.allWarningsAsErrors = true
 }
-
-configureDefaultPublishing()
