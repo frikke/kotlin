@@ -568,15 +568,15 @@ public class GetOrBuildFirTestGenerated extends AbstractGetOrBuildFirTest {
         }
 
         @Test
-        @TestMetadata("secondaryConstructor.kt")
-        public void testSecondaryConstructor() throws Exception {
-            runTest("analysis/low-level-api-fir/testdata/getOrBuildFir/invalidCode/secondaryConstructor.kt");
-        }
-        
-          @Test
         @TestMetadata("javaClassLiteral.kt")
         public void testJavaClassLiteral() throws Exception {
             runTest("analysis/low-level-api-fir/testdata/getOrBuildFir/invalidCode/javaClassLiteral.kt");
+        }
+
+        @Test
+        @TestMetadata("secondaryConstructor.kt")
+        public void testSecondaryConstructor() throws Exception {
+            runTest("analysis/low-level-api-fir/testdata/getOrBuildFir/invalidCode/secondaryConstructor.kt");
         }
     }
 
