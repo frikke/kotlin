@@ -60,6 +60,16 @@ function jsRenamed() {
     return 'renamed'
 }
 
+function wasmTypedInterop(a) {
+    return typeof a === 'number' && a === 1;
+}
+
+let someProp = undefined;
+function checkSomePropIsSetToNumber() {
+    return (typeof someProp === 'number' && someProp === 1);
+}
+
+
 // FILE: externals.kt
 external interface Obj {
     var x: Int
@@ -119,6 +129,14 @@ external object externalObj {
 @JsName("jsRenamed")
 external fun testJsName(): String
 
+external fun wasmTypedInterop(x: @WasmInterop Boolean): Boolean
+
+external var someProp: Boolean
+    get
+    set(value: @WasmInterop Boolean) = definedExternally
+
+external fun checkSomePropIsSetToNumber(): Boolean
+
 fun box(): String {
     val obj = createObject()
     setX(obj, 100)
@@ -172,6 +190,11 @@ fun box(): String {
     if (c1 as Any is C2) return "Fail 24"
 
     if (testJsName() != "renamed") return "Fail 25"
+
+    if (!wasmTypedInterop(true)) return "Fail 26"
+
+    someProp = true
+    if (!checkSomePropIsSetToNumber()) return "Fail 27"
 
     return "OK"
 }

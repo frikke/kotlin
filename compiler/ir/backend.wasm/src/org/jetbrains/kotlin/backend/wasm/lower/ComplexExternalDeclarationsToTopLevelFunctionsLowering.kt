@@ -243,7 +243,7 @@ class ComplexExternalDeclarationsToTopLevelFunctionsLowering(val context: WasmBa
         }
     }
 
-    fun processFunctionOrConstructor(
+    private fun processFunctionOrConstructor(
         function: IrFunction,
         name: Name,
         returnType: IrType,
@@ -273,10 +273,11 @@ class ComplexExternalDeclarationsToTopLevelFunctionsLowering(val context: WasmBa
         function.valueParameters.forEach { res.addValueParameter(it.name, it.type) }
         // Using Int type with 0 and 1 values to prevent overhead of converting Boolean to true and false
         repeat(numDefaultParameters) { res.addValueParameter("isDefault$it", context.irBuiltIns.intType) }
+
         externalFunToTopLevelMapping[function] = res
     }
 
-    fun generateExternalObjectInstanceGetter(obj: IrClass) {
+    private fun generateExternalObjectInstanceGetter(obj: IrClass) {
         context.mapping.wasmExternalObjectToGetInstanceFunction[obj] = createExternalJsFunction(
             obj.name,
             "_\$external_object_getInstance",
@@ -288,7 +289,7 @@ class ComplexExternalDeclarationsToTopLevelFunctionsLowering(val context: WasmBa
         )
     }
 
-    fun generateInstanceCheckForExternalClass(klass: IrClass) {
+    private fun generateInstanceCheckForExternalClass(klass: IrClass) {
         context.mapping.wasmExternalClassToInstanceCheck[klass] = createExternalJsFunction(
             klass.name,
             "_\$external_class_instanceof",
@@ -317,6 +318,7 @@ class ComplexExternalDeclarationsToTopLevelFunctionsLowering(val context: WasmBa
         res.annotations += builder.irCallConstructor(context.wasmSymbols.jsFunConstructor, typeArguments = emptyList()).also {
             it.putValueArgument(0, builder.irString(jsCode))
         }
+
         res.parent = currentFile
         addedDeclarations += res
         return res

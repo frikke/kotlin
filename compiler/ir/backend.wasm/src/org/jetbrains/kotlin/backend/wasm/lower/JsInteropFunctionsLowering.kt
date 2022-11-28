@@ -14,6 +14,7 @@ import org.jetbrains.kotlin.backend.wasm.WasmBackendContext
 import org.jetbrains.kotlin.backend.wasm.ir2wasm.isBuiltInWasmRefType
 import org.jetbrains.kotlin.backend.wasm.ir2wasm.isExported
 import org.jetbrains.kotlin.backend.wasm.ir2wasm.isExternalType
+import org.jetbrains.kotlin.backend.wasm.utils.hasWasmInteropAnnotation
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.backend.js.utils.getJsNameOrKotlinName
 import org.jetbrains.kotlin.ir.builders.*
@@ -80,6 +81,7 @@ class JsInteropFunctionsLowering(val context: WasmBackendContext) : DeclarationT
         val valueParametersAdapters = function.valueParameters.map {
             it.type.kotlinToJsAdapterIfNeeded(isReturn = false)
         }
+
         val resultAdapter =
             function.returnType.jsToKotlinAdapterIfNeeded(isReturn = true)
 
@@ -184,6 +186,9 @@ class JsInteropFunctionsLowering(val context: WasmBackendContext) : DeclarationT
             return null
 
         if (this == builtIns.nothingType)
+            return null
+
+        if (hasWasmInteropAnnotation())
             return null
 
         if (!isNullable()) {
@@ -325,6 +330,9 @@ class JsInteropFunctionsLowering(val context: WasmBackendContext) : DeclarationT
 
     private fun IrType.jsToKotlinAdapterIfNeeded(isReturn: Boolean): InteropTypeAdapter? {
         if (isReturn && this == builtIns.unitType)
+            return null
+
+        if (hasWasmInteropAnnotation())
             return null
 
         val notNullType = makeNotNull()

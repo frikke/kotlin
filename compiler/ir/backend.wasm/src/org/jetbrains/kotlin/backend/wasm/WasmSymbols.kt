@@ -324,6 +324,9 @@ class WasmSymbols(
     private val jsFunClass = getIrClass(FqName("kotlin.JsFun"))
     val jsFunConstructor by lazy { jsFunClass.constructors.single() }
 
+    private val wasmInteropClass = getIrClass(FqName("kotlin.WasmInterop"))
+    val wasmInteropConstructor by lazy { wasmInteropClass.constructors.single() }
+
     private fun findClass(memberScope: MemberScope, name: Name): ClassDescriptor =
         memberScope.getContributedClassifier(name, NoLookupLocation.FROM_BACKEND) as ClassDescriptor
 

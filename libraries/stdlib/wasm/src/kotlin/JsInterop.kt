@@ -20,3 +20,11 @@ package kotlin
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY_GETTER, AnnotationTarget.PROPERTY_SETTER)
 @Retention(AnnotationRetention.BINARY)
 public annotation class JsFun(val code: String)
+
+/**
+ * Force external functions not to use JS interop adapters for its parameters or return values.
+ * This is a temporary annotation because K/Wasm <-> JS interop is not designed yet.
+ */
+@Target(AnnotationTarget.TYPE)
+@Retention(AnnotationRetention.BINARY)
+public annotation class WasmInterop()

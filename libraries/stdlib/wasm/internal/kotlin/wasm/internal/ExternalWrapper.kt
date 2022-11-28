@@ -310,3 +310,18 @@ internal fun kotlinShortToExternRefAdapter(x: Short): ExternalInterfaceType =
 
 internal fun kotlinCharToExternRefAdapter(x: Char): ExternalInterfaceType =
     intToExternref(x.toInt())
+
+
+@JsFun("(length) => Array(length)")
+private external fun createJsArray(length: Int): ExternalInterfaceType
+
+@JsFun("(array, element, index) => array[index] = element")
+private external fun <T> setJsArrayElement(array: ExternalInterfaceType, element: T, index: Int)
+
+internal fun <T> kotlinArrayToJsArrayAdapter(kotlinArray: Array<T>): ExternalInterfaceType {
+    val jsArray = createJsArray(kotlinArray.size)
+    kotlinArray.forEachIndexed { index, element ->
+        setJsArrayElement(jsArray, element, index)
+    }
+    return jsArray
+}

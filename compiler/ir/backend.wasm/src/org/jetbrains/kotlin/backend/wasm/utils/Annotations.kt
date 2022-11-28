@@ -10,12 +10,12 @@ import org.jetbrains.kotlin.ir.declarations.IrAnnotationContainer
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.expressions.IrClassReference
 import org.jetbrains.kotlin.ir.expressions.IrConst
+import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.makeNullable
 import org.jetbrains.kotlin.ir.util.defaultType
 import org.jetbrains.kotlin.ir.util.getAnnotation
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.wasm.ir.WasmImportPair
 
 fun IrAnnotationContainer.hasExcludedFromCodegenAnnotation(): Boolean =
     hasAnnotation(FqName("kotlin.wasm.internal.ExcludedFromCodegen"))
@@ -46,3 +46,6 @@ fun IrAnnotationContainer.getWasmArrayAnnotation(): WasmArrayInfo? =
 
 fun IrAnnotationContainer.getJsFunAnnotation(): String? =
     getAnnotation(FqName("kotlin.JsFun"))?.getSingleConstStringArgument()
+
+fun IrType.hasWasmInteropAnnotation(): Boolean =
+    hasAnnotation(FqName("kotlin.WasmInterop"))
