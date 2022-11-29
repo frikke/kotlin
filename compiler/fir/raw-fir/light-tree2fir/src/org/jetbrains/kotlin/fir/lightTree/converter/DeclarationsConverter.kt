@@ -29,6 +29,7 @@ import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.builder.*
 import org.jetbrains.kotlin.fir.declarations.impl.*
 import org.jetbrains.kotlin.fir.declarations.utils.*
+import org.jetbrains.kotlin.fir.diagnostics.ConeDanglingModifierOnTopLevel
 import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnostic
 import org.jetbrains.kotlin.fir.diagnostics.ConeSimpleDiagnostic
 import org.jetbrains.kotlin.fir.diagnostics.DiagnosticKind
@@ -122,11 +123,7 @@ class DeclarationsConverter(
         }
 
         modifierList.forEach {
-            firDeclarationList += buildErrorTopLevelDeclarationForDanglingModifierList(
-                it.toFirSourceElement(
-                    KtFakeSourceElementKind.DanglingModifierList
-                )
-            )
+            firDeclarationList += buildErrorTopLevelDeclarationForDanglingModifierList(it)
         }
 
         return buildFile {
@@ -852,9 +849,18 @@ class DeclarationsConverter(
             }
         }
         for (node in modifierLists) {
-            firDeclarations += buildErrorTopLevelDeclarationForDanglingModifierList(node.toFirSourceElement(KtFakeSourceElementKind.DanglingModifierList))
+            firDeclarations += buildErrorTopLevelDeclarationForDanglingModifierList(node)
         }
         return firDeclarations
+    }
+
+    private fun buildErrorTopLevelDeclarationForDanglingModifierList(node: LighterASTNode) = buildDanglingModifierList {
+        this.source = node.toFirSourceElement(KtFakeSourceElementKind.DanglingModifierList)
+        moduleData = baseModuleData
+        origin = FirDeclarationOrigin.Source
+        diagnostic = ConeDanglingModifierOnTopLevel
+        symbol = FirDanglingModifierSymbol()
+        annotations += convertModifierList(node).annotations
     }
 
     /**

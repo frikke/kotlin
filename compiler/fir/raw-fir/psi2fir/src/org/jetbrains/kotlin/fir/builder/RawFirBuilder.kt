@@ -1001,11 +1001,7 @@ open class RawFirBuilder(
                 }
 
                 for (danglingModifierList in PsiTreeUtil.getChildrenOfTypeAsList(file, KtModifierList::class.java)) {
-                    declarations += buildErrorTopLevelDeclarationForDanglingModifierList(
-                        danglingModifierList.toFirSourceElement(
-                            KtFakeSourceElementKind.DanglingModifierList
-                        )
-                    )
+                    declarations += buildErrorTopLevelDeclarationForDanglingModifierList(danglingModifierList)
                 }
             }
         }
@@ -1204,11 +1200,7 @@ open class RawFirBuilder(
                         }
                         for (danglingModifier in PsiTreeUtil.getChildrenOfTypeAsList(classOrObject.body, KtModifierList::class.java)) {
                             addDeclaration(
-                                buildErrorTopLevelDeclarationForDanglingModifierList(
-                                    danglingModifier.toFirSourceElement(
-                                        KtFakeSourceElementKind.DanglingModifierList
-                                    )
-                                )
+                                buildErrorTopLevelDeclarationForDanglingModifierList(danglingModifier)
                             )
                         }
 
@@ -2667,6 +2659,17 @@ open class RawFirBuilder(
         private fun MutableList<FirTypeProjection>.appendTypeArguments(args: List<KtTypeProjection>) {
             for (typeArgument in args) {
                 this += typeArgument.convert<FirTypeProjection>()
+            }
+        }
+
+        private fun buildErrorTopLevelDeclarationForDanglingModifierList(modifierList : KtModifierList) = buildDanglingModifierList {
+            this.source = modifierList.toFirSourceElement(KtFakeSourceElementKind.DanglingModifierList)
+            moduleData = baseModuleData
+            origin = FirDeclarationOrigin.Source
+            diagnostic = ConeDanglingModifierOnTopLevel
+            symbol = FirDanglingModifierSymbol()
+            for (annotationEntry in modifierList.getAnnotationEntries()) {
+                annotations += annotationEntry.convert<FirAnnotation>()
             }
         }
     }

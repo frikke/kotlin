@@ -1278,14 +1278,6 @@ abstract class BaseFirBuilder<T>(val baseSession: FirSession, val context: Conte
         symbol = FirErrorPropertySymbol(diagnostic)
     }
 
-    protected fun buildErrorTopLevelDeclarationForDanglingModifierList(source: KtSourceElement) = buildDanglingModifierList {
-        this.source = source
-        moduleData = baseModuleData
-        origin = FirDeclarationOrigin.Source
-        diagnostic = ConeDanglingModifierOnTopLevel
-        symbol = FirDanglingModifierSymbol()
-    }
-
     protected fun createNoTypeForParameterTypeRef(): FirErrorTypeRef {
         return buildErrorTypeRef {
             diagnostic = ConeSimpleDiagnostic("No type for parameter", DiagnosticKind.ValueParameterWithNoTypeAnnotation)

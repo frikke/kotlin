@@ -47,13 +47,12 @@ internal class FileStructure private constructor(
         if (declaration != null) {
             container = declaration
         } else {
-            container = if (isDanglingModifierList(element)) element else element.containingKtFile
+            val modifierList = PsiTreeUtil.getParentOfType(element, KtModifierList::class.java, false)
+            container = if (modifierList != null && modifierList.nextSibling is PsiErrorElement) {
+                modifierList
+            } else element.containingKtFile
         }
         return getStructureElementForDeclaration(container)
-    }
-
-    private fun isDanglingModifierList(element: KtElement): Boolean {
-        return PsiTreeUtil.getParentOfType(element, KtModifierList::class.java, false)?.nextSibling is PsiErrorElement
     }
 
     private fun getStructureElementForDeclaration(declaration: KtElement): FileStructureElement {
@@ -131,10 +130,9 @@ internal class FileStructure private constructor(
     }
 
     private fun createDanglingModifierListStructure(container: KtElement): FileStructureElement {
-        val modifierList = PsiTreeUtil.getParentOfType(container, KtModifierList::class.java, false)
-        val firDeclaration = modifierList?.findSourceByTraversingWholeTree(moduleComponents.firFileBuilder, firFile)
-            ?: errorWithFirSpecificEntries("no declaration found for $modifierList")
-        return DanglingModifierListStructureElement(firFile, firDeclaration, moduleComponents, modifierList.containingKtFile)
+        val firDeclaration = container.findSourceByTraversingWholeTree(moduleComponents.firFileBuilder, firFile)
+            ?: errorWithFirSpecificEntries("no declaration found", psi = container)
+        return DanglingModifierListStructureElement(firFile, firDeclaration, moduleComponents, container.containingKtFile)
     }
 
     private fun createStructureElement(container: KtElement): FileStructureElement = when {
@@ -149,7 +147,7 @@ internal class FileStructure private constructor(
             RootStructureElement(firFile, container, moduleComponents)
         }
         container is KtDeclaration -> createDeclarationStructure(container)
-        isDanglingModifierList(container) -> createDanglingModifierListStructure(container)
+        container is KtModifierList && container.nextSibling is PsiErrorElement -> createDanglingModifierListStructure(container)
         else -> error("Invalid container $container")
     }
 }
