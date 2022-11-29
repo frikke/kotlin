@@ -159,7 +159,7 @@ task compileJs(type: NoDebugJavaExec) {
     inputs.files(compileKotlin2Js.outputs.files).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(jsSrcDir).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(jsCommonSrcDir).withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.dir(jsKotlinxBrowser)
+//    inputs.dir(jsKotlinxBrowser)
 
     outputs.file(jsOutputFileName)
     outputs.file(jsOutputMapFileName)
