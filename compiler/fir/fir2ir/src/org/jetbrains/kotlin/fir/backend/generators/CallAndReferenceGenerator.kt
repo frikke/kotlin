@@ -55,7 +55,6 @@ class CallAndReferenceGenerator(
     private val conversionScope: Fir2IrConversionScope
 ) : Fir2IrComponents by components {
 
-    private val approximator = ConeTypeApproximator(session.typeContext, session.languageVersionSettings)
     private val adapterGenerator = AdapterGenerator(components, conversionScope)
 
     private fun FirTypeRef.toIrType(): IrType =
