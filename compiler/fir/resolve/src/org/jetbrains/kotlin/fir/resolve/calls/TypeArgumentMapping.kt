@@ -45,9 +45,7 @@ internal object MapTypeArguments : ResolutionStage() {
             return
         }
 
-        // Even an illegal number of type arguments must be passed on so that each type argument can still be resolved later (e.g. for
-        // navigation in the IDE).
-        candidate.typeArgumentMapping = TypeArgumentMapping.Mapped(typeArguments)
+        candidate.typeArgumentMapping = TypeArgumentMapping.Mapped(typeArguments.take(owner.typeParameters.size))
         if (
             typeArguments.size != owner.typeParameters.size &&
             callInfo.callKind != CallKind.DelegatingConstructorCall &&

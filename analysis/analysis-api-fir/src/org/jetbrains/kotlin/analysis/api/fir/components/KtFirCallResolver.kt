@@ -799,16 +799,20 @@ internal class KtFirCallResolver(
         return toTypeArgumentsMapping(typeArguments, partiallyAppliedSymbol)
     }
 
+    /**
+     * Maps [typeArguments] to the type parameters of [partiallyAppliedSymbol].
+     *
+     * If too many type arguments are provided, a mapping is still created. Extra type arguments are simply ignored. If this wasn't the
+     * case, the resulting KtCall would contain no type arguments at all, which can cause problems later. If too few type arguments are
+     * provided, an empty map is returned defensively so that [toTypeArgumentsMapping] doesn't conjure any error types. If you want to map
+     * too few type arguments meaningfully, please provide filler types explicitly.
+     */
     private fun toTypeArgumentsMapping(
         typeArguments: List<FirTypeProjection>,
         partiallyAppliedSymbol: KtPartiallyAppliedSymbol<*, *>
     ): Map<KtTypeParameterSymbol, KtType> {
         val typeParameters = partiallyAppliedSymbol.symbol.typeParameters
         if (typeParameters.isEmpty()) return emptyMap()
-
-        // If too many type arguments are provided, we can still create the mapping. Extra type arguments should be ignored. Otherwise, the
-        // resulting KtCall contains no type arguments at all, which can cause problems later. The case where too few type arguments are
-        // provided does not usually occur, because call completion infers an error type argument for an uninferable type parameter.
         if (typeArguments.size < typeParameters.size) return emptyMap()
 
         val result = mutableMapOf<KtTypeParameterSymbol, KtType>()

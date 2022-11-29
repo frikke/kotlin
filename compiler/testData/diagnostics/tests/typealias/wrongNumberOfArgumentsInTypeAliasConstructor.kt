@@ -20,7 +20,7 @@ val test2p2 = P2<!WRONG_NUMBER_OF_TYPE_ARGUMENTS!><Int, Int><!>(1, 1)
 val test3p2 = P2<!WRONG_NUMBER_OF_TYPE_ARGUMENTS!><Int, Int, Int><!>(1, 1)
 
 val test0pr = PR(1, "")
-val test1pr = PR<!WRONG_NUMBER_OF_TYPE_ARGUMENTS!><Int><!>(1, "")
+val test1pr = PR<!WRONG_NUMBER_OF_TYPE_ARGUMENTS!><Int><!>("", 1)
 val test2pr = PR<Int, String>(<!CONSTANT_EXPECTED_TYPE_MISMATCH!>1<!>, <!TYPE_MISMATCH!>""<!>)
 val test2pra = PR<String, Int>(1, "")
 val test3pr = PR<!WRONG_NUMBER_OF_TYPE_ARGUMENTS!><String, Int, Int><!>(1, "")

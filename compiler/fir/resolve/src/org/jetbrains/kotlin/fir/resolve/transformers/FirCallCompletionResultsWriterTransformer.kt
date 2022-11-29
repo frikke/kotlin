@@ -7,19 +7,14 @@ package org.jetbrains.kotlin.fir.resolve.transformers
 
 import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.builtins.functions.FunctionClassKind
-import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.fakeElement
 import org.jetbrains.kotlin.fir.*
 import org.jetbrains.kotlin.fir.declarations.*
-import org.jetbrains.kotlin.fir.declarations.builder.buildReceiverParameterCopy
 import org.jetbrains.kotlin.fir.declarations.utils.isInline
-import org.jetbrains.kotlin.fir.declarations.utils.isLocal
-import org.jetbrains.kotlin.fir.declarations.utils.visibility
 import org.jetbrains.kotlin.fir.diagnostics.ConeSimpleDiagnostic
 import org.jetbrains.kotlin.fir.diagnostics.DiagnosticKind
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.expressions.impl.FirPropertyAccessExpressionImpl
-import org.jetbrains.kotlin.fir.references.FirErrorNamedReference
 import org.jetbrains.kotlin.fir.references.FirNamedReference
 import org.jetbrains.kotlin.fir.references.builder.buildErrorNamedReference
 import org.jetbrains.kotlin.fir.references.builder.buildResolvedCallableReference
@@ -158,14 +153,7 @@ class FirCallCompletionResultsWriterTransformer(
         }
 
         if (declaration !is FirErrorFunction) {
-            if (result.calleeReference !is FirErrorNamedReference) {
-                result.replaceTypeArguments(typeArguments)
-            } else {
-                // If the callee reference has an error, we must ensure that all extra type arguments are preserved in the result, so that
-                // they can still be resolved later (e.g. for navigation in the IDE).
-                val combinedTypeArguments = typeArguments + result.typeArguments.drop(typeArguments.size)
-                result.replaceTypeArguments(combinedTypeArguments)
-            }
+            result.replaceTypeArguments(typeArguments)
         }
         session.lookupTracker?.recordTypeResolveAsLookup(typeRef, qualifiedAccessExpression.source, context.file.source)
         return result
@@ -519,7 +507,7 @@ class FirCallCompletionResultsWriterTransformer(
         access: FirQualifiedAccess,
         candidate: Candidate
     ): List<FirTypeProjection> {
-        return computeTypeArgumentTypes(candidate)
+        val typeArguments = computeTypeArgumentTypes(candidate)
             .mapIndexed { index, type ->
                 when (val argument = access.typeArguments.getOrNull(index)) {
                     is FirTypeProjectionWithVariance -> {
@@ -546,6 +534,12 @@ class FirCallCompletionResultsWriterTransformer(
                     }
                 }
             }
+
+        // We must ensure that all extra type arguments are preserved in the result, so that they can still be resolved later (e.g. for
+        // navigation in the IDE).
+        return if (typeArguments.size < access.typeArguments.size) {
+            typeArguments + access.typeArguments.subList(typeArguments.size, access.typeArguments.size)
+        } else typeArguments
     }
 
     private fun computeTypeArgumentTypes(
