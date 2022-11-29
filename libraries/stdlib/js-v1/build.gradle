@@ -26,7 +26,7 @@ def builtinsDir = "${rootDir}/core/builtins"
 
 def jsSrcDir = "src"
 def jsCommonSrcDir = "${jsCommonDir}/src"
-def jsKotlinxBrowser = "${projectDir}/../../kotlinx-browser/src/jsMain/kotlin"
+//def jsKotlinxBrowser = "${projectDir}/../../kotlinx-browser/src/jsMain/kotlin"
 def jsTestSrcDir = "test"
 def jsCommonTestSrcDir = "${jsCommonDir}/test"
 
@@ -54,7 +54,7 @@ sourceSets {
         kotlin {
             srcDir builtinsSrcDir
             srcDir jsCommonSrcDir
-            srcDir jsKotlinxBrowser
+//            srcDir jsKotlinxBrowser
             srcDir jsSrcDir
         }
     }
