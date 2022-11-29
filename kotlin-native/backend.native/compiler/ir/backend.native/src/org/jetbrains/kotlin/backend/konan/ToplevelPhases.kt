@@ -342,27 +342,26 @@ internal val umbrellaCompilation = SameTypeNamedCompilerPhase(
         description = "A batched compilation with shared FE and ME phases",
         prerequisite = emptySet(),
         lower = object : CompilerPhase<Context, Unit, Unit> {
+            fun isReferencedByNativeRuntime(declarations: List<IrDeclaration>): Boolean =
+                    declarations.any {
+                        it.hasAnnotation(RuntimeNames.exportTypeInfoAnnotation)
+                                || it.hasAnnotation(RuntimeNames.exportForCppRuntime)
+                    } || declarations.any {
+                        it is IrClass && isReferencedByNativeRuntime(it.declarations)
+                    }
+
             override fun invoke(phaseConfig: PhaseConfigurationService, phaserState: PhaserState<Unit>, context: Context, input: Unit) {
                 val module = context.irModules[context.config.libraryToCache!!.klib.libraryName]
                         ?: error("No module for the library being cached: ${context.config.libraryToCache!!.klib.libraryName}")
 
                 val files = module.files.toList()
                 module.files.clear()
-                val functionInterfaceFiles = files.filter { it.isFunctionInterfaceFile }
 
-                val filesReferencedByNativeRuntime = if (module.descriptor != context.stdlibModule)
-                    emptyList()
-                else {
-                    fun isReferencedByNativeRuntime(declarations: List<IrDeclaration>): Boolean =
-                            declarations.any {
-                                it.hasAnnotation(RuntimeNames.exportTypeInfoAnnotation)
-                                        || it.hasAnnotation(RuntimeNames.exportForCppRuntime)
-                            } || declarations.any {
-                                it is IrClass && isReferencedByNativeRuntime(it.declarations)
-                            }
-
-                    files.filter { isReferencedByNativeRuntime(it.declarations) }
-                }
+                val stdlibIsBeingCached = module.descriptor == context.stdlibModule
+                val functionInterfaceFiles = files.takeIf { stdlibIsBeingCached }
+                        ?.filter { it.isFunctionInterfaceFile }.orEmpty()
+                val filesReferencedByNativeRuntime = files.takeIf { stdlibIsBeingCached }
+                        ?.filter { isReferencedByNativeRuntime(it.declarations) }.orEmpty()
 
                 for (file in files) {
                     if (file.isFunctionInterfaceFile) continue
