@@ -287,7 +287,7 @@ class FunctionInlining(
                     else
                         (argument.copy() as IrExpression)
 
-                if (ret is IrGetValue) {
+                if (ret is IrGetValue && inlineArgumentsWithTheirOriginalType) {
                     // This assignment is required for JVM backend in `LocalDeclarationsLowering`. We need to create exact the same constructor
                     // for inlined anonymous class as for original one in case if inlined one will be dropped. To achieve it we need information
                     // about original type in access expression.
@@ -443,8 +443,8 @@ class FunctionInlining(
                     is IrConstructor -> {
                         val classTypeParametersCount = inlinedFunction.parentAsClass.typeParameters.size
                         IrConstructorCallImpl.fromSymbolOwner(
-                            irFunctionReference.startOffset,
-                            irFunctionReference.endOffset,
+                            irCall.startOffset,
+                            irCall.endOffset,
                             inlinedFunction.returnType,
                             inlinedFunction.symbol,
                             classTypeParametersCount,
@@ -453,8 +453,8 @@ class FunctionInlining(
                     }
                     is IrSimpleFunction ->
                         IrCallImpl(
-                            irFunctionReference.startOffset,
-                            irFunctionReference.endOffset,
+                            irCall.startOffset,
+                            irCall.endOffset,
                             inlinedFunction.returnType,
                             inlinedFunction.symbol,
                             inlinedFunction.typeParameters.size,
@@ -743,7 +743,7 @@ class FunctionInlining(
         private fun IrValueParameter.getOriginalParameter(): IrValueParameter {
             if (this.parent !is IrFunction) return this
             val original = (this.parent as IrFunction).originalFunction
-            return original.allParameters.single { it.name == this.name && it.startOffset == this.startOffset }
+            return original.allParameters.singleOrNull { it.name == this.name && it.startOffset == this.startOffset } ?: this
         }
 
         private fun IrValueParameter.getOriginalType(): IrType {
