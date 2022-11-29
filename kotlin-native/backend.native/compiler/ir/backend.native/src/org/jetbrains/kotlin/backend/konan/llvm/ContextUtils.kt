@@ -487,6 +487,7 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
                     }
 
                     if (filesUsed.isEmpty()) {
+                        // This is the case when we depend on the whole module rather than on a number of files.
                         moduleDependencies.add(library)
                         addAllDependencies(cache)
                     } else {
