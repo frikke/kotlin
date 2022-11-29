@@ -198,25 +198,23 @@ internal object ClassFieldsSerializer {
     }
 }
 
-class SerializedEagerInitializedProperty(val file: Int, val signature: Int)
+class SerializedEagerInitializedFile(val file: Int)
 
 internal object EagerInitializedPropertySerializer {
-    fun serialize(properties: List<SerializedEagerInitializedProperty>): ByteArray {
-        val size = properties.sumOf { Int.SIZE_BYTES * 2 }
+    fun serialize(properties: List<SerializedEagerInitializedFile>): ByteArray {
+        val size = properties.sumOf { Int.SIZE_BYTES }
         val stream = ByteArrayStream(ByteArray(size))
         properties.forEach {
             stream.writeInt(it.file)
-            stream.writeInt(it.signature)
         }
         return stream.buf
     }
 
-    fun deserializeTo(data: ByteArray, result: MutableList<SerializedEagerInitializedProperty>) {
+    fun deserializeTo(data: ByteArray, result: MutableList<SerializedEagerInitializedFile>) {
         val stream = ByteArrayStream(data)
         while (stream.hasData()) {
             val file = stream.readInt()
-            val signature = stream.readInt()
-            result.add(SerializedEagerInitializedProperty(file, signature))
+            result.add(SerializedEagerInitializedFile(file))
         }
     }
 }
@@ -477,7 +475,9 @@ internal class KonanIrLinker(
 
         val files by lazy { fileDeserializationStates.map { it.file } }
 
-        val idSignatureToFile by lazy {
+        private val fileToFileDeserializationState by lazy { fileDeserializationStates.associateBy { it.file } }
+
+        private val idSignatureToFile by lazy {
             buildMap {
                 fileDeserializationStates.forEach { fileDeserializationState ->
                     fileDeserializationState.fileDeserializer.reversedSignatureIndex.keys.forEach { idSig ->
@@ -655,23 +655,10 @@ internal class KonanIrLinker(
                     })
         }
 
-        fun buildEagerInitializedProperty(irProperty: IrProperty): SerializedEagerInitializedProperty {
-            val signature = irProperty.symbol.signature
-                    ?: error("No signature for ${irProperty.render()}")
-            require(signature.topLevelSignature() == signature) { "Expected a top level property: ${irProperty.render()}" }
-            val fileDeserializationState = moduleReversedFileIndex[signature]
-                    ?: error("No file deserializer for ${signature.render()}")
-            val fileDeserializer = fileDeserializationState.fileDeserializer
-            val declarationIndex = fileDeserializer.reversedSignatureIndex[signature]
-                    ?: error("No declaration for ${signature.render()}")
-            val fileReader = fileDeserializationState.fileReader
-            val protoDeclaration = fileReader.declaration(declarationIndex)
-            val protoProperty = protoDeclaration.irProperty
-
-            return SerializedEagerInitializedProperty(
-                    fileDeserializationState.fileIndex,
-                    BinarySymbolData.decode(protoProperty.base.symbol).signatureId
-            )
+        fun buildEagerInitializedFile(irFile: IrFile): SerializedEagerInitializedFile {
+            val fileDeserializationState = fileToFileDeserializationState[irFile]
+                    ?: error("No file deserializer for ${irFile.render()}")
+            return SerializedEagerInitializedFile(fileDeserializationState.fileIndex)
         }
 
         private val descriptorByIdSignatureFinder = DescriptorByIdSignatureFinderImpl(
@@ -885,7 +872,7 @@ internal class KonanIrLinker(
 
         val eagerInitializedFiles by lazy {
             val cache = cachedLibraries.getLibraryCache(klib)!! // ?: error("No cache for ${klib.libraryName}") // KT-54668
-            cache.serializedEagerInitializedProperties
+            cache.serializedEagerInitializedFiles
                     .map { fileDeserializationStates[it.file].file }
                     .distinct()
         }

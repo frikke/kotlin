@@ -94,7 +94,7 @@ internal class CacheStorage(val generationState: NativeGenerationState) {
 
     private fun saveEagerInitializedProperties() {
         outputFiles.eagerInitializedPropertiesFile!!.writeBytes(
-                EagerInitializedPropertySerializer.serialize(generationState.eagerInitializedProperties))
+                EagerInitializedPropertySerializer.serialize(generationState.eagerInitializedFiles))
     }
 }
 

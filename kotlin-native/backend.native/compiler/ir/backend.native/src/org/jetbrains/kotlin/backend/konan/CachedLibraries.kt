@@ -36,13 +36,13 @@ class CachedLibraries(
         val binariesPaths by lazy { computeBinariesPaths() }
         val serializedInlineFunctionBodies by lazy { computeSerializedInlineFunctionBodies() }
         val serializedClassFields by lazy { computeSerializedClassFields() }
-        val serializedEagerInitializedProperties by lazy { computeSerializedEagerInitializedProperties() }
+        val serializedEagerInitializedFiles by lazy { computeSerializedEagerInitializedFiles() }
 
         protected abstract fun computeBitcodeDependencies(): List<BitcodeDependency>
         protected abstract fun computeBinariesPaths(): List<String>
         protected abstract fun computeSerializedInlineFunctionBodies(): List<SerializedInlineFunctionReference>
         protected abstract fun computeSerializedClassFields(): List<SerializedClassFields>
-        protected abstract fun computeSerializedEagerInitializedProperties(): List<SerializedEagerInitializedProperty>
+        protected abstract fun computeSerializedEagerInitializedFiles(): List<SerializedEagerInitializedFile>
 
         protected fun Kind.toCompilerOutputKind(): CompilerOutputKind = when (this) {
             Kind.DYNAMIC -> CompilerOutputKind.DYNAMIC_CACHE
@@ -84,7 +84,7 @@ class CachedLibraries(
                 ClassFieldsSerializer.deserializeTo(data, it)
             }
 
-            override fun computeSerializedEagerInitializedProperties() = mutableListOf<SerializedEagerInitializedProperty>().also {
+            override fun computeSerializedEagerInitializedFiles() = mutableListOf<SerializedEagerInitializedFile>().also {
                 val directory = File(path).absoluteFile.parentFile.parentFile
                 val data = directory.child(PER_FILE_CACHE_IR_LEVEL_DIR_NAME).child(EAGER_INITIALIZED_PROPERTIES_FILE_NAME).readBytes()
                 EagerInitializedPropertySerializer.deserializeTo(data, it)
@@ -129,7 +129,7 @@ class CachedLibraries(
                 }
             }
 
-            override fun computeSerializedEagerInitializedProperties() = mutableListOf<SerializedEagerInitializedProperty>().also {
+            override fun computeSerializedEagerInitializedFiles() = mutableListOf<SerializedEagerInitializedFile>().also {
                 fileDirs.forEach { fileDir ->
                     val data = fileDir.child(PER_FILE_CACHE_IR_LEVEL_DIR_NAME).child(EAGER_INITIALIZED_PROPERTIES_FILE_NAME).readBytes()
                     EagerInitializedPropertySerializer.deserializeTo(data, it)
