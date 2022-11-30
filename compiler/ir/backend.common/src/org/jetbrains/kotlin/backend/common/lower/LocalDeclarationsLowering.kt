@@ -103,6 +103,10 @@ class LocalDeclarationsLowering(
         LocalDeclarationsTransformer(irBlock, container, closestParent, classesToLower, functionsToSkip).lowerLocalDeclarations()
     }
 
+    fun lowerWithoutActualChange(irBody: IrBody, container: IrDeclaration) {
+        LocalDeclarationsTransformer(irBody, container).cacheLocalConstructors()
+    }
+
     internal class ScopeWithCounter(val irElement: IrElement) {
         // Continuous numbering across all declarations in the container.
         var counter: Int = 0
@@ -264,6 +268,15 @@ class LocalDeclarationsLowering(
         val newParameterToOld: MutableMap<IrValueParameter, IrValueParameter> = mutableMapOf()
         val oldParameterToNew: MutableMap<IrValueParameter, IrValueParameter> = mutableMapOf()
         val newParameterToCaptured: MutableMap<IrValueParameter, IrValueSymbol> = mutableMapOf()
+
+        fun cacheLocalConstructors() {
+            collectLocalDeclarations()
+            collectClosureForLocalDeclarations()
+
+            localClassConstructors.values.forEach {
+                createTransformedConstructorDeclaration(it)
+            }
+        }
 
         fun lowerLocalDeclarations() {
             collectLocalDeclarations()
@@ -772,6 +785,10 @@ class LocalDeclarationsLowering(
 
         private fun createTransformedConstructorDeclaration(constructorContext: LocalClassConstructorContext) {
             val oldDeclaration = constructorContext.declaration
+            context.mapping.capturedConstructors[oldDeclaration]?.let {
+                transformedDeclarations[oldDeclaration] = it
+                return
+            }
 
             val localClassContext = localClasses[oldDeclaration.parent]!!
             val capturedValues = localClassContext.closure.capturedValues
@@ -836,6 +853,8 @@ class LocalDeclarationsLowering(
                     super.visitValueAccess(expression)
                 }
             })
+
+            return capturedValues.toSet().associateWith { it.owner.type }
 
             if (capturedSymbolToType.size != capturedValues.size) {
                 capturedValues.toSet().minus(capturedSymbolToType.keys).forEach {

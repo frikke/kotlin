@@ -9,21 +9,25 @@ import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.ir.getDefaultAdditionalStatementsFromInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.getNonDefaultAdditionalStatementsFromInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.getOriginalStatementsFromInlinedBlock
+import org.jetbrains.kotlin.backend.common.lower.LocalDeclarationsLowering
+import org.jetbrains.kotlin.backend.common.lower.parents
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
-import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
-import org.jetbrains.kotlin.backend.jvm.functionInliningPhase
-import org.jetbrains.kotlin.backend.jvm.localDeclarationsPhase
+import org.jetbrains.kotlin.backend.jvm.*
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrFile
+import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrInlineMarker
-import org.jetbrains.kotlin.ir.expressions.IrBlock
-import org.jetbrains.kotlin.ir.expressions.IrCall
-import org.jetbrains.kotlin.ir.expressions.IrExpression
-import org.jetbrains.kotlin.ir.expressions.IrFunctionReference
+import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrConstructorCallImpl
+import org.jetbrains.kotlin.ir.util.copyTypeAndValueArgumentsFrom
+import org.jetbrains.kotlin.ir.util.defaultType
+import org.jetbrains.kotlin.ir.util.parentAsClass
+import org.jetbrains.kotlin.ir.util.primaryConstructor
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
+import org.jetbrains.kotlin.name.NameUtils
 
 internal val removeDuplicatedInlinedLocalClasses = makeIrFilePhase(
     ::RemoveDuplicatedInlinedLocalClassesLowering,
@@ -40,8 +44,18 @@ internal val removeDuplicatedInlinedLocalClasses = makeIrFilePhase(
 // 3. MUST NOT BE created at all because will be created at callee site.
 // This lowering drops declarations that correspond to second and third type.
 class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext) : IrElementTransformer<Boolean>, FileLoweringPass {
-    private val inlineStack = mutableListOf<IrInlineMarker>()
+    private var insideInlineBlock = false
     private val visited = mutableSetOf<IrElement>()
+
+    private var modifyTree: Boolean = true
+    private val modified = mutableSetOf<IrClass>()
+
+    private fun willBeModified(irClass: IrClass): Boolean {
+        modifyTree = false
+        irClass.parents.first { it !is IrFunction || it.origin != JvmLoweredDeclarationOrigin.INLINE_LAMBDA }
+            .accept(this, false)
+        return irClass in modified
+    }
 
     override fun lower(irFile: IrFile) {
         irFile.transformChildren(this, false)
@@ -53,31 +67,85 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
     }
 
     override fun visitBlock(expression: IrBlock, data: Boolean): IrExpression {
-        if (expression.statements.isNotEmpty() && expression.statements.first() is IrInlineMarker) {
-            val marker = expression.statements.first() as IrInlineMarker
-            inlineStack += marker
+        if (expression.statements.firstOrNull() is IrInlineMarker) {
+            val oldInsideInlineBlock = insideInlineBlock
+            insideInlineBlock = true
             expression.getNonDefaultAdditionalStatementsFromInlinedBlock().forEach { it.transform(this, false) }
             expression.getDefaultAdditionalStatementsFromInlinedBlock().forEach { it.transform(this, true) }
             expression.getOriginalStatementsFromInlinedBlock().forEach { it.transform(this, true) }
-            inlineStack.removeLast()
+            insideInlineBlock = oldInsideInlineBlock
             return expression
         }
 
-        return super.visitBlock(expression, data)
+        val oldClass = expression.statements.firstOrNull() as? IrClass
+        val containsClass = expression.statements.firstOrNull() is IrClass
+        val result = super.visitBlock(expression, data)
+        if (containsClass && result is IrBlock && result.statements.firstOrNull() is IrComposite) {
+            val lastStatement = result.statements.last()
+            val constructorCall = (lastStatement as? IrConstructorCall)
+                ?: (lastStatement as IrBlock).statements.last() as IrConstructorCall
+            val constructorParent = constructorCall.symbol.owner.parentAsClass
+            var originalConstructor = context.mapping.capturedConstructors.keys.filter {
+                it.parentAsClass.attributeOwnerId == constructorParent.attributeOwnerId && it.parentAsClass != constructorParent
+            }.singleOrNull {
+                val remover = RemoveDuplicatedInlinedLocalClassesLowering(context)
+                !remover.willBeModified(it.parentAsClass)
+            }
+            if (originalConstructor == null) {
+                val container = oldClass!!.parents.first { it is IrFunction } as IrFunction
+                LocalDeclarationsLowering(
+                    context, NameUtils::sanitizeAsJavaIdentifier, JvmVisibilityPolicy(),
+                    compatibilityModeForInlinedLocalDelegatedPropertyAccessors = true, forceFieldsForInlineCaptures = true
+                ).lowerWithoutActualChange(container.body!!, container)
+
+                originalConstructor = context.mapping.capturedConstructors.keys.filter {
+                    it.parentAsClass.attributeOwnerId == constructorParent.attributeOwnerId && it.parentAsClass != constructorParent
+                }.single {
+                    val remover = RemoveDuplicatedInlinedLocalClassesLowering(context)
+                    !remover.willBeModified(it.parentAsClass)
+                }
+//                TODO("call local lowering")
+//                return result
+            }
+            val loweredConstructor = context.mapping.capturedConstructors[originalConstructor]!!
+            val newConstructorCall = IrConstructorCallImpl.fromSymbolOwner(
+                constructorCall.startOffset, constructorCall.endOffset,
+                loweredConstructor.parentAsClass.defaultType, loweredConstructor.symbol, constructorCall.origin
+            )
+            newConstructorCall.copyTypeAndValueArgumentsFrom(constructorCall)
+
+            if (lastStatement is IrConstructorCall) {
+                result.statements[result.statements.lastIndex] = newConstructorCall
+            } else if (lastStatement is IrBlock) {
+                lastStatement.statements[lastStatement.statements.lastIndex] = newConstructorCall
+            }
+        }
+        return result
     }
 
     // Basically we want to remove all anonymous classes after inline. Exceptions are:
     // 1. classes that must be regenerated (declaration.attributeOwnerIdBeforeInline != null)
     // 2. classes that are originally declared on call site or are default lambdas (data == true)
     override fun visitClass(declaration: IrClass, data: Boolean): IrStatement {
-        if (inlineStack.isEmpty() || declaration.attributeOwnerIdBeforeInline != null || !data) {
+        if (!insideInlineBlock || declaration.attributeOwnerIdBeforeInline != null || !data) {
             return super.visitClass(declaration, data)
         }
 
-        // TODO big note. Here we drop anonymous class declaration but there still present a constructor call that has reference to this class.
-        //  Everything works fine because somewhere in code we still have class declaration with the same name. So this doesn't ruin code
-        //  generation and will not drop on runtime, but this is something to be aware of.
-        return IrCompositeImpl(declaration.startOffset, declaration.endOffset, context.irBuiltIns.unitType)
+        modified += declaration
+        return if (modifyTree) {
+            val constructor = declaration.primaryConstructor!!
+            context.mapping.capturedConstructors[constructor] = null // actually will do `remove`
+            context.mapping.capturedConstructors.keys.map { key -> // for each value
+                context.mapping.capturedConstructors[key]?.let {
+                    if (it == constructor) {
+                        context.mapping.capturedConstructors[key] = null
+                    }
+                }
+            }
+            IrCompositeImpl(declaration.startOffset, declaration.endOffset, context.irBuiltIns.unitType)
+        } else {
+            super.visitClass(declaration, data)
+        }
     }
 
     override fun visitFunctionReference(expression: IrFunctionReference, data: Boolean): IrElement {
