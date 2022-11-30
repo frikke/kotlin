@@ -274,12 +274,6 @@ class FunctionInlining(
                     else
                         (argument.copy() as IrExpression)
 
-                if (ret is IrGetValue && inlineArgumentsWithTheirOriginalType) {
-                    // This assignment is required for JVM backend in `LocalDeclarationsLowering`. We need to create exact the same constructor
-                    // for inlined anonymous class as for original one in case if inlined one will be dropped. To achieve it we need information
-                    // about original type in access expression.
-                    ret.attributeOwnerId = expression.attributeOwnerId
-                }
                 if (insertAdditionalImplicitCasts)
                     ret = ret.implicitCastIfNeededTo(newExpression.type)
                 return ret

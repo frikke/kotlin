@@ -15,10 +15,7 @@ import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.*
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
-import org.jetbrains.kotlin.ir.declarations.IrClass
-import org.jetbrains.kotlin.ir.declarations.IrFile
-import org.jetbrains.kotlin.ir.declarations.IrFunction
-import org.jetbrains.kotlin.ir.declarations.IrInlineMarker
+import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstructorCallImpl
@@ -85,6 +82,15 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
         return result
     }
 
+    private fun IrAttributeContainer.getOriginalDeclaration(): IrDeclaration? {
+        return when (val original = this.attributeOwnerId) {
+            is IrClass -> return original
+            is IrFunctionExpression -> original.function
+            is IrFunctionReference -> original.symbol.owner
+            else -> null
+        }
+    }
+
     private fun reuseConstructorFromOriginalClass(block: IrBlock, anonymousClass: IrClass) {
         val lastStatement = block.statements.last()
         val constructorCall = (lastStatement as? IrConstructorCall)
@@ -93,7 +99,8 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
 
         // It is possible that inlined class will be lowered before original. In that case we must launch `LocalDeclarationsLowering` and
         // lower original declaration to get correct captured constructor.
-        val container = anonymousClass.parents.filterIsInstance<IrFunction>().firstOrNull()?.takeIf { it.body != null }
+        val container = anonymousClass.getOriginalDeclaration()?.parents
+            ?.filterIsInstance<IrFunction>()?.firstOrNull()?.takeIf { it.body != null }
         container?.let {
             LocalDeclarationsLowering(
                 context, NameUtils::sanitizeAsJavaIdentifier, JvmVisibilityPolicy(),
@@ -106,7 +113,7 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
             RemoveDuplicatedInlinedLocalClassesLowering(context).removeUselessDeclarationsFromCapturedConstructors(it.parentAsClass)
         }
 
-        val originalConstructor = capturedConstructors.keys.first() {
+        val originalConstructor = capturedConstructors.keys.single {
             it.parentAsClass.attributeOwnerId == constructorParent.attributeOwnerId && it.parentAsClass != constructorParent
         }
 
