@@ -165,6 +165,10 @@ internal class JsUsefulDeclarationProcessor(
             context.intrinsics.jsPrototypeOfSymbol.owner.enqueue(irClass, "interface default implementation")
         }
 
+        if (irClass.isInner || irClass.isObject) {
+            context.intrinsics.jsDefinePropertySymbol.owner.enqueue(irClass, "object lazy initialization")
+        }
+
         if (context.es6mode) return
 
         if (!irClass.isInterface) {
@@ -173,10 +177,6 @@ internal class JsUsefulDeclarationProcessor(
 
         if (irClass.superTypes.any { !it.isInterface() }) {
             context.intrinsics.jsObjectCreateSymbol.owner.enqueue(irClass, "class inheritance code")
-        }
-
-        if (irClass.isInner || irClass.isObject) {
-            context.intrinsics.jsDefinePropertySymbol.owner.enqueue(irClass, "object lazy initialization")
         }
     }
 
