@@ -534,11 +534,11 @@ public open class Base64 private constructor(
      */
     public companion object Default : Base64(base64EncodeMap, base64DecodeMap, isMimeScheme = false) {
 
-        private const val bitsPerByte = 8
-        private const val bitsPerSymbol = 6
+        internal const val bitsPerByte: Int = 8
+        internal const val bitsPerSymbol: Int = 6
 
-        private const val bytesPerGroup: Int = 3
-        private const val symbolsPerGroup: Int = 4
+        internal const val bytesPerGroup: Int = 3
+        internal const val symbolsPerGroup: Int = 4
 
         private const val padSymbol: Byte = 61 // '='
 
