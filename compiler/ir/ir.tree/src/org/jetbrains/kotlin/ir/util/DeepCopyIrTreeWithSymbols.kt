@@ -409,13 +409,6 @@ open class DeepCopyIrTreeWithSymbols(
     override fun visitSyntheticBody(body: IrSyntheticBody): IrSyntheticBody =
         IrSyntheticBodyImpl(body.startOffset, body.endOffset, body.kind)
 
-    override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?): IrElement {
-        return IrInlineMarkerImpl(
-            declaration.startOffset, declaration.endOffset,
-            declaration.inlineCall, declaration.callee, declaration.originalExpression, declaration.inlinedAt
-        )
-    }
-
     override fun visitExpression(expression: IrExpression): IrExpression =
         throw IllegalArgumentException("Unsupported expression type: $expression")
 
@@ -466,6 +459,14 @@ open class DeepCopyIrTreeWithSymbols(
                 mapStatementOrigin(expression.origin),
                 expression.statements.map { it.transform() },
                 expression.inlineFunctionSymbol
+            ).copyAttributes(expression)
+        else if (expression is IrInlinedFunctionBlock)
+            IrInlinedFunctionBlockImpl(
+                expression.startOffset, expression.endOffset,
+                expression.type.remapType(),
+                expression.inlineCall, expression.inlinedElement, expression.inlineFunctionSymbol,
+                mapStatementOrigin(expression.origin),
+                expression.statements.map { it.transform() },
             ).copyAttributes(expression)
         else
             IrBlockImpl(

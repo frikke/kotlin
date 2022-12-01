@@ -64,7 +64,7 @@ class RemoveDuplicatedInlinedLocalClassesLowering(val context: JvmBackendContext
     }
 
     override fun visitBlock(expression: IrBlock, data: Boolean): IrExpression {
-        if (expression.statements.firstOrNull() is IrInlineMarker) {
+        if (expression is IrInlinedFunctionBlock) {
             val oldInsideInlineBlock = insideInlineBlock
             insideInlineBlock = true
             expression.getNonDefaultAdditionalStatementsFromInlinedBlock().forEach { it.transform(this, false) }

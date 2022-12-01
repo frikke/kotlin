@@ -7,15 +7,14 @@ package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.ir.getAdditionalStatementsFromInlinedBlock
+import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.backend.common.ir.putStatementsBeforeActualInline
-import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
 import org.jetbrains.kotlin.backend.common.phaser.makeIrModulePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.functionInliningPhase
 import org.jetbrains.kotlin.backend.jvm.ir.isInlineParameter
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.IrFile
-import org.jetbrains.kotlin.ir.declarations.IrInlineMarker
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.util.getArgumentsWithIr
@@ -34,9 +33,8 @@ class CreateSeparateCallForInlinedLambdasLowering(val context: JvmBackendContext
     }
 
     override fun visitContainerExpression(expression: IrContainerExpression): IrExpression {
-        if (expression.wasExplicitlyInlined()) {
-            val marker = expression.statements.first() as IrInlineMarker
-            val newCalls = marker.getOnlyInlinableArguments().map { arg ->
+        if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
+            val newCalls = expression.getOnlyInlinableArguments().map { arg ->
                 IrCallImpl.fromSymbolOwner(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.ir.symbols.singleArgumentInlineFunction)
                     .also { it.putValueArgument(0, arg.transform(this, null)) }
             }
@@ -50,7 +48,7 @@ class CreateSeparateCallForInlinedLambdasLowering(val context: JvmBackendContext
         return super.visitContainerExpression(expression)
     }
 
-    private fun IrInlineMarker.getOnlyInlinableArguments(): List<IrExpression> {
+    private fun IrInlinedFunctionBlock.getOnlyInlinableArguments(): List<IrExpression> {
         return this.inlineCall.getArgumentsWithIr()
             .filter { (param, arg) -> param.isInlineParameter() && arg.isInlinableExpression() }
             .map { it.second }

@@ -5,7 +5,7 @@
 
 package org.jetbrains.kotlin.backend.jvm.ir
 
-import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
+import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.IrElement
@@ -20,13 +20,12 @@ abstract class IrInlineReferenceLocator(private val context: JvmBackendContext) 
         element.acceptChildren(this, if (element is IrDeclaration && element !is IrVariable) element else data)
 
 //    override fun visitBlock(expression: IrBlock, data: IrDeclaration?) {
-//        if (expression !is IrReturnableBlock) return super.visitBlock(expression, data)
+//        if (expression !is IrInlinedFunctionBlock) return super.visitBlock(expression, data)
 //
-//        if (expression.wasExplicitlyInlined()) {
-//            val marker = expression.statements.first() as IrInlineMarker
-//            for (parameter in marker.callee.valueParameters) {
-//                val lambda = marker.inlineCall.getValueArgument(parameter.index)?.unwrapInlineLambda() ?: continue
-//                visitInlineLambda(lambda, marker.callee, parameter, data!!)
+//        if (expression.isFunctionInlining()) {
+//            for (parameter in expression.inlineFunctionSymbol.owner.valueParameters) {
+//                val lambda = expression.inlineCall.getValueArgument(parameter.index)?.unwrapInlineLambda() ?: continue
+//                visitInlineLambda(lambda, expression.inlineFunctionSymbol.owner, parameter, data!!)
 //            }
 //        }
 //
@@ -75,9 +74,8 @@ class IrInlineScopeResolver(context: JvmBackendContext) : IrInlineReferenceLocat
     }
 
     override fun visitBlock(expression: IrBlock, data: IrDeclaration?) {
-        if (expression.wasExplicitlyInlined()) {
-            val marker = expression.statements.first() as IrInlineMarker
-            val callee = marker.callee
+        if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
+            val callee = expression.inlineFunctionSymbol.owner
             if (callee is IrSimpleFunction && callee.isPrivateInline && data != null) {
                 (inlineFunctionCallSites.getOrPut(callee) { mutableSetOf() } as MutableSet).add(data)
             }

@@ -6,7 +6,7 @@
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
-import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
+import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.ir.IrStatement
@@ -38,7 +38,7 @@ private class TailCallOptimizationLowering(private val context: JvmBackendContex
                 super.visitSimpleFunction(declaration, if (declaration.isSuspend) TailCallOptimizationData(declaration) else null)
 
             override fun visitContainerExpression(expression: IrContainerExpression, data: TailCallOptimizationData?): IrExpression {
-                if (expression.wasExplicitlyInlined()) {
+                if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
                     return expression
                 }
                 return super.visitContainerExpression(expression, data)
@@ -69,7 +69,7 @@ private class TailCallOptimizationData(val function: IrSimpleFunction) {
             this is IrCall && isSuspend && !immediateReturn && (returnsUnit || type == function.returnType) ->
                 tailCalls += this
             // We want to avoid tail call optimization in inlined block because it ruins line number generation
-            this is IrBlock && !this.wasExplicitlyInlined() ->
+            this is IrBlock && !(this is IrInlinedFunctionBlock && this.isFunctionInlining()) ->
                 statements.findTailCall(returnsUnit)?.findCallsOnTailPositionWithoutImmediateReturn()
             this is IrWhen ->
                 branches.forEach { it.result.findCallsOnTailPositionWithoutImmediateReturn() }

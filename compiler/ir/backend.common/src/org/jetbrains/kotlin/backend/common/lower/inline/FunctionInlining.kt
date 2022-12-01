@@ -11,6 +11,7 @@ import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.ScopeWithIr
 import org.jetbrains.kotlin.backend.common.ir.Symbols
+import org.jetbrains.kotlin.backend.common.ir.copy
 import org.jetbrains.kotlin.backend.common.ir.isPure
 import org.jetbrains.kotlin.backend.common.lower.InnerClassesSupport
 import org.jetbrains.kotlin.backend.common.lower.at
@@ -24,7 +25,6 @@ import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
 import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.declarations.impl.IrInlineMarkerImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
@@ -118,7 +118,7 @@ class FunctionInlining(
         if (actualCallee.body == null) {
             return expression
         }
-        actualCallee.body?.transformChildrenVoid() // TODO check that this will not break other backends
+        actualCallee.body?.transformChildrenVoid()
 
         val parent = allScopes.map { it.irElement }.filterIsInstance<IrDeclarationParent>().lastOrNull()
             ?: allScopes.map { it.irElement }.filterIsInstance<IrDeclaration>().lastOrNull()?.parent
@@ -170,32 +170,16 @@ class FunctionInlining(
 
         val substituteMap = mutableMapOf<IrValueParameter, IrExpression>()
 
-        fun inline() = inlineFunction(callSite, callee, true).addIrInlineMarker(callSite, callee)
+        fun inline() = inlineFunction(callSite, callee, callee, true)
 
         private fun IrElement.copy(): IrElement {
             return copyIrElement.copy(this)
         }
 
-        private fun IrReturnableBlock.addIrInlineMarker(
-            callSite: IrFunctionAccessExpression,
-            callee: IrFunction,
-            originalExpression: IrAttributeContainer? = null
-        ): IrReturnableBlock {
-            val fileEntry = (parent as? IrDeclaration)?.fileOrNull?.fileEntry
-            if (fileEntry != null) {
-                val inlinedAt = if (originalExpression == null) parent as IrDeclaration else this@Inliner.callee
-                val marker = IrInlineMarkerImpl(
-                    UNDEFINED_OFFSET, UNDEFINED_OFFSET, callSite as IrCall, callee, originalExpression, inlinedAt
-                )
-                this.statements.add(0, marker)
-            }
-
-            return this
-        }
-
         private fun inlineFunction(
             callSite: IrFunctionAccessExpression,
             callee: IrFunction,
+            originalInlinedElement: IrElement,
             performRecursiveInline: Boolean
         ): IrReturnableBlock {
             val copiedCallee = (callee.copy() as IrFunction).apply {
@@ -228,16 +212,24 @@ class FunctionInlining(
             newStatements.addAll(evaluationStatements)
             statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
 
+            val inlinedBlock = IrInlinedFunctionBlockImpl(
+                startOffset = callSite.startOffset,
+                endOffset = callSite.endOffset,
+                type = callSite.type,
+                inlineCall = callSite,
+                inlinedElement = originalInlinedElement,
+                inlineFunctionSymbol = callee.symbol,
+                origin = null,
+                statements = newStatements
+            )
+
             return IrReturnableBlockImpl(
                 startOffset = callSite.startOffset,
                 endOffset = callSite.endOffset,
                 type = callSite.type,
                 symbol = irReturnableBlockSymbol,
-                origin = InlinedFunction(
-                    callee.origin == IrDeclarationOrigin.ADAPTER_FOR_CALLABLE_REFERENCE
-                            || callee.origin == IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
-                ),
-                statements = newStatements,
+                origin = null,
+                statements = listOf(inlinedBlock),
                 inlineFunctionSymbol = callee.symbol
             ).apply {
                 transformChildrenVoid(object : IrElementTransformerVoid() {
@@ -311,15 +303,11 @@ class FunctionInlining(
                 }
             }
 
-            override fun visitInlineMarker(declaration: IrInlineMarker, data: Nothing?) = declaration
-
             fun inlineFunctionExpression(irCall: IrCall, irFunctionExpression: IrFunctionExpression): IrExpression {
                 // Inline the lambda. Lambda parameters will be substituted with lambda arguments.
                 val newExpression = inlineFunction(
-                    irCall,
-                    irFunctionExpression.function,
-                    false
-                ).addIrInlineMarker(irCall, irFunctionExpression.function, irFunctionExpression)
+                    irCall, irFunctionExpression.function, irFunctionExpression, false
+                )
                 // Substitute lambda arguments with target function arguments.
                 return newExpression.transform(this, null)
             }
@@ -357,7 +345,7 @@ class FunctionInlining(
                 inlinedCall: IrExpression, invokeCall: IrCall, reference: IrCallableReference<*>
             ): IrReturnableBlock {
                 // TODO clear this
-                // Note: This function is not exist in tree. It is appeared only in marker as intermediate callee.
+                // Note: This function is not exist in tree. It is appeared only in `IrInlinedFunctionBlock` as intermediate callee.
                 val stubForInline = context.irFactory.buildFun {
                     startOffset = inlinedCall.startOffset
                     endOffset = inlinedCall.endOffset
@@ -380,8 +368,7 @@ class FunctionInlining(
                     parent = callee.parent
                 }
 
-                return inlineFunction(invokeCall, stubForInline, false)
-                    .addIrInlineMarker(invokeCall, stubForInline, reference)
+                return inlineFunction(invokeCall, stubForInline, reference, false)
             }
 
             fun inlineAdaptedFunctionReference(irCall: IrCall, irBlock: IrBlock): IrExpression {
@@ -499,7 +486,7 @@ class FunctionInlining(
 
                 return super.visitExpression(immediateCall).transform(this@FunctionInlining, null).let {
                     if (it is IrReturnableBlock) {
-                        it.statements[0] = IrInlineMarkerImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irCall, inlinedFunction.symbol.owner, irFunctionReference, this@Inliner.callee)
+                        it.statements[0] = (it.statements[0] as IrInlinedFunctionBlock).copy(irCall, irFunctionReference, inlinedFunction.symbol)
                         it
                     } else {
                         wrapInStubFunction(it, irCall, irFunctionReference)
@@ -533,8 +520,6 @@ class FunctionInlining(
             val argumentExpression: IrExpression,
             val isDefaultArg: Boolean = false
         ) {
-
-            // TODO check that `getOriginalParameter` don't break other backends
             val isInlinableLambdaArgument: Boolean
                 get() = parameter.getOriginalParameter().isInlineParameter() &&
                         (argumentExpression is IrFunctionReference
@@ -858,7 +843,6 @@ class FunctionInlining(
 }
 
 object InlinedFunctionReference : IrStatementOrigin
-class InlinedFunction(val isLambdaInlining: Boolean) : IrStatementOrigin
 object InlinedFunctionArguments : IrStatementOrigin
 object InlinedFunctionDefaultArguments : IrStatementOrigin
 

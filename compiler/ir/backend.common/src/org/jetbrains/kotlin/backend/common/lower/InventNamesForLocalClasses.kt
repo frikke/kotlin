@@ -8,13 +8,10 @@ package org.jetbrains.kotlin.backend.common.lower
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.ir.getAdditionalStatementsFromInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.getOriginalStatementsFromInlinedBlock
-import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
+import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.expressions.IrContainerExpression
-import org.jetbrains.kotlin.ir.expressions.IrFunctionExpression
-import org.jetbrains.kotlin.ir.expressions.IrFunctionReference
-import org.jetbrains.kotlin.ir.expressions.IrPropertyReference
+import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.util.isAnonymousObject
 import org.jetbrains.kotlin.ir.util.parentClassOrNull
@@ -52,9 +49,8 @@ abstract class InventNamesForLocalClasses(
         private val localFunctionNames = mutableMapOf<IrFunctionSymbol, String>()
 
         override fun visitContainerExpression(expression: IrContainerExpression, data: Data) {
-            if (!processingInlinedFunction && expression.wasExplicitlyInlined()) {
-                val marker = expression.statements.first() as IrInlineMarker
-                val inlinedAt = marker.inlineCall.symbol.owner.name.asString()
+            if (!processingInlinedFunction && expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
+                val inlinedAt = expression.inlineCall.symbol.owner.name.asString()
 
                 expression.getAdditionalStatementsFromInlinedBlock().forEach { it.accept(this, data) }
                 processingInlinedFunction = true

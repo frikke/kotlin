@@ -6,7 +6,7 @@
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
-import org.jetbrains.kotlin.backend.common.ir.wasExplicitlyInlined
+import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionReference
 import org.jetbrains.kotlin.backend.common.phaser.makeIrModulePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
@@ -40,15 +40,15 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
     }
 
     override fun visitBlock(expression: IrBlock): IrExpression {
-        if (expression.wasExplicitlyInlined()) {
-            val marker = expression.statements.first() as IrInlineMarker
-            if (!visited.contains(marker.callee)) {
-                visited += marker.callee
+        if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
+            val element = expression.inlineFunctionSymbol.owner
+            if (!visited.contains(element)) {
+                visited += element
                 // TODO that if callee is located in other module? can we lower it from file lowering?
-                marker.callee.transform(this, null)
+                element.transform(this, null)
             }
 
-            val mustBeRegenerated = (expression as IrReturnableBlock).collectDeclarationsThatMustBeRegenerated()
+            val mustBeRegenerated = expression.collectDeclarationsThatMustBeRegenerated()
             expression.setUpCorrectAttributesForAllInnerElements(mustBeRegenerated)
             return expression
         }
@@ -56,7 +56,7 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
         return super.visitBlock(expression)
     }
 
-    private fun IrReturnableBlock.collectDeclarationsThatMustBeRegenerated(): Set<IrAttributeContainer> {
+    private fun IrInlinedFunctionBlock.collectDeclarationsThatMustBeRegenerated(): Set<IrAttributeContainer> {
         val classesToRegenerate = mutableSetOf<IrAttributeContainer>()
         this.acceptVoid(object : IrElementVisitorVoid {
             private val containersStack = mutableListOf<IrAttributeContainer>()
@@ -64,9 +64,8 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             private val reifiedArguments = mutableListOf<IrType>()
             private var processingBeforeInlineDeclaration = false
 
-            fun IrContainerExpression.getInlinableParameters(): List<IrValueParameter> {
-                val marker = this.statements.first() as IrInlineMarker
-                return marker.inlineCall.getAllArgumentsWithIr(marker.callee)
+            fun IrInlinedFunctionBlock.getInlinableParameters(): List<IrValueParameter> {
+                return this.inlineCall.getAllArgumentsWithIr(this.inlineFunctionSymbol.owner)
                     .filter { (param, arg) ->
                         param.isInlineParameter() && (arg ?: param.defaultValue?.expression) is IrFunctionExpression ||
                                 arg is IrGetValue && arg.symbol.owner in inlinableParameters
@@ -74,10 +73,9 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
                     .map { it.first }
             }
 
-            fun IrContainerExpression.getReifiedArguments(): List<IrType> {
-                val marker = this.statements.first() as IrInlineMarker
-                return marker.callee.typeParameters.mapIndexedNotNull { index, param ->
-                    marker.inlineCall.getTypeArgument(index)?.takeIf { param.isReified }
+            fun IrInlinedFunctionBlock.getReifiedArguments(): List<IrType> {
+                return this.inlineFunctionSymbol.owner.typeParameters.mapIndexedNotNull { index, param ->
+                    this.inlineCall.getTypeArgument(index)?.takeIf { param.isReified }
                 }
             }
 
@@ -142,7 +140,7 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             }
 
             override fun visitContainerExpression(expression: IrContainerExpression) {
-                if (expression.wasExplicitlyInlined()) {
+                if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
                     val additionalInlinableParameters = expression.getInlinableParameters()
                     val additionalTypeArguments = expression.getReifiedArguments()
 

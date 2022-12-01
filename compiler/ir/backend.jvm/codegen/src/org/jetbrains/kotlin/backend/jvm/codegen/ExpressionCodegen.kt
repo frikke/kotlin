@@ -5,12 +5,9 @@
 
 package org.jetbrains.kotlin.backend.jvm.codegen
 
-import org.jetbrains.kotlin.backend.common.ir.getDefaultAdditionalStatementsFromInlinedBlock
-import org.jetbrains.kotlin.backend.common.ir.getNonDefaultAdditionalStatementsFromInlinedBlock
-import org.jetbrains.kotlin.backend.common.ir.getOriginalStatementsFromInlinedBlock
+import org.jetbrains.kotlin.backend.common.ir.*
 import org.jetbrains.kotlin.backend.common.lower.BOUND_RECEIVER_PARAMETER
 import org.jetbrains.kotlin.backend.common.lower.LoweredStatementOrigins
-import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunction
 import org.jetbrains.kotlin.backend.common.lower.inline.isAdaptedFunctionReference
 import org.jetbrains.kotlin.backend.jvm.*
 import org.jetbrains.kotlin.backend.jvm.intrinsics.IntrinsicMethod
@@ -147,8 +144,8 @@ class ExpressionCodegen(
     val smap: SourceMapper,
     val reifiedTypeParametersUsages: ReifiedTypeParametersUsages,
 ) : IrElementVisitor<PromisedValue, BlockInfo>, BaseExpressionCodegen {
-    data class AdditionalIrInlineData(val smap: SourceMapCopier, val inlineMarker: IrInlineMarker, val parentSmap: SourceMapper, val tryInfo: TryWithFinallyInfo?) {
-        fun isInvokeOnLambda(): Boolean = inlineMarker.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE
+    data class AdditionalIrInlineData(val smap: SourceMapCopier, val inlinedBlock: IrInlinedFunctionBlock, val parentSmap: SourceMapper, val tryInfo: TryWithFinallyInfo?) {
+        fun isInvokeOnLambda(): Boolean = inlinedBlock.inlineCall.symbol.owner.name == OperatorNameConventions.INVOKE
     }
 
     val classToCachedSourceMapper = mutableMapOf<IrDeclaration, SourceMapper>()
@@ -224,7 +221,7 @@ class ExpressionCodegen(
             while (iterator.hasNext()) {
                 if (previousData?.isInvokeOnLambda() == true) {
 //                    while (iterator.hasNext() && iterator.next().inlineMarker.callee != previousData.inlineMarker.inlinedAt) {
-                    while (iterator.hasNext() && iterator.next().inlineMarker.callee != getInlinedAt(previousData.inlineMarker.originalExpression!!)) {
+                    while (iterator.hasNext() && iterator.next().inlinedBlock.inlineFunctionSymbol.owner != getInlinedAt(previousData.inlinedBlock.inlinedElement)) {
                         // after lambda's smap we should skip "frames" that were inlined inside body of inline function that accept given lambda
                         continue
                     }
@@ -233,7 +230,7 @@ class ExpressionCodegen(
                 val inlineData = iterator.next()
 
                 previousData = inlineData
-                val localFileEntry = inlineData.inlineMarker.callee.fileEntry
+                val localFileEntry = inlineData.inlinedBlock.inlineFunctionSymbol.owner.fileEntry
                 val lineNumber = if (result == -1) localFileEntry.getLineNumber(offset) + 1 else result
                 val mappedLineNumber = inlineData.smap.mapLineNumber(lineNumber)
                 result = mappedLineNumber
@@ -485,7 +482,7 @@ class ExpressionCodegen(
             }
         }
 
-        if ((expression.origin as? InlinedFunction)?.isLambdaInlining == false) {
+        if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
             markLineNumberAfterInlineIfNeeded(isInsideCondition)
         }
 
@@ -559,20 +556,22 @@ class ExpressionCodegen(
         }
     }
 
-    private fun visitInlinedFunctionBlock(block: IrBlock, data: BlockInfo): PromisedValue {
-        val marker = block.statements.first() as IrInlineMarker
-        val lineNumberForOffset = getLineNumberForOffset(marker.inlineCall.startOffset)
+    private fun visitInlinedFunctionBlock(block: IrInlinedFunctionBlock, data: BlockInfo): PromisedValue {
+        val lineNumberForOffset = getLineNumberForOffset(block.inlineCall.startOffset)
 
         block.getNonDefaultAdditionalStatementsFromInlinedBlock().forEach { exp ->
             exp.accept(this, data).discard()
         }
 
         // TODO start_4: reuse code from org/jetbrains/kotlin/codegen/inline/MethodInliner.kt:267
-        if ((block.origin as InlinedFunction).isLambdaInlining) {
-            val overrideLineNumber = getLocalSmap().reversed().firstOrNull { !it.isInvokeOnLambda() }?.inlineMarker?.callee?.isInlineOnly() == true
+        if (block.isLambdaInlining()) {
+            val overrideLineNumber = getLocalSmap().reversed().firstOrNull { !it.isInvokeOnLambda() }
+                ?.inlinedBlock?.inlineFunctionSymbol?.owner?.isInlineOnly() == true
             val currentLineNumber = if (overrideLineNumber) getLocalSmap().last().smap.callSite!!.line else lineNumberForOffset
 
-            val firstLine = marker.callee.body?.statements?.firstOrNull()?.let { marker.callee.fileEntry.getLineNumber(it.startOffset) + 1 } ?: -1
+            val firstLine = block.inlineFunctionSymbol.owner.body?.statements?.firstOrNull()?.let {
+                block.inlineFunctionSymbol.owner.fileEntry.getLineNumber(it.startOffset) + 1
+            } ?: -1
             // TODO DefaultLambda
             if (/*(info is DefaultLambda != overrideLineNumber) &&*/ currentLineNumber >= 0 && firstLine == currentLineNumber) {
                 val label = Label()
@@ -584,14 +583,14 @@ class ExpressionCodegen(
         }
         // TODO end_4
 
-        noLineNumberScopeWithCondition(marker.callee.isInlineOnly()) {
-            visitInlineMarker(marker, data)
+        noLineNumberScopeWithCondition(block.inlineFunctionSymbol.owner.isInlineOnly()) {
+            buildSmapFor(block, data)
 
             block.getDefaultAdditionalStatementsFromInlinedBlock().forEach { exp ->
                 exp.accept(this, data).discard()
             }
 
-            if (marker.inlineCall.usesDefaultArguments()) {
+            if (block.inlineCall.usesDefaultArguments()) {
                 // we must reset LN because at this point in original inliner we will inline non default call
                 lastLineNumber = -1
             }
@@ -601,7 +600,7 @@ class ExpressionCodegen(
                 exp.accept(this, data)
             }
 
-            val callee = marker.callee
+            val callee = block.inlineFunctionSymbol.owner
             val calleeBody = callee.body
             if (calleeBody !is IrStatementContainer || calleeBody.statements.lastOrNull() !is IrReturn) {
                 // TODO start_1: reuse code
@@ -616,11 +615,11 @@ class ExpressionCodegen(
 
 //            if (!(block.origin as InlinedFunction).isLambdaInlining) {
             // TODO start_3: reuse from visitReturn and see ReturnableBlockLowering
-            val lastStatement = marker.callee.body!!.statements.lastOrNull()
+            val lastStatement = block.inlineFunctionSymbol.owner.body!!.statements.lastOrNull()
             if (lastStatement is IrReturn) {
                 val returnTarget = lastStatement.returnTargetSymbol.owner
                 val originalTarget = (returnTarget as? IrAttributeContainer)?.attributeOwnerId ?: returnTarget
-                if (originalTarget == marker.callee) {
+                if (originalTarget == block.inlineFunctionSymbol.owner) {
                     // if return is implicit we must put new LN at the end of expression
                     block.statements.last().markLineNumber(startOffset = lastStatement.startOffset != lastStatement.endOffset)
                     mv.nop()
@@ -632,8 +631,9 @@ class ExpressionCodegen(
             dropLastLocalSmap()
 
 
-            if ((block.origin as InlinedFunction).isLambdaInlining) {
-                val overrideLineNumber = getLocalSmap().reversed().firstOrNull { !it.isInvokeOnLambda() }?.inlineMarker?.callee?.isInlineOnly() == true
+            if (block.isLambdaInlining()) {
+                val overrideLineNumber = getLocalSmap().reversed().firstOrNull { !it.isInvokeOnLambda() }
+                    ?.inlinedBlock?.inlineFunctionSymbol?.owner?.isInlineOnly() == true
                 val currentLineNumber = if (overrideLineNumber) getLocalSmap().last().smap.callSite!!.line else lineNumberForOffset
 //        currentLineNumber = getLineNumberForOffset(marker.inlineCall.startOffset)
                 // TODO start_2: reuse code
@@ -643,7 +643,7 @@ class ExpressionCodegen(
                         mv.visitLineNumber(currentLineNumber, markNewLabel())
                     } else {
                         // Need to go through the superclass here to properly remap the line number via `sourceMapper`.
-                        marker.inlineCall.markLineNumber(true)
+                        block.inlineCall.markLineNumber(true)
                     }
                     mv.nop()
                 }
@@ -651,7 +651,7 @@ class ExpressionCodegen(
             }
 
             // takeUnless is required to avoid markLineNumberAfterInlineIfNeeded for inline only
-            if (!(block.origin as InlinedFunction).isLambdaInlining) {
+            if (block.isFunctionInlining()) {
                 lastLineNumber = lineNumberForOffset.takeUnless { noLineNumberScope } ?: -1
             }
             return result
@@ -659,7 +659,7 @@ class ExpressionCodegen(
     }
 
     private fun visitStatementContainer(container: IrStatementContainer, data: BlockInfo): PromisedValue {
-        if (container is IrBlock && container.statements.firstOrNull() is IrInlineMarker) {
+        if (container is IrInlinedFunctionBlock) {
             return visitInlinedFunctionBlock(container, data)
         }
         return container.statements.fold(unitValue) { prev, exp ->
@@ -1071,7 +1071,7 @@ class ExpressionCodegen(
         return parent.declarations.singleOrNull { it.origin == JvmLoweredDeclarationOrigin.DEFAULT_IMPLS } as IrClass
     }
 
-    private fun IrCall.isInvokeOnDefaultArg(expected: IrFunction): Boolean {
+    private fun IrFunctionAccessExpression.isInvokeOnDefaultArg(expected: IrFunction): Boolean {
         if (this.symbol.owner.name != OperatorNameConventions.INVOKE) return false
 
         val dispatch = this.dispatchReceiver as? IrGetValue
@@ -1082,12 +1082,12 @@ class ExpressionCodegen(
     }
 
     private fun getInlinedAt(originalExpression: IrElement): IrFunction? {
-        for (marker in getLocalSmap().map { it.inlineMarker }) {
-            marker.inlineCall.getAllArgumentsWithIr().forEach {
+        for (block in getLocalSmap().map { it.inlinedBlock }) {
+            block.inlineCall.getAllArgumentsWithIr().forEach {
                 val actualArg = (it.second?.attributeOwnerId ?: ((it.first.defaultValue?.expression?.attributeOwnerId as? IrBlock)?.statements?.firstOrNull() as? IrClass)?.attributeOwnerId) as? IrExpression
                 val extractedAnonymousFunction = if (actualArg?.isAdaptedFunctionReference() == true) ((actualArg as IrBlock).statements.last() as IrFunctionReference).attributeOwnerId else actualArg
                 if (extractedAnonymousFunction == originalExpression) {
-                    return marker.callee
+                    return block.inlineFunctionSymbol.owner
                 }
             }
         }
@@ -1095,49 +1095,50 @@ class ExpressionCodegen(
         return null
     }
 
-    override fun visitInlineMarker(declaration: IrInlineMarker, data: BlockInfo): PromisedValue {
+    private fun buildSmapFor(declaration: IrInlinedFunctionBlock, data: BlockInfo): PromisedValue {
         val inlineCall = declaration.inlineCall
+        val callee = declaration.inlineFunctionSymbol.owner
 
         declaration.inlineCall.markLineNumber(startOffset = true)
         mv.nop()
 
         val localSmaps = getLocalSmap()
-        if (declaration.originalExpression != null) {
-            val callSite = getLocalSmap().lastOrNull()?.smap?.callSite?.takeIf { inlineCall.isInvokeOnDefaultArg(declaration.callee) }
-            val classSMAP = context.typeToCachedSMAP[context.getLocalClassType(declaration.originalExpression!!)]!!
+        if (declaration.isLambdaInlining()) {
+            val callSite = getLocalSmap().lastOrNull()?.smap?.callSite?.takeIf { inlineCall.isInvokeOnDefaultArg(callee) }
+            val classSMAP = context.typeToCachedSMAP[context.getLocalClassType(declaration.inlinedElement as IrAttributeContainer)]!!
 
             val sourceMapper = if (localSmaps.isEmpty()) {
                 smap
             } else {
 //                localSmaps.reversed().firstOrNull { it.inlineMarker.callee == declaration.inlinedAt }?.smap?.parent
 //                    ?: localSmaps.last().smap.parent // if we are in anonymous inlined class and lambda was declared outside
-                localSmaps.reversed().firstOrNull { it.inlineMarker.callee == getInlinedAt(declaration.originalExpression!!) }?.smap?.parent
+                localSmaps.reversed().firstOrNull { it.inlinedBlock.inlineFunctionSymbol.owner == getInlinedAt(declaration.inlinedElement) }?.smap?.parent
                     ?: localSmaps.last().smap.parent
             }
             addToLocalSmap(
                 AdditionalIrInlineData(
                     SourceMapCopier(sourceMapper, classSMAP, callSite),
                     declaration,
-                    context.getSourceMapper(declaration.callee.parentClassOrNull!!),
+                    context.getSourceMapper(callee.parentClassOrNull!!),
                     data.infos.filterIsInstance<TryWithFinallyInfo>().lastOrNull()
                 )
             )
         } else {
-            val callee = declaration.callee.getClassWithDeclaredFunction()!!.declarations
+            val calleeFromActualClass = callee.getClassWithDeclaredFunction()!!.declarations
                 .asSequence()
                 .filterIsInstance<IrSimpleFunction>()
-                .filter { it.attributeOwnerId == declaration.callee } // original callee could be transformed after lowerings, so we must get correct one
+                .filter { it.attributeOwnerId == callee } // original callee could be transformed after lowerings, so we must get correct one
                 .filter { if (inlineCall.usesDefaultArguments()) it.origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER else it.origin != IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER }
                 .filter { it.origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE } // filter functions with $$forInline postfix
                 .single()
-            val nodeAndSmap = callee.let { actualCallee ->
+            val nodeAndSmap = calleeFromActualClass.let { actualCallee ->
                 val callToActualCallee = IrCallImpl.fromSymbolOwner(inlineCall.startOffset, inlineCall.endOffset, inlineCall.type, actualCallee.symbol)
                 val callable = methodSignatureMapper.mapToCallableMethod(callToActualCallee, null)
                 val callGenerator = getOrCreateCallGenerator(callToActualCallee, data, callable.signature)
                 (callGenerator as InlineCodegen<*>).compileInline()
             }
 
-            val key = declaration.callee.parentClassOrNull!!
+            val key = callee.parentClassOrNull!!
             val newSmap = if (localSmaps.isEmpty()) {
                 smap
             } else {
@@ -1145,7 +1146,7 @@ class ExpressionCodegen(
             }
             val sourcePosition = let {
                 val sourceInfo = newSmap.sourceInfo!!
-                val localFileEntry = getLocalSmap().lastOrNull()?.inlineMarker?.callee?.fileEntry ?: fileEntry
+                val localFileEntry = getLocalSmap().lastOrNull()?.inlinedBlock?.inlineFunctionSymbol?.owner?.fileEntry ?: fileEntry
                 val line = if (inlineCall.startOffset < 0) lastLineNumber else localFileEntry.getLineNumber(inlineCall.startOffset) + 1
 //                val file = fileEntry.name.drop(1)
                 SourcePosition(line, sourceInfo.sourceFileName!!, sourceInfo.pathOrCleanFQN)
@@ -1161,7 +1162,7 @@ class ExpressionCodegen(
         }
         if (inlineCall.usesDefaultArguments()) {
             // $default function has first LN pointing to original callee
-            declaration.callee.markLineNumber(startOffset = true)
+            callee.markLineNumber(startOffset = true)
             mv.nop()
         }
 //
@@ -1492,10 +1493,11 @@ class ExpressionCodegen(
         mv.nop()
         val endLabel = Label()
         val stackElement = unwindBlockStack(endLabel, data) { it.loop == jump.loop }
-        if (jump.loop.origin is InlinedFunction) {
-            // There must be another line number because this jump is actually return from inlined function
-            jump.markLineNumber(startOffset = true)
-        }
+        // TODO
+//        if (jump.loop.origin is InlinedFunction) {
+//            // There must be another line number because this jump is actually return from inlined function
+//            jump.markLineNumber(startOffset = true)
+//        }
         if (stackElement == null) {
             generateGlobalReturnFlagIfPossible(jump, jump.loop.nonLocalReturnLabel(jump is IrBreak))
             mv.areturn(Type.VOID_TYPE)
