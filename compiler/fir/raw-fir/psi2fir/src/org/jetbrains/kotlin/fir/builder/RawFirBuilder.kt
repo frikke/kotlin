@@ -361,16 +361,16 @@ open class RawFirBuilder(
                 }
             }
 
-        private fun KtDeclarationWithBody.buildFirBody(): Pair<FirBlock?, FirContractDescription?> =
+        private fun KtDeclarationWithBody.buildFirBody(allowLegacyContractDescription: Boolean): Pair<FirBlock?, FirContractDescription?> =
             if (hasBody()) {
                 buildOrLazyBlock {
                     if (hasBlockBody()) {
                         val block = bodyBlockExpression?.accept(this@Visitor, Unit) as? FirBlock
-                        return@buildFirBody if (hasContractEffectList()) {
-                            block to null
-                        } else {
-                            block.extractContractDescriptionIfPossible()
+                        val contractDescription = when {
+                            allowLegacyContractDescription && !hasContractEffectList() -> block?.let(::processLegacyContractDescription)
+                            else -> null
                         }
+                        return@buildFirBody block to contractDescription
                     } else {
                         val result = { bodyExpression }.toFirExpression("Function has no body (but should)")
                         FirSingleExpressionBlock(result.toReturn(baseSource = result.source))
@@ -467,7 +467,7 @@ open class RawFirBuilder(
                             }
                         }
                         val outerContractDescription = this@toFirPropertyAccessor.obtainContractDescription()
-                        val bodyWithContractDescription = this@toFirPropertyAccessor.buildFirBody()
+                        val bodyWithContractDescription = this@toFirPropertyAccessor.buildFirBody(allowLegacyContractDescription = true)
                         this.body = bodyWithContractDescription.first
                         val contractDescription = outerContractDescription ?: bodyWithContractDescription.second
                         contractDescription?.let {
@@ -1390,6 +1390,7 @@ open class RawFirBuilder(
 
             val labelName: String?
             val isAnonymousFunction = function.isAnonymous
+            val isLocalFunction = function.isLocal
             val functionSymbol: FirFunctionSymbol<*>
             val functionBuilder = if (isAnonymousFunction) {
                 FirAnonymousFunctionBuilder().apply {
@@ -1408,7 +1409,7 @@ open class RawFirBuilder(
                     symbol = FirNamedFunctionSymbol(callableIdForName(function.nameAsSafeName)).also { functionSymbol = it }
                     dispatchReceiverType = currentDispatchReceiverType()
                     status = FirDeclarationStatusImpl(
-                        if (function.isLocal) Visibilities.Local else function.visibility,
+                        if (isLocalFunction) Visibilities.Local else function.visibility,
                         function.modality,
                     ).apply {
                         isExpect = function.hasExpectModifier() || context.containerIsExpect
@@ -1453,7 +1454,7 @@ open class RawFirBuilder(
                     listOf()
                 withCapturedTypeParameters(true, functionSource, actualTypeParameters) {
                     val outerContractDescription = function.obtainContractDescription()
-                    val bodyWithContractDescription = function.buildFirBody()
+                    val bodyWithContractDescription = function.buildFirBody(!isLocalFunction)
                     this.body = bodyWithContractDescription.first
                     val contractDescription = outerContractDescription ?: bodyWithContractDescription.second
                     contractDescription?.let {
@@ -1626,7 +1627,7 @@ open class RawFirBuilder(
                 extractValueParametersTo(this, symbol, ValueParameterDeclaration.FUNCTION)
 
 
-                val (body, _) = buildFirBody()
+                val (body, _) = buildFirBody(allowLegacyContractDescription = true)
                 this.body = body
                 this@RawFirBuilder.context.firFunctionTargets.removeLast()
             }.also {

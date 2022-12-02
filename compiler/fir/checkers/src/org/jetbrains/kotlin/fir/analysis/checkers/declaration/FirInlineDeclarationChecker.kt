@@ -136,6 +136,7 @@ abstract class FirInlineDeclarationChecker : FirFunctionChecker() {
             targetSymbol: FirBasedSymbol<*>?,
             context: CheckerContext
         ) {
+            if (context.isContractBody) return
             val calledFunctionSymbol = targetSymbol as? FirNamedFunctionSymbol ?: return
             val argumentMapping = functionCall.resolvedArgumentMapping ?: return
             for ((wrappedArgument, valueParameter) in argumentMapping) {
