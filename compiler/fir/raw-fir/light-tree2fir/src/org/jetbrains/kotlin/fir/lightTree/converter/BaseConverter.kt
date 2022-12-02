@@ -186,7 +186,7 @@ abstract class BaseConverter(
         }
     }
 
-    protected inline fun <T> LighterASTNode.forEachChildrenReturnList(f: (LighterASTNode, MutableList<T>) -> Unit): MutableList<T> {
+    protected inline fun <T> LighterASTNode.forEachChildrenReturnList(f: (LighterASTNode, MutableList<T>) -> Unit): List<T> {
         val kidsArray = this.getChildrenAsArray()
 
         val container = mutableListOf<T>()

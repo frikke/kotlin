@@ -834,7 +834,7 @@ class DeclarationsConverter(
      */
     private fun convertClassBody(classBody: LighterASTNode, classWrapper: ClassWrapper): List<FirDeclaration> {
         val modifierLists = mutableListOf<LighterASTNode>()
-        val firDeclarations = classBody.forEachChildrenReturnList { node, container ->
+        var firDeclarations = classBody.forEachChildrenReturnList { node, container ->
             @Suppress("RemoveRedundantQualifierName")
             when (node.tokenType) {
                 ENUM_ENTRY -> container += convertEnumEntry(node, classWrapper)
