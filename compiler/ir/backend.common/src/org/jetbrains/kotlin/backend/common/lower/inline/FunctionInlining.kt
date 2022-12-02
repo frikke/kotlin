@@ -194,7 +194,7 @@ class FunctionInlining(
                 }
             }
 
-            val evaluationStatements = evaluateArguments(callSite, copiedCallee)
+            val (evaluationStatements, evaluationStatementsFromDefault) = evaluateArguments(callSite, copiedCallee)
             val statements = (copiedCallee.body as? IrBlockBody)?.statements
                 ?: error("Body not found for function ${callee.render()}")
 
@@ -206,10 +206,7 @@ class FunctionInlining(
             val irBuilder = context.createIrBuilder(irReturnableBlockSymbol, endOffset, endOffset)
 
             val transformer = ParameterSubstitutor()
-            val newStatements = mutableListOf<IrStatement>()
-
-            newStatements.addAll(evaluationStatements)
-            statements.mapTo(newStatements) { it.transform(transformer, data = null) as IrStatement }
+            val newStatements = statements.map { it.transform(transformer, data = null) as IrStatement }
 
             val inlinedBlock = IrInlinedFunctionBlockImpl(
                 startOffset = callSite.startOffset,
@@ -218,6 +215,7 @@ class FunctionInlining(
                 inlineCall = callSite,
                 inlinedElement = originalInlinedElement,
                 origin = null,
+                evaluationStatements, evaluationStatementsFromDefault,
                 statements = newStatements
             )
 
@@ -227,7 +225,11 @@ class FunctionInlining(
                 type = callSite.type,
                 symbol = irReturnableBlockSymbol,
                 origin = null,
-                statements = listOf(inlinedBlock),
+                statements = if (useSpecialNodeToStoreInlinedResult) {
+                    listOf(inlinedBlock)
+                } else {
+                    evaluationStatements + evaluationStatementsFromDefault + newStatements
+                },
                 inlineFunctionSymbol = callee.symbol
             ).apply {
                 transformChildrenVoid(object : IrElementTransformerVoid() {
@@ -738,7 +740,7 @@ class FunctionInlining(
             throw AssertionError("type not found")
         }
 
-        private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): List<IrStatement> {
+        private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): Pair<List<IrStatement>, List<IrStatement>> {
             val arguments = buildParameterToArgument(callSite, callee)
             val evaluationStatements = mutableListOf<IrVariable>()
             val evaluationStatementsFromDefault = mutableListOf<IrVariable>()
@@ -805,17 +807,7 @@ class FunctionInlining(
                 substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol)
             }
 
-            if (useSpecialNodeToStoreInlinedResult) {
-                val blockForNewStatements = IrCompositeImpl(
-                    callSite.startOffset, callSite.endOffset, context.irBuiltIns.unitType, InlinedFunctionArguments, statements = evaluationStatements
-                )
-                val blockForNewStatementsFromDefault = IrCompositeImpl(
-                    callSite.startOffset, callSite.endOffset, context.irBuiltIns.unitType, InlinedFunctionDefaultArguments, statements = evaluationStatementsFromDefault
-                )
-                return listOf(blockForNewStatements, blockForNewStatementsFromDefault)
-            }
-
-            return evaluationStatements + evaluationStatementsFromDefault
+            return Pair(evaluationStatements, evaluationStatementsFromDefault)
         }
     }
 
@@ -841,8 +833,6 @@ class FunctionInlining(
 }
 
 object InlinedFunctionReference : IrStatementOrigin
-object InlinedFunctionArguments : IrStatementOrigin
-object InlinedFunctionDefaultArguments : IrStatementOrigin
 
 class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementOrigin {
     override fun toString(): String =

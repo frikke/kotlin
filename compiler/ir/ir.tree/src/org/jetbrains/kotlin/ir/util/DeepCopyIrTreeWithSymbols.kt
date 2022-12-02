@@ -466,7 +466,7 @@ open class DeepCopyIrTreeWithSymbols(
                 expression.type.remapType(),
                 expression.inlineCall, expression.inlinedElement,
                 mapStatementOrigin(expression.origin),
-                expression.statements.map { it.transform() },
+                statements = expression.statements.map { it.transform() },
             ).copyAttributes(expression)
         else
             IrBlockImpl(
