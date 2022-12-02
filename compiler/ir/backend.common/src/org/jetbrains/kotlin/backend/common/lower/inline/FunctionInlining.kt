@@ -11,7 +11,6 @@ import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.ScopeWithIr
 import org.jetbrains.kotlin.backend.common.ir.Symbols
-import org.jetbrains.kotlin.backend.common.ir.copy
 import org.jetbrains.kotlin.backend.common.ir.isPure
 import org.jetbrains.kotlin.backend.common.lower.InnerClassesSupport
 import org.jetbrains.kotlin.backend.common.lower.at
@@ -341,7 +340,7 @@ class FunctionInlining(
             }
 
             private fun wrapInStubFunction(
-                inlinedCall: IrExpression, invokeCall: IrCall, reference: IrCallableReference<*>
+                inlinedCall: IrExpression, invokeCall: IrFunctionAccessExpression, reference: IrCallableReference<*>
             ): IrReturnableBlock {
                 // TODO clear this
                 // Note: This function is not exist in tree. It is appeared only in `IrInlinedFunctionBlock` as intermediate callee.
@@ -483,16 +482,14 @@ class FunctionInlining(
                     assert(unboundIndex == valueParameters.size) { "Not all arguments of the callee are used" }
                     for (index in 0 until irFunctionReference.typeArgumentsCount)
                         putTypeArgument(index, irFunctionReference.getTypeArgument(index))
-                }.implicitCastIfNeededTo(irCall.type)
-
-                return super.visitExpression(immediateCall).transform(this@FunctionInlining, null).let {
-                    if (it is IrReturnableBlock) {
-                        it.statements[0] = (it.statements[0] as IrInlinedFunctionBlock).copy(irCall, irFunctionReference)
-                        it
-                    } else {
-                        wrapInStubFunction(it, irCall, irFunctionReference)
-                    }
                 }
+
+                return if (inlinedFunction.needsInlining) {
+                    inlineFunction(immediateCall, inlinedFunction, irFunctionReference, performRecursiveInline = true)
+                } else {
+                    val transformedExpression = super.visitExpression(immediateCall).transform(this@FunctionInlining, null)
+                    wrapInStubFunction(transformedExpression, irCall, irFunctionReference)
+                }.implicitCastIfNeededTo(irCall.type)
             }
 
             override fun visitElement(element: IrElement) = element.accept(this, null)

@@ -8,14 +8,16 @@ package org.jetbrains.kotlin.backend.common.ir
 import org.jetbrains.kotlin.backend.common.lower.VariableRemapper
 import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionArguments
 import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionDefaultArguments
-import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.IrStatementsBuilder
 import org.jetbrains.kotlin.ir.builders.irTemporary
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.expressions.impl.*
+import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrGetValueImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrReturnImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrReturnableBlockImpl
 import org.jetbrains.kotlin.ir.symbols.IrReturnTargetSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
 import org.jetbrains.kotlin.ir.types.getClass
@@ -127,17 +129,6 @@ fun IrInlinable.inline(target: IrDeclarationParent, arguments: List<IrValueDecla
 
 // -----------------------------------------------------------------------------
 // Here goes utils for IrInlinedFunctionBlock
-
-fun IrInlinedFunctionBlock.copy(
-    newInlineCal: IrFunctionAccessExpression = inlineCall,
-    newInlinedElement: IrElement = inlinedElement
-): IrInlinedFunctionBlock {
-    return IrInlinedFunctionBlockImpl(
-        startOffset, endOffset, type,
-        newInlineCal, newInlinedElement,
-        origin, statements
-    )
-}
 
 val IrInlinedFunctionBlock.inlineDeclaration: IrDeclaration
     get() = when (val element = inlinedElement) {
