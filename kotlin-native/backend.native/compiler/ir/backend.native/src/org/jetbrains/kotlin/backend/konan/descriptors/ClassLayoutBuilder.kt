@@ -267,10 +267,7 @@ internal fun IrField.requiredAlignment(context: Context) : Int {
     val llvm = context.generationState.llvm
     val llvmType = type.toLLVMType(llvm)
     val abiAlignment = if (llvmType == llvm.vector128Type) {
-        when (context.memoryModel) {
-            MemoryModel.EXPERIMENTAL -> LLVMPreferredAlignmentOfType(llvm.runtime.targetData, llvmType)
-            else -> 8 // just not change behavior of legacy mm
-        }
+        8 // over-aligned objects are not supported now, and this worked somehow, so let's keep it as it for now
     } else {
         LLVMABIAlignmentOfType(llvm.runtime.targetData, llvmType)
     }

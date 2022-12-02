@@ -266,7 +266,7 @@ internal class StackLocalsManagerImpl(
         val type = classInfo.bodyType
         val stackLocal = appendingTo(bbInitStackLocals) {
             val stackSlot = LLVMBuildAlloca(builder, type, "")!!
-            LLVMSetAlignment(stackSlot, classInfo.alignmnet)
+            LLVMSetAlignment(stackSlot, classInfo.alignment)
 
             memset(bitcast(llvm.int8PtrType, stackSlot), 0, LLVMSizeOfTypeInBits(codegen.llvmTargetData, type).toInt() / 8)
 
@@ -780,11 +780,6 @@ internal abstract class FunctionGenerationContext(
             call(llvm.allocInstanceFunction, listOf(typeInfo), lifetime, resultSlot = resultSlot)
 
     fun allocInstance(irClass: IrClass, lifetime: Lifetime, stackLocalsManager: StackLocalsManager, resultSlot: LLVMValueRef?) : LLVMValueRef {
-        if (context.memoryModel != MemoryModel.EXPERIMENTAL) {
-            require(llvmDeclarations.forClass(irClass).alignmnet == runtime.objectAlignment) {
-                "Over-aligned objects are not supported for legacy mm"
-            }
-        }
         return if (lifetime == Lifetime.STACK)
             stackLocalsManager.alloc(irClass,
                     // In case the allocation is not from the root scope, fields must be cleaned up explicitly,

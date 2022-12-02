@@ -265,7 +265,7 @@ internal class RTTIGenerator(override val generationState: NativeGenerationState
                     irClass.symbol == context.ir.symbols.array -> constPointer(llvm.Kotlin_processArrayInMark.llvmValue)
                     else -> genProcessObjectInMark(bodyType)
                 },
-                requiredAlignment = llvmDeclarations.alignmnet
+                requiredAlignment = llvmDeclarations.alignment
         )
 
         val typeInfoGlobalValue = if (!irClass.typeInfoHasVtableAttached) {

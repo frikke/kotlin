@@ -563,7 +563,7 @@ public:
     private:
         static size_t ObjectAllocatedDataSize(const TypeInfo* typeInfo) noexcept {
             size_t membersSize = typeInfo->instanceSize_ - sizeof(ObjHeader);
-            return AlignUp(sizeof(HeapObjHeader) + membersSize, kObjectAlignment);
+            return AlignUp<uint64_t>(sizeof(HeapObjHeader) + membersSize, typeInfo->instanceAlignment_);
         }
 
         static uint64_t ArrayAllocatedDataSize(const TypeInfo* typeInfo, uint32_t count) noexcept {
@@ -571,7 +571,7 @@ public:
             // at about half of uint64_t max.
             uint64_t membersSize = static_cast<uint64_t>(-typeInfo->instanceSize_) * count;
             // Note: array body is aligned, but for size computation it is enough to align the sum.
-            return AlignUp<uint64_t>(sizeof(HeapArrayHeader) + membersSize, kObjectAlignment);
+            return AlignUp<uint64_t>(sizeof(HeapArrayHeader) + membersSize, typeInfo->instanceAlignment_);
         }
 
         typename Storage::Producer producer_;

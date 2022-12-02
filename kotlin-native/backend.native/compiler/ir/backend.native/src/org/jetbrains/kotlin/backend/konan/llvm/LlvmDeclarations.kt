@@ -64,7 +64,7 @@ internal class ClassLlvmDeclarations(
         val writableTypeInfoGlobal: StaticData.Global?,
         val typeInfo: ConstPointer,
         val objCDeclarations: KotlinObjCClassLlvmDeclarations?,
-        val alignmnet: Int,
+        val alignment: Int,
         val fieldIndices: Map<IrFieldSymbol, Int>
 )
 
@@ -196,6 +196,11 @@ private class DeclarationsGeneratorVisitor(override val generationState: NativeG
 
         val fields = context.getLayoutBuilder(declaration).getFields(llvm)
         val (bodyType, alignment, fieldIndices) = createClassBody("kclassbody:$internalName", fields)
+
+        require(alignment == runtime.objectAlignment) {
+            "Over-aligned objects are not supported yet: expected alignment for ${declaration.fqNameWhenAvailable} is $alignment"
+        }
+
 
         val typeInfoPtr: ConstPointer
         val typeInfoGlobal: StaticData.Global
