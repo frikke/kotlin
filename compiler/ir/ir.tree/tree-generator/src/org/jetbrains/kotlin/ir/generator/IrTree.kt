@@ -662,7 +662,6 @@ object IrTree : AbstractTreeBuilder() {
 
         +field("inlineCall", functionAccessExpression)
         +field("inlinedElement", rootElement)
-        +field("inlineFunctionSymbol", functionSymbolType)
     }
     val syntheticBody: ElementConfig by element(Expression) {
         visitorParent = body

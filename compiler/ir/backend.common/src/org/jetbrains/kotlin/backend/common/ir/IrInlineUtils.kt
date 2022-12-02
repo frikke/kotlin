@@ -16,7 +16,6 @@ import org.jetbrains.kotlin.ir.builders.irTemporary
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
-import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrReturnTargetSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
 import org.jetbrains.kotlin.ir.types.getClass
@@ -131,67 +130,64 @@ fun IrInlinable.inline(target: IrDeclarationParent, arguments: List<IrValueDecla
 
 fun IrInlinedFunctionBlock.copy(
     newInlineCal: IrFunctionAccessExpression = inlineCall,
-    newInlinedElement: IrElement = inlinedElement,
-    newInlineFunctionSymbol: IrFunctionSymbol = inlineFunctionSymbol
+    newInlinedElement: IrElement = inlinedElement
 ): IrInlinedFunctionBlock {
-    return IrInlinedFunctionBlockImpl(startOffset, endOffset, type, newInlineCal, newInlinedElement, newInlineFunctionSymbol, origin, statements)
+    return IrInlinedFunctionBlockImpl(
+        startOffset, endOffset, type,
+        newInlineCal, newInlinedElement,
+        origin, statements
+    )
 }
 
-fun IrExpression.isLoweredInlinedFunction(): Boolean {
-    return this is IrInlinedFunctionBlock
-}
-
-private fun IrExpression.checkForLoweredInlinedFunctionOrThrowException() {
-    if (this.isLoweredInlinedFunction()) return
-    throw IllegalArgumentException("The following expression is not a lowered inline function: \n${this.render()}")
-}
+val IrInlinedFunctionBlock.inlineDeclaration: IrDeclaration
+    get() = when (val element = inlinedElement) {
+        is IrFunction -> element
+        is IrFunctionExpression -> element.function
+        is IrFunctionReference -> element.symbol.owner
+        is IrPropertyReference -> element.symbol.owner
+        else -> throw AssertionError("Not supported ir element for inlining ${element.dump()}")
+    }
 
 fun IrInlinedFunctionBlock.isFunctionInlining(): Boolean {
     return this.inlinedElement is IrFunction
 }
 
 fun IrInlinedFunctionBlock.isLambdaInlining(): Boolean {
-    return this.inlinedElement is IrFunctionExpression || this.inlinedElement is IrFunctionReference || this.inlinedElement is IrPropertyReference
+    return !isFunctionInlining()
 }
 
 fun IrInlinedFunctionBlock.getAdditionalStatementsFromInlinedBlock(): List<IrStatement> {
-    this.checkForLoweredInlinedFunctionOrThrowException()
-    return (this as IrBlock).statements
+    return this.statements
         .filterIsInstance<IrComposite>()
         .filter { it.origin is InlinedFunctionArguments || it.origin is InlinedFunctionDefaultArguments }
         .flatMap { it.statements }
 }
 
 fun IrInlinedFunctionBlock.getNonDefaultAdditionalStatementsFromInlinedBlock(): List<IrStatement> {
-    this.checkForLoweredInlinedFunctionOrThrowException()
-    return (this as IrBlock).statements
+    return this.statements
         .filterIsInstance<IrComposite>()
         .single { it.origin is InlinedFunctionArguments }.statements
 }
 
 fun IrInlinedFunctionBlock.getDefaultAdditionalStatementsFromInlinedBlock(): List<IrStatement> {
-    this.checkForLoweredInlinedFunctionOrThrowException()
-    return (this as IrBlock).statements
+    return this.statements
         .filterIsInstance<IrComposite>()
         .single { it.origin is InlinedFunctionDefaultArguments }.statements
 }
 
 fun IrInlinedFunctionBlock.getOriginalStatementsFromInlinedBlock(): List<IrStatement> {
-    this.checkForLoweredInlinedFunctionOrThrowException()
-    return (this as IrBlock).statements.drop(1)
+    return this.statements.drop(1)
         .filter { it !is IrComposite || !(it.origin is InlinedFunctionArguments || it.origin is InlinedFunctionDefaultArguments) }
 }
 
 fun IrInlinedFunctionBlock.putStatementsBeforeActualInline(statements: List<IrStatement>) {
-    this.checkForLoweredInlinedFunctionOrThrowException()
-    (this as IrBlock).statements
+    this.statements
         .filterIsInstance<IrComposite>()
         .single { it.origin is InlinedFunctionArguments }.statements.addAll(0, statements)
 }
 
 fun IrInlinedFunctionBlock.putStatementsInFrontOfInlinedFunction(statements: List<IrStatement>) {
-    this.checkForLoweredInlinedFunctionOrThrowException()
-    val insertAfter = (this as IrBlock).statements
+    val insertAfter = this.statements
         .indexOfLast { it is IrComposite && (it.origin is InlinedFunctionArguments || it.origin is InlinedFunctionDefaultArguments) }
 
     this.statements.addAll(if (insertAfter == -1) 1 else insertAfter + 1, statements)

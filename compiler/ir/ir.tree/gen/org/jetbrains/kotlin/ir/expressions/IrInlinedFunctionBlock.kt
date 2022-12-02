@@ -9,7 +9,6 @@
 package org.jetbrains.kotlin.ir.expressions
 
 import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 
 /**
  * A leaf IR tree element.
@@ -19,6 +18,4 @@ abstract class IrInlinedFunctionBlock : IrBlock() {
     abstract val inlineCall: IrFunctionAccessExpression
 
     abstract val inlinedElement: IrElement
-
-    abstract val inlineFunctionSymbol: IrFunctionSymbol
 }

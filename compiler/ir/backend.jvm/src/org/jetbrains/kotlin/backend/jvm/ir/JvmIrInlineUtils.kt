@@ -76,9 +76,11 @@ private fun IrFunction.isInlineArrayConstructor(context: JvmBackendContext): Boo
         it == context.irBuiltIns.arrayClass || it in context.irBuiltIns.primitiveArraysToPrimitiveTypes
     }
 
-fun IrFunction.isInlineOnly(): Boolean =
-    (isInline && hasAnnotation(INLINE_ONLY_ANNOTATION_FQ_NAME)) ||
-            (this is IrSimpleFunction && correspondingPropertySymbol?.owner?.hasAnnotation(INLINE_ONLY_ANNOTATION_FQ_NAME) == true)
+fun IrDeclaration.isInlineOnly(): Boolean =
+    this is IrFunction && (
+            (isInline && hasAnnotation(INLINE_ONLY_ANNOTATION_FQ_NAME)) ||
+                    (this is IrSimpleFunction && correspondingPropertySymbol?.owner?.hasAnnotation(INLINE_ONLY_ANNOTATION_FQ_NAME) == true)
+            )
 
 fun IrDeclarationWithVisibility.isEffectivelyInlineOnly(): Boolean =
     this is IrFunction && (isReifiable() || isInlineOnly() || isPrivateInlineSuspend())

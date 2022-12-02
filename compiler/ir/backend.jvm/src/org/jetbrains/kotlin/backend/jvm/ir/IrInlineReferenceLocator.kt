@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.backend.jvm.ir
 
+import org.jetbrains.kotlin.backend.common.ir.inlineDeclaration
 import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
@@ -75,7 +76,7 @@ class IrInlineScopeResolver(context: JvmBackendContext) : IrInlineReferenceLocat
 
     override fun visitBlock(expression: IrBlock, data: IrDeclaration?) {
         if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
-            val callee = expression.inlineFunctionSymbol.owner
+            val callee = expression.inlineDeclaration
             if (callee is IrSimpleFunction && callee.isPrivateInline && data != null) {
                 (inlineFunctionCallSites.getOrPut(callee) { mutableSetOf() } as MutableSet).add(data)
             }

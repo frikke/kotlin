@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
+import org.jetbrains.kotlin.backend.common.ir.inlineDeclaration
 import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionReference
 import org.jetbrains.kotlin.backend.common.phaser.makeIrModulePhase
@@ -33,7 +34,7 @@ internal val markNecessaryInlinedClassesAsRegenerated = makeIrModulePhase(
 )
 
 class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendContext) : IrElementTransformerVoid(), FileLoweringPass {
-    private val visited = mutableSetOf<IrFunction>() // TODO how to properly cache this set to avoid redoing work in several files
+    private val visited = mutableSetOf<IrDeclaration>() // TODO how to properly cache this set to avoid redoing work in several files
 
     override fun lower(irFile: IrFile) {
         irFile.transformChildrenVoid()
@@ -41,7 +42,7 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
 
     override fun visitBlock(expression: IrBlock): IrExpression {
         if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
-            val element = expression.inlineFunctionSymbol.owner
+            val element = expression.inlineDeclaration
             if (!visited.contains(element)) {
                 visited += element
                 // TODO that if callee is located in other module? can we lower it from file lowering?
@@ -65,7 +66,9 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             private var processingBeforeInlineDeclaration = false
 
             fun IrInlinedFunctionBlock.getInlinableParameters(): List<IrValueParameter> {
-                return this.inlineCall.getAllArgumentsWithIr(this.inlineFunctionSymbol.owner)
+                val callee = this.inlineDeclaration
+                if (callee !is IrFunction) return emptyList()
+                return this.inlineCall.getAllArgumentsWithIr(callee)
                     .filter { (param, arg) ->
                         param.isInlineParameter() && (arg ?: param.defaultValue?.expression) is IrFunctionExpression ||
                                 arg is IrGetValue && arg.symbol.owner in inlinableParameters
@@ -74,7 +77,9 @@ class MarkNecessaryInlinedClassesAsRegeneratedLowering(val context: JvmBackendCo
             }
 
             fun IrInlinedFunctionBlock.getReifiedArguments(): List<IrType> {
-                return this.inlineFunctionSymbol.owner.typeParameters.mapIndexedNotNull { index, param ->
+                val callee = this.inlineDeclaration
+                if (callee !is IrFunction) return emptyList()
+                return callee.typeParameters.mapIndexedNotNull { index, param ->
                     this.inlineCall.getTypeArgument(index)?.takeIf { param.isReified }
                 }
             }

@@ -218,7 +218,6 @@ class FunctionInlining(
                 type = callSite.type,
                 inlineCall = callSite,
                 inlinedElement = originalInlinedElement,
-                inlineFunctionSymbol = callee.symbol,
                 origin = null,
                 statements = newStatements
             )
@@ -411,8 +410,9 @@ class FunctionInlining(
                     is IrConstructor -> {
                         val classTypeParametersCount = inlinedFunction.parentAsClass.typeParameters.size
                         IrConstructorCallImpl.fromSymbolOwner(
-                            irCall.startOffset,
-                            irCall.endOffset,
+                            // TODO irCall fix for js
+                            irFunctionReference.startOffset,
+                            irFunctionReference.endOffset,
                             inlinedFunction.returnType,
                             inlinedFunction.symbol,
                             classTypeParametersCount,
@@ -421,8 +421,9 @@ class FunctionInlining(
                     }
                     is IrSimpleFunction ->
                         IrCallImpl(
-                            irCall.startOffset,
-                            irCall.endOffset,
+                            // TODO irCall fix for js
+                            irFunctionReference.startOffset,
+                            irFunctionReference.endOffset,
                             inlinedFunction.returnType,
                             inlinedFunction.symbol,
                             inlinedFunction.typeParameters.size,
@@ -486,7 +487,7 @@ class FunctionInlining(
 
                 return super.visitExpression(immediateCall).transform(this@FunctionInlining, null).let {
                     if (it is IrReturnableBlock) {
-                        it.statements[0] = (it.statements[0] as IrInlinedFunctionBlock).copy(irCall, irFunctionReference, inlinedFunction.symbol)
+                        it.statements[0] = (it.statements[0] as IrInlinedFunctionBlock).copy(irCall, irFunctionReference)
                         it
                     } else {
                         wrapInStubFunction(it, irCall, irFunctionReference)
