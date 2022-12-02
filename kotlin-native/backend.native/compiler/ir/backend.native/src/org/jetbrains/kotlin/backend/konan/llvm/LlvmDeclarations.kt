@@ -95,7 +95,7 @@ private fun ContextUtils.createClassBody(name: String, fields: List<ClassLayoutB
         var currentOffset = 0L
         fun addAndCount(type: LLVMTypeRef) {
             add(type)
-            currentOffset += LLVMStoreSizeOfType(runtime.targetData, runtime.objHeaderType)
+            currentOffset += LLVMStoreSizeOfType(runtime.targetData, type)
         }
         addAndCount(runtime.objHeaderType)
         for (field in fields) {
