@@ -388,6 +388,7 @@ class FirRenderer(
         }
 
         override fun visitDanglingModifierList(danglingModifierList: FirDanglingModifierList) {
+            annotationRenderer?.render(danglingModifierList)
             print(danglingModifierList.diagnostic.reason)
         }
 

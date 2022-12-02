@@ -19,6 +19,7 @@ import org.jetbrains.kotlin.diagnostics.KtPsiDiagnostic
 import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase
 import org.jetbrains.kotlin.fir.resolve.providers.firProvider
+import org.jetbrains.kotlin.fir.symbols.lazyResolveToPhase
 import org.jetbrains.kotlin.psi.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -138,12 +139,7 @@ internal class FileStructure private constructor(
     private fun createDanglingModifierListStructure(container: KtElement): FileStructureElement {
         val firDeclaration = container.findSourceByTraversingWholeTree(moduleComponents.firFileBuilder, firFile)
             ?: errorWithFirSpecificEntries("no declaration found", psi = container)
-        moduleComponents.firModuleLazyDeclarationResolver.lazyResolveDeclaration(
-            firDeclarationToResolve = firDeclaration,
-            scopeSession = moduleComponents.scopeSessionProvider.getScopeSession(),
-            toPhase = FirResolvePhase.BODY_RESOLVE,
-            checkPCE = true,
-        )
+        firDeclaration.lazyResolveToPhase(FirResolvePhase.BODY_RESOLVE)
         return DanglingModifierListStructureElement(firFile, firDeclaration, moduleComponents, container.containingKtFile)
     }
 

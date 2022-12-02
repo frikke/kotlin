@@ -1292,6 +1292,10 @@ open class RawFirBuilder(
                                 ownerTypeParameters = emptyList()
                             )
                         }
+
+                        for (danglingModifier in PsiTreeUtil.getChildrenOfTypeAsList(objectDeclaration.body, KtModifierList::class.java)) {
+                            declarations += buildErrorTopLevelDeclarationForDanglingModifierList(danglingModifier)
+                        }
                     }.also {
                         it.delegateFieldsMap = delegatedFieldsMap
                     }
