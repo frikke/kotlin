@@ -103,6 +103,12 @@ internal class FileStructure private constructor(
                     dcl.acceptChildren(this)
                 }
             }
+
+            override fun visitModifierList(list: KtModifierList) {
+                if (list.parent == ktFile) {
+                    structureElements += getStructureElementFor(list)
+                }
+            }
         })
 
         return structureElements
@@ -132,6 +138,12 @@ internal class FileStructure private constructor(
     private fun createDanglingModifierListStructure(container: KtElement): FileStructureElement {
         val firDeclaration = container.findSourceByTraversingWholeTree(moduleComponents.firFileBuilder, firFile)
             ?: errorWithFirSpecificEntries("no declaration found", psi = container)
+        moduleComponents.firModuleLazyDeclarationResolver.lazyResolveDeclaration(
+            firDeclarationToResolve = firDeclaration,
+            scopeSession = moduleComponents.scopeSessionProvider.getScopeSession(),
+            toPhase = FirResolvePhase.BODY_RESOLVE,
+            checkPCE = true,
+        )
         return DanglingModifierListStructureElement(firFile, firDeclaration, moduleComponents, container.containingKtFile)
     }
 

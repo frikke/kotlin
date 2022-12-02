@@ -86,6 +86,7 @@ private fun collectDesignationPath(declaration: FirDeclaration): List<FirDeclara
             outerClassId?.let(declaration.moduleData.session.firProvider::getFirClassifierByFqName)
                 ?: outerClassId?.let(declaration.moduleData.session.javaSymbolProvider::getClassLikeSymbolByClassId)?.fir
         }
+        is FirDanglingModifierList -> return emptyList()
         else -> return null
     } ?: return emptyList()
 

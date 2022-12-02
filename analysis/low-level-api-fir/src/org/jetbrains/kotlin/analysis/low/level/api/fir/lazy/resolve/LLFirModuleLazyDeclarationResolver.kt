@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.analysis.low.level.api.fir.transformers.LLFirFirProv
 import org.jetbrains.kotlin.analysis.low.level.api.fir.transformers.LazyTransformerFactory
 import org.jetbrains.kotlin.analysis.low.level.api.fir.util.checkCanceled
 import org.jetbrains.kotlin.analysis.low.level.api.fir.util.findSourceNonLocalFirDeclaration
+import org.jetbrains.kotlin.analysis.low.level.api.fir.util.ktDeclaration
 import org.jetbrains.kotlin.analysis.low.level.api.fir.util.withFirEntry
 import org.jetbrains.kotlin.analysis.utils.errors.shouldIjPlatformExceptionBeRethrown
 import org.jetbrains.kotlin.fir.FirElement
@@ -29,11 +30,9 @@ import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.providers.firProvider
 import org.jetbrains.kotlin.fir.resolve.transformers.FirImportResolveTransformer
 import org.jetbrains.kotlin.fir.resolve.transformers.body.resolve.FirTowerDataContextCollector
-import org.jetbrains.kotlin.psi.KtClassBody
-import org.jetbrains.kotlin.psi.KtDeclaration
-import org.jetbrains.kotlin.psi.KtEnumEntry
 import org.jetbrains.kotlin.analysis.utils.errors.buildErrorWithAttachment
-import org.jetbrains.kotlin.psi.KtPrimaryConstructor
+import org.jetbrains.kotlin.fir.psi
+import org.jetbrains.kotlin.psi.*
 
 internal class LLFirModuleLazyDeclarationResolver(val moduleComponents: LLFirModuleResolveComponents) {
     /**
@@ -300,7 +299,16 @@ internal class LLFirModuleLazyDeclarationResolver(val moduleComponents: LLFirMod
         val designation: FirDeclarationDesignationWithFile
         val neededPhase: FirResolvePhase
 
-        if (requestedDeclarationDesignation != null) {
+        if (firDeclarationToResolve is FirDanglingModifierList) {
+            neededPhase = toPhase
+            val ktFile = firDeclarationToResolve.psi?.containingFile as? KtFile
+                ?: error("File for dangling modifier list cannot be null")
+            designation = FirDeclarationDesignationWithFile(
+                emptyList(),
+                firDeclarationToResolve,
+                moduleComponents.cache.getCachedFirFile(ktFile) ?: error("Fir file for dandling modifier list cannot be null")
+            )
+        } else if (requestedDeclarationDesignation != null) {
             designation = requestedDeclarationDesignation
             neededPhase = toPhase
         } else {
