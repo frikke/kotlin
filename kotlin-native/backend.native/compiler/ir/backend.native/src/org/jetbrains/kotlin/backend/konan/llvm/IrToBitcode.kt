@@ -1905,8 +1905,13 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
 
     //-------------------------------------------------------------------------//
     private inner class ReturnableBlockScope(val returnableBlock: IrReturnableBlock, val resultSlot: LLVMValueRef?) :
-            FileScope(returnableBlock.inlineFunctionSymbol?.owner?.let {
+<<<<<<< HEAD
+            FileScope(returnableBlock.extractInlinedBlock()?.inlineDeclaration?.let {
                 generationState.loweredInlineFunctions[it]?.irFile ?: it.fileOrNull
+=======
+            FileScope(returnableBlock.inlineFunctionSymbol?.owner?.let {
+                context.generationState.loweredInlineFunctions[it]?.irFile ?: it.fileOrNull
+>>>>>>> 9116094b572 ([TEMP] rollback)
             }
                     ?: (currentCodeContext.fileScope() as? FileScope)?.file
                     ?: error("returnable block should belong to current file at least")) {
@@ -1914,14 +1919,25 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
         var bbExit : LLVMBasicBlockRef? = null
         var resultPhi : LLVMValueRef? = null
         private val functionScope by lazy {
-            returnableBlock.inlineFunctionSymbol?.owner?.let {
+<<<<<<< HEAD
+            returnableBlock.extractInlinedBlock()?.inlineDeclaration?.let {
+                if (it !is IrFunction) return@let null
                 it.scope(file().fileEntry.line(generationState.loweredInlineFunctions[it]?.startOffset ?: it.startOffset))
+=======
+            returnableBlock.inlineFunctionSymbol?.owner?.let {
+                it.scope(file().fileEntry.line(context.generationState.loweredInlineFunctions[it]?.startOffset ?: it.startOffset))
+>>>>>>> 9116094b572 ([TEMP] rollback)
             }
         }
 
         private fun getExit(): LLVMBasicBlockRef {
-            val location = returnableBlock.inlineFunctionSymbol?.owner?.let {
+<<<<<<< HEAD
+            val location = returnableBlock.extractInlinedBlock()?.inlineDeclaration?.let {
                 location(generationState.loweredInlineFunctions[it]?.endOffset ?: it.endOffset)
+=======
+            val location = returnableBlock.inlineFunctionSymbol?.owner?.let {
+                location(context.generationState.loweredInlineFunctions[it]?.endOffset ?: it.endOffset)
+>>>>>>> 9116094b572 ([TEMP] rollback)
             } ?: returnableBlock.statements.lastOrNull()?.let {
                 location(it.endOffset)
             }

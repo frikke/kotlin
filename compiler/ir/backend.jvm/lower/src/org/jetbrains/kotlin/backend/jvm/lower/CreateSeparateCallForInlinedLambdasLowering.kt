@@ -41,7 +41,7 @@ class CreateSeparateCallForInlinedLambdasLowering(val context: JvmBackendContext
 
             // we don't need to transform body of original function, just arguments that were extracted as variables
             expression.getAdditionalStatementsFromInlinedBlock().forEach { it.transformChildrenVoid() }
-            expression.putStatementsBeforeActualInline(newCalls)
+            newCalls.takeIf { it.isNotEmpty() }?.let { expression.putStatementsBeforeActualInline(it) }
             return expression
         }
 

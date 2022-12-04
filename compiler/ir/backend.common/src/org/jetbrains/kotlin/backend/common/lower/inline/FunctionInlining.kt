@@ -211,7 +211,7 @@ class FunctionInlining(
             val inlinedBlock = IrInlinedFunctionBlockImpl(
                 startOffset = callSite.startOffset,
                 endOffset = callSite.endOffset,
-                type = callSite.type,
+                type = context.irBuiltIns.unitType,
                 inlineCall = callSite,
                 inlinedElement = originalInlinedElement,
                 origin = null,

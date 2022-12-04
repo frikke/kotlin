@@ -87,7 +87,7 @@ class IrReturnableBlockImpl(
 class IrInlinedFunctionBlockImpl(
     override val startOffset: Int,
     override val endOffset: Int,
-    override var type: IrType,
+    override var type: IrType, // always unit type
     override val inlineCall: IrFunctionAccessExpression,
     override val inlinedElement: IrElement,
     override val origin: IrStatementOrigin? = null,
@@ -105,7 +105,7 @@ class IrInlinedFunctionBlockImpl(
     ) : this(startOffset, endOffset, type, inlineCall, inlinedElement, origin) {
         if (evaluationStatements.isNotEmpty()) {
             val blockForNewStatements = IrCompositeImpl(
-                UNDEFINED_OFFSET, UNDEFINED_OFFSET, type /*whatever type*/,
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET, type,
                 InlinedFunctionArguments, statements = evaluationStatements
             )
             this.statements.add(blockForNewStatements)
@@ -113,7 +113,7 @@ class IrInlinedFunctionBlockImpl(
 
         if (evaluationStatementsFromDefault.isNotEmpty()) {
             val blockForNewStatementsFromDefault = IrCompositeImpl(
-                UNDEFINED_OFFSET, UNDEFINED_OFFSET, type /*whatever type*/,
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET, type,
                 InlinedFunctionDefaultArguments, statements = evaluationStatementsFromDefault
             )
             this.statements.add(blockForNewStatementsFromDefault)
