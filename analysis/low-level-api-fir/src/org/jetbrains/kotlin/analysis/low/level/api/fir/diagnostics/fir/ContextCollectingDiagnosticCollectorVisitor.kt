@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.fir.resolve.SessionHolder
 import org.jetbrains.kotlin.analysis.low.level.api.fir.ContextByDesignationCollector
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.FirDeclarationDesignationWithFile
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.collectDesignation
+import org.jetbrains.kotlin.fir.containingClass
 import org.jetbrains.kotlin.fir.declarations.*
 
 private class ContextCollectingDiagnosticCollectorVisitor private constructor(
@@ -57,7 +58,7 @@ internal object PersistenceContextCollector {
         val isLocal = when (declaration) {
             is FirClassLikeDeclaration -> declaration.symbol.classId.isLocal
             is FirCallableDeclaration -> declaration.symbol.callableId.isLocal
-            is FirDanglingModifierList -> false
+            is FirDanglingModifierList -> declaration.containingClass()?.classId?.isLocal == true
             else -> error("Unsupported declaration ${declaration.renderWithType()}")
         }
         require(!isLocal) {

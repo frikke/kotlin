@@ -1266,7 +1266,9 @@ open class RawFirBuilder(
                         }
                         for (danglingModifier in PsiTreeUtil.getChildrenOfTypeAsList(classOrObject.body, KtModifierList::class.java)) {
                             addDeclaration(
-                                buildErrorTopLevelDeclarationForDanglingModifierList(danglingModifier)
+                                buildErrorTopLevelDeclarationForDanglingModifierList(danglingModifier).apply {
+                                    containingClassAttr = currentDispatchReceiverType()?.lookupTag
+                                }
                             )
                         }
 
@@ -1360,7 +1362,9 @@ open class RawFirBuilder(
                         }
 
                         for (danglingModifier in PsiTreeUtil.getChildrenOfTypeAsList(objectDeclaration.body, KtModifierList::class.java)) {
-                            declarations += buildErrorTopLevelDeclarationForDanglingModifierList(danglingModifier)
+                            declarations += buildErrorTopLevelDeclarationForDanglingModifierList(danglingModifier).apply {
+                                containingClassAttr = currentDispatchReceiverType()?.lookupTag
+                            }
                         }
                     }.also {
                         it.delegateFieldsMap = delegatedFieldsMap
