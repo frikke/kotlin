@@ -64,8 +64,7 @@ class K2Native : CLICompiler<K2NativeCompilerArguments>() {
         val project = environment.project
         val messageCollector = configuration.get(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY) ?: MessageCollector.NONE
         if (configuration.getBoolean(CommonConfigurationKeys.USE_FIR)) {
-            messageCollector.report(ERROR, "K2 does not support Native target right now")
-            return ExitCode.COMPILATION_ERROR
+            messageCollector.report(WARNING, "Support of new compiler pipeline K2 in Native is experimental, no compatibility guarantees are yet provided")
         }
         // TODO: Should be either of two, or PHASE_CONFIG will go away with the old driver.
         // TODO: -Xlist-phases does not work correctly for now.
