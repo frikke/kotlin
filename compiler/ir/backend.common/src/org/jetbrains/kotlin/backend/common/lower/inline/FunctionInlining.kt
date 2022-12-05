@@ -521,12 +521,14 @@ class FunctionInlining(
             val isDefaultArg: Boolean = false
         ) {
             val isInlinableLambdaArgument: Boolean
+                // must take "original" parameter because it can have generic type and so considered as no inline; see `lambdaAsGeneric.kt`
                 get() = parameter.getOriginalParameter().isInlineParameter() &&
                         (argumentExpression is IrFunctionReference
                                 || argumentExpression is IrFunctionExpression
                                 || argumentExpression.isAdaptedFunctionReference())
 
             val isInlinablePropertyReference: Boolean
+                // must take "original" parameter because it can have generic type and so considered as no inline; see `lambdaAsGeneric.kt`
                 get() = parameter.getOriginalParameter().isInlineParameter() && argumentExpression is IrPropertyReference
 
             val isImmutableVariableLoad: Boolean
