@@ -7,15 +7,22 @@
 // TARGET_PLATFORM: Common
 // FILE: common.kt
 
-// MODULE: jvm()()(common)
-// TARGET_PLATFORM: JVM
-// FILE: main.kt
-
 import kotlinx.serialization.*
 
 @Serializable
 class Bar<T>(val t: T)
 
+@Serializable
+class Wrapper(val b: Bar<String>)
+
+// MODULE: jvm()()(common)
+// TARGET_PLATFORM: JVM
+// FILE: main.kt
+
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
+import kotlinx.serialization.descriptors.*
+
 fun box(): String {
-    return Bar("OK").t
+    return if (Wrapper.serializer().descriptor.elementDescriptors.joinToString() == "Bar(t: kotlin.String)") "OK" else "FAIL"
 }

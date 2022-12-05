@@ -259,16 +259,13 @@ class SerializationFirResolveExtension(session: FirSession) : FirDeclarationGene
 
     override fun generateConstructors(context: MemberGenerationContext): List<FirConstructorSymbol> {
         val owner = context.owner
-        val lookupTag = ConeClassLikeLookupTagImpl(owner.classId)
         val defaultObjectConstructor = buildPrimaryConstructor(
             owner, isInner = false, SerializationPluginKey, status = FirResolvedDeclarationStatusImpl(
                 Visibilities.Private,
                 Modality.FINAL,
                 EffectiveVisibility.PrivateInClass
             )
-        ).also {
-            it.containingClassForStaticMemberAttr = lookupTag
-        }
+        )
         if (owner.name == SerialEntityNames.SERIALIZER_CLASS_NAME && owner.typeParameterSymbols.isNotEmpty()) {
             val parameterizedConstructor = buildConstructor {
                 moduleData = session.moduleData
@@ -290,7 +287,7 @@ class SerializationFirResolveExtension(session: FirSession) : FirDeclarationGene
                     )
                 })
             }.also {
-                it.containingClassForStaticMemberAttr = lookupTag
+                it.containingClassForStaticMemberAttr = ConeClassLikeLookupTagImpl(owner.classId)
             }
             return listOf(defaultObjectConstructor.symbol, parameterizedConstructor.symbol)
         }
