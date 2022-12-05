@@ -20,6 +20,7 @@ public open class Base64 private constructor(
 ) {
     init {
         require(encodeMap.size == 64)
+        require(decodeMap.size == 256)
     }
 
     /**
@@ -475,13 +476,19 @@ public open class Base64 private constructor(
     }
 
     private fun charsToBytes(source: CharSequence, startIndex: Int, endIndex: Int): ByteArray {
-        return ByteArray(endIndex - startIndex) {
-            val symbol = source[startIndex + it].code
-            if (symbol > Byte.MAX_VALUE) {
-                throwIllegalSymbol(symbol, it)
+        val byteArray = ByteArray(endIndex - startIndex)
+        var length = 0
+        for (index in startIndex until endIndex) {
+            val symbol = source[index].code
+            if (symbol > Byte.MAX_VALUE || (decodeMap[symbol] < 0 && symbol != padSymbol.toInt())) {
+                if (!isMimeScheme) {
+                    throwIllegalSymbol(symbol, index)
+                }
+            } else {
+                byteArray[length++] = symbol.toByte()
             }
-            symbol.toByte()
         }
+        return if (length == byteArray.size) byteArray else byteArray.copyOf(length)
     }
 
     private fun handlePaddingSymbol(source: ByteArray, padIndex: Int, endIndex: Int, byteStart: Int): Int {

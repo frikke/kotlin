@@ -209,6 +209,9 @@ class Base64Test {
         assertFailsWith<IllegalArgumentException> { Base64.decode("Zm[@]9vYg==") }
         assertFailsWith<IllegalArgumentException> { Base64.decode("Zm9v-Yg==") }
         assertFailsWith<IllegalArgumentException> { Base64.decode("Zm9vYg=(%^)=") }
+        assertFailsWith<IllegalArgumentException> { Base64.decode("Zm\u00FF9vYg==") }
+        assertFailsWith<IllegalArgumentException> { Base64.decode("\uFFFFZm9vYg==") }
+        assertFailsWith<IllegalArgumentException> { Base64.decode("Zm9vYg==\uD800\uDC00") }
 
         // no line separator inserted
         val expected = "Zm9vYmFy".repeat(76)
@@ -232,6 +235,9 @@ class Base64Test {
         assertFailsWith<IllegalArgumentException> { Base64.UrlSafe.decode("Zm[@]9vYg==") }
         assertFailsWith<IllegalArgumentException> { Base64.UrlSafe.decode("Zm9v+Yg==") }
         assertFailsWith<IllegalArgumentException> { Base64.UrlSafe.decode("Zm9vYg=(%^)=") }
+        assertFailsWith<IllegalArgumentException> { Base64.UrlSafe.decode("Zm\u00FF9vYg==") }
+        assertFailsWith<IllegalArgumentException> { Base64.UrlSafe.decode("\uFFFFZm9vYg==") }
+        assertFailsWith<IllegalArgumentException> { Base64.UrlSafe.decode("Zm9vYg==\uD800\uDC00") }
 
         // no line separator inserted
         val expected = "Zm9vYmFy".repeat(76)
@@ -258,6 +264,9 @@ class Base64Test {
         testDecode(Base64.Mime, "Zm[@]9vYg==", "foob".encodeToByteArray())
         testDecode(Base64.Mime, "Zm9v-Yg==", "foob".encodeToByteArray())
         testDecode(Base64.Mime, "Zm9vYg=(%^)=", "foob".encodeToByteArray())
+        testDecode(Base64.Mime, "Zm\u00FF9vYg==", "foob".encodeToByteArray())
+        testDecode(Base64.Mime, "\uFFFFZm9vYg==", "foob".encodeToByteArray())
+        testDecode(Base64.Mime, "Zm9vYg==\uD800\uDC00", "foob".encodeToByteArray())
 
         // inserts line separator, but not to the end of the output
         val expected = "Zm9vYmFy".repeat(76).chunked(76).joinToString(separator = "\r\n")
