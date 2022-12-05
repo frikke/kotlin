@@ -7,8 +7,8 @@ package org.jetbrains.kotlin.backend.konan.llvm
 
 import kotlinx.cinterop.*
 import llvm.*
-import org.jetbrains.kotlin.backend.common.ir.extractInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.inlineDeclaration
+import org.jetbrains.kotlin.backend.common.ir.inlineFunction
 import org.jetbrains.kotlin.backend.common.lower.coroutines.getOrCreateFunctionWithContinuationStub
 import org.jetbrains.kotlin.backend.common.lower.inline.InlinerExpressionLocationHint
 import org.jetbrains.kotlin.backend.konan.*
@@ -308,7 +308,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
         val functionContext = findCodeContext(symbol.owner, currentCodeContext) {
             val declaration = (this as? FunctionScope)?.declaration
             val returnableBlock = (this as? ReturnableBlockScope)?.returnableBlock
-            val inlinedFunction = returnableBlock?.extractInlinedBlock()?.inlineDeclaration
+            val inlinedFunction = returnableBlock?.inlineFunction
             declaration == it || inlinedFunction == it
         } ?: return null
 
@@ -1904,7 +1904,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
 
     //-------------------------------------------------------------------------//
     private inner class ReturnableBlockScope(val returnableBlock: IrReturnableBlock, val resultSlot: LLVMValueRef?) :
-            FileScope(returnableBlock.extractInlinedBlock()?.inlineDeclaration?.let {
+            FileScope(returnableBlock.inlineFunction?.let {
                 generationState.loweredInlineFunctions[it]?.irFile ?: it.fileOrNull
             }
                     ?: (currentCodeContext.fileScope() as? FileScope)?.file
@@ -1913,14 +1913,13 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
         var bbExit : LLVMBasicBlockRef? = null
         var resultPhi : LLVMValueRef? = null
         private val functionScope by lazy {
-            returnableBlock.extractInlinedBlock()?.inlineDeclaration?.let {
-                if (it !is IrFunction) return@let null
+            returnableBlock.inlineFunction?.let {
                 it.scope(file().fileEntry.line(generationState.loweredInlineFunctions[it]?.startOffset ?: it.startOffset))
             }
         }
 
         private fun getExit(): LLVMBasicBlockRef {
-            val location = returnableBlock.extractInlinedBlock()?.inlineDeclaration?.let {
+            val location = returnableBlock.inlineFunction?.let {
                 location(generationState.loweredInlineFunctions[it]?.endOffset ?: it.endOffset)
             } ?: returnableBlock.statements.lastOrNull()?.let {
                 location(it.endOffset)
@@ -1963,7 +1962,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
         override fun returnableBlockScope(): CodeContext? = this
 
         override fun location(offset: Int): LocationInfo? {
-            return if (returnableBlock.extractInlinedBlock() != null) {
+            return if (returnableBlock.inlineFunction != null) {
                 val diScope = functionScope ?: return null
                 val inlinedAt = outerContext.location(returnableBlock.startOffset) ?: return null
                 LocationInfo(diScope, file.fileEntry.line(offset), file.fileEntry.column(offset), inlinedAt)

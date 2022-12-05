@@ -80,7 +80,6 @@ class FunctionInlining(
     val context: CommonBackendContext,
     private val inlineFunctionResolver: InlineFunctionResolver = DefaultInlineFunctionResolver(context),
     private val innerClassesSupport: InnerClassesSupport? = null,
-    private val useSpecialNodeToStoreInlinedResult: Boolean = false,
     private val insertAdditionalImplicitCasts: Boolean = false,
     private val inlinePureArguments: Boolean = true,
     private val regenerateInlinedAnonymousObjects: Boolean = false,
@@ -225,12 +224,7 @@ class FunctionInlining(
                 type = callSite.type,
                 symbol = irReturnableBlockSymbol,
                 origin = null,
-                statements = if (useSpecialNodeToStoreInlinedResult) {
-                    listOf(inlinedBlock)
-                } else {
-                    evaluationStatements + evaluationStatementsFromDefault + newStatements
-                },
-                inlineFunctionSymbol = callee.symbol
+                statements = listOf(inlinedBlock),
             ).apply {
                 transformChildrenVoid(object : IrElementTransformerVoid() {
                     override fun visitReturn(expression: IrReturn): IrExpression {
@@ -486,7 +480,7 @@ class FunctionInlining(
                         putTypeArgument(index, irFunctionReference.getTypeArgument(index))
                 }
 
-                return if (inlinedFunction.needsInlining) {
+                return if (inlinedFunction.needsInlining && inlinedFunction.body != null) {
                     inlineFunction(immediateCall, inlinedFunction, irFunctionReference, performRecursiveInline = true)
                 } else {
                     val transformedExpression = super.visitExpression(immediateCall).transform(this@FunctionInlining, null)

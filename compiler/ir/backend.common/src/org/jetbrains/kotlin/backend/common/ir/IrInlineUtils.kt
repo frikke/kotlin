@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.ir.builders.irTemporary
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
+import org.jetbrains.kotlin.ir.symbols.IrFileSymbol
 import org.jetbrains.kotlin.ir.symbols.IrReturnTargetSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
 import org.jetbrains.kotlin.ir.types.getClass
@@ -134,6 +135,14 @@ val IrInlinedFunctionBlock.inlineDeclaration: IrDeclaration
         else -> throw AssertionError("Not supported ir element for inlining ${element.dump()}")
     }
 
+private val IrInlinedFunctionBlock.definitelyInlineFunction: IrFunction?
+    get() = when (val element = inlinedElement) {
+        is IrFunction -> element
+        is IrFunctionExpression -> element.function
+        is IrFunctionReference -> element.symbol.owner.takeIf { it.isInline }
+        else -> null
+    }
+
 fun IrInlinedFunctionBlock.isFunctionInlining(): Boolean {
     return this.inlinedElement is IrFunction
 }
@@ -181,3 +190,10 @@ fun IrInlinedFunctionBlock.putStatementsInFrontOfInlinedFunction(statements: Lis
 
     this.statements.addAll(if (insertAfter == -1) 0 else insertAfter + 1, statements)
 }
+
+val IrReturnableBlock.inlineFunction: IrFunction?
+    get() = (this.statements.singleOrNull() as? IrInlinedFunctionBlock)?.definitelyInlineFunction
+
+@Suppress("unused") // Used in kotlin-native
+val IrReturnableBlock.sourceFileSymbol: IrFileSymbol?
+    get() = inlineFunction?.fileOrNull?.symbol
