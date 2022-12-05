@@ -90,6 +90,10 @@ struct InterfaceTableRecord {
 
 // This struct represents runtime type information and by itself is the compile time
 // constant.
+// When adding a field here do not forget to adjust:
+//   1. RTTIGenerator
+//   2. ObjectTestSupport TypeInfoHolder
+//   3. createTypeInfo in ObjcExport.mm
 struct TypeInfo {
     // Reference to self, to allow simple obtaining TypeInfo via meta-object.
     const TypeInfo* typeInfo_;
