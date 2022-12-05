@@ -19,6 +19,11 @@ message IrFile {
   repeated IrConstructorCall annotation = 4;
   repeated int64 explicitly_exported_to_compiler = 5 [packed=true];
   repeated Actual actual = 6;
+
+  // A number that is unique for each IrFile in the klib.
+  // Used to unambiguously refer to files in FileSignatures,
+  // since the file's name and package fqname are not enough (KT-50963).
+  optional int32 identifier = 7;
 }
 
 /* ------ IdSignature -------------------------------------------- */
@@ -54,7 +59,17 @@ message LocalSignature {
   optional int32 debug_info = 3;
 }
 
-message FileSignature {}
+message FileSignature {
+
+  // An identifier of this file in the current module, used to distinguish files with matching names and packages
+  // (we unfortunately allow this at the moment).
+  optional int32 file_identifier = 1 [default = -1];
+
+  // Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+  optional string name = 2;
+
+  repeated int32 fq_name = 3 [packed=true];
+}
 
 message IdSignature {
   oneof idSig {

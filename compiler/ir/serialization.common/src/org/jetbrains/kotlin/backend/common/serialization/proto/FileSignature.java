@@ -32,6 +32,7 @@ public final class FileSignature extends
       org.jetbrains.kotlin.protobuf.ExtensionRegistryLite extensionRegistry)
       throws org.jetbrains.kotlin.protobuf.InvalidProtocolBufferException {
     initFields();
+    int mutable_bitField0_ = 0;
     org.jetbrains.kotlin.protobuf.ByteString.Output unknownFieldsOutput =
         org.jetbrains.kotlin.protobuf.ByteString.newOutput();
     org.jetbrains.kotlin.protobuf.CodedOutputStream unknownFieldsCodedOutput =
@@ -52,6 +53,38 @@ public final class FileSignature extends
             }
             break;
           }
+          case 8: {
+            bitField0_ |= 0x00000001;
+            fileIdentifier_ = input.readInt32();
+            break;
+          }
+          case 18: {
+            org.jetbrains.kotlin.protobuf.ByteString bs = input.readBytes();
+            bitField0_ |= 0x00000002;
+            name_ = bs;
+            break;
+          }
+          case 24: {
+            if (!((mutable_bitField0_ & 0x00000004) == 0x00000004)) {
+              fqName_ = new java.util.ArrayList<java.lang.Integer>();
+              mutable_bitField0_ |= 0x00000004;
+            }
+            fqName_.add(input.readInt32());
+            break;
+          }
+          case 26: {
+            int length = input.readRawVarint32();
+            int limit = input.pushLimit(length);
+            if (!((mutable_bitField0_ & 0x00000004) == 0x00000004) && input.getBytesUntilLimit() > 0) {
+              fqName_ = new java.util.ArrayList<java.lang.Integer>();
+              mutable_bitField0_ |= 0x00000004;
+            }
+            while (input.getBytesUntilLimit() > 0) {
+              fqName_.add(input.readInt32());
+            }
+            input.popLimit(limit);
+            break;
+          }
         }
       }
     } catch (org.jetbrains.kotlin.protobuf.InvalidProtocolBufferException e) {
@@ -60,6 +93,9 @@ public final class FileSignature extends
       throw new org.jetbrains.kotlin.protobuf.InvalidProtocolBufferException(
           e.getMessage()).setUnfinishedMessage(this);
     } finally {
+      if (((mutable_bitField0_ & 0x00000004) == 0x00000004)) {
+        fqName_ = java.util.Collections.unmodifiableList(fqName_);
+      }
       try {
         unknownFieldsCodedOutput.flush();
       } catch (java.io.IOException e) {
@@ -85,7 +121,113 @@ public final class FileSignature extends
     return PARSER;
   }
 
+  private int bitField0_;
+  public static final int FILE_IDENTIFIER_FIELD_NUMBER = 1;
+  private int fileIdentifier_;
+  /**
+   * <code>optional int32 file_identifier = 1 [default = -1];</code>
+   *
+   * <pre>
+   * An identifier of this file in the current module, used to distinguish files with matching names and packages
+   * (we unfortunately allow this at the moment).
+   * </pre>
+   */
+  public boolean hasFileIdentifier() {
+    return ((bitField0_ & 0x00000001) == 0x00000001);
+  }
+  /**
+   * <code>optional int32 file_identifier = 1 [default = -1];</code>
+   *
+   * <pre>
+   * An identifier of this file in the current module, used to distinguish files with matching names and packages
+   * (we unfortunately allow this at the moment).
+   * </pre>
+   */
+  public int getFileIdentifier() {
+    return fileIdentifier_;
+  }
+
+  public static final int NAME_FIELD_NUMBER = 2;
+  private java.lang.Object name_;
+  /**
+   * <code>optional string name = 2;</code>
+   *
+   * <pre>
+   * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+   * </pre>
+   */
+  public boolean hasName() {
+    return ((bitField0_ & 0x00000002) == 0x00000002);
+  }
+  /**
+   * <code>optional string name = 2;</code>
+   *
+   * <pre>
+   * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+   * </pre>
+   */
+  public java.lang.String getName() {
+    java.lang.Object ref = name_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      org.jetbrains.kotlin.protobuf.ByteString bs = 
+          (org.jetbrains.kotlin.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      if (bs.isValidUtf8()) {
+        name_ = s;
+      }
+      return s;
+    }
+  }
+  /**
+   * <code>optional string name = 2;</code>
+   *
+   * <pre>
+   * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+   * </pre>
+   */
+  public org.jetbrains.kotlin.protobuf.ByteString
+      getNameBytes() {
+    java.lang.Object ref = name_;
+    if (ref instanceof java.lang.String) {
+      org.jetbrains.kotlin.protobuf.ByteString b = 
+          org.jetbrains.kotlin.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      name_ = b;
+      return b;
+    } else {
+      return (org.jetbrains.kotlin.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int FQ_NAME_FIELD_NUMBER = 3;
+  private java.util.List<java.lang.Integer> fqName_;
+  /**
+   * <code>repeated int32 fq_name = 3 [packed = true];</code>
+   */
+  public java.util.List<java.lang.Integer>
+      getFqNameList() {
+    return fqName_;
+  }
+  /**
+   * <code>repeated int32 fq_name = 3 [packed = true];</code>
+   */
+  public int getFqNameCount() {
+    return fqName_.size();
+  }
+  /**
+   * <code>repeated int32 fq_name = 3 [packed = true];</code>
+   */
+  public int getFqName(int index) {
+    return fqName_.get(index);
+  }
+  private int fqNameMemoizedSerializedSize = -1;
+
   private void initFields() {
+    fileIdentifier_ = -1;
+    name_ = "";
+    fqName_ = java.util.Collections.emptyList();
   }
   private byte memoizedIsInitialized = -1;
   public final boolean isInitialized() {
@@ -100,6 +242,19 @@ public final class FileSignature extends
   public void writeTo(org.jetbrains.kotlin.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
     getSerializedSize();
+    if (((bitField0_ & 0x00000001) == 0x00000001)) {
+      output.writeInt32(1, fileIdentifier_);
+    }
+    if (((bitField0_ & 0x00000002) == 0x00000002)) {
+      output.writeBytes(2, getNameBytes());
+    }
+    if (getFqNameList().size() > 0) {
+      output.writeRawVarint32(26);
+      output.writeRawVarint32(fqNameMemoizedSerializedSize);
+    }
+    for (int i = 0; i < fqName_.size(); i++) {
+      output.writeInt32NoTag(fqName_.get(i));
+    }
     output.writeRawBytes(unknownFields);
   }
 
@@ -109,6 +264,28 @@ public final class FileSignature extends
     if (size != -1) return size;
 
     size = 0;
+    if (((bitField0_ & 0x00000001) == 0x00000001)) {
+      size += org.jetbrains.kotlin.protobuf.CodedOutputStream
+        .computeInt32Size(1, fileIdentifier_);
+    }
+    if (((bitField0_ & 0x00000002) == 0x00000002)) {
+      size += org.jetbrains.kotlin.protobuf.CodedOutputStream
+        .computeBytesSize(2, getNameBytes());
+    }
+    {
+      int dataSize = 0;
+      for (int i = 0; i < fqName_.size(); i++) {
+        dataSize += org.jetbrains.kotlin.protobuf.CodedOutputStream
+          .computeInt32SizeNoTag(fqName_.get(i));
+      }
+      size += dataSize;
+      if (!getFqNameList().isEmpty()) {
+        size += 1;
+        size += org.jetbrains.kotlin.protobuf.CodedOutputStream
+            .computeInt32SizeNoTag(dataSize);
+      }
+      fqNameMemoizedSerializedSize = dataSize;
+    }
     size += unknownFields.size();
     memoizedSerializedSize = size;
     return size;
@@ -203,6 +380,12 @@ public final class FileSignature extends
 
     public Builder clear() {
       super.clear();
+      fileIdentifier_ = -1;
+      bitField0_ = (bitField0_ & ~0x00000001);
+      name_ = "";
+      bitField0_ = (bitField0_ & ~0x00000002);
+      fqName_ = java.util.Collections.emptyList();
+      bitField0_ = (bitField0_ & ~0x00000004);
       return this;
     }
 
@@ -224,11 +407,45 @@ public final class FileSignature extends
 
     public org.jetbrains.kotlin.backend.common.serialization.proto.FileSignature buildPartial() {
       org.jetbrains.kotlin.backend.common.serialization.proto.FileSignature result = new org.jetbrains.kotlin.backend.common.serialization.proto.FileSignature(this);
+      int from_bitField0_ = bitField0_;
+      int to_bitField0_ = 0;
+      if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
+        to_bitField0_ |= 0x00000001;
+      }
+      result.fileIdentifier_ = fileIdentifier_;
+      if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
+        to_bitField0_ |= 0x00000002;
+      }
+      result.name_ = name_;
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        fqName_ = java.util.Collections.unmodifiableList(fqName_);
+        bitField0_ = (bitField0_ & ~0x00000004);
+      }
+      result.fqName_ = fqName_;
+      result.bitField0_ = to_bitField0_;
       return result;
     }
 
     public Builder mergeFrom(org.jetbrains.kotlin.backend.common.serialization.proto.FileSignature other) {
       if (other == org.jetbrains.kotlin.backend.common.serialization.proto.FileSignature.getDefaultInstance()) return this;
+      if (other.hasFileIdentifier()) {
+        setFileIdentifier(other.getFileIdentifier());
+      }
+      if (other.hasName()) {
+        bitField0_ |= 0x00000002;
+        name_ = other.name_;
+        
+      }
+      if (!other.fqName_.isEmpty()) {
+        if (fqName_.isEmpty()) {
+          fqName_ = other.fqName_;
+          bitField0_ = (bitField0_ & ~0x00000004);
+        } else {
+          ensureFqNameIsMutable();
+          fqName_.addAll(other.fqName_);
+        }
+        
+      }
       setUnknownFields(
           getUnknownFields().concat(other.unknownFields));
       return this;
@@ -253,6 +470,225 @@ public final class FileSignature extends
           mergeFrom(parsedMessage);
         }
       }
+      return this;
+    }
+    private int bitField0_;
+
+    private int fileIdentifier_ = -1;
+    /**
+     * <code>optional int32 file_identifier = 1 [default = -1];</code>
+     *
+     * <pre>
+     * An identifier of this file in the current module, used to distinguish files with matching names and packages
+     * (we unfortunately allow this at the moment).
+     * </pre>
+     */
+    public boolean hasFileIdentifier() {
+      return ((bitField0_ & 0x00000001) == 0x00000001);
+    }
+    /**
+     * <code>optional int32 file_identifier = 1 [default = -1];</code>
+     *
+     * <pre>
+     * An identifier of this file in the current module, used to distinguish files with matching names and packages
+     * (we unfortunately allow this at the moment).
+     * </pre>
+     */
+    public int getFileIdentifier() {
+      return fileIdentifier_;
+    }
+    /**
+     * <code>optional int32 file_identifier = 1 [default = -1];</code>
+     *
+     * <pre>
+     * An identifier of this file in the current module, used to distinguish files with matching names and packages
+     * (we unfortunately allow this at the moment).
+     * </pre>
+     */
+    public Builder setFileIdentifier(int value) {
+      bitField0_ |= 0x00000001;
+      fileIdentifier_ = value;
+      
+      return this;
+    }
+    /**
+     * <code>optional int32 file_identifier = 1 [default = -1];</code>
+     *
+     * <pre>
+     * An identifier of this file in the current module, used to distinguish files with matching names and packages
+     * (we unfortunately allow this at the moment).
+     * </pre>
+     */
+    public Builder clearFileIdentifier() {
+      bitField0_ = (bitField0_ & ~0x00000001);
+      fileIdentifier_ = -1;
+      
+      return this;
+    }
+
+    private java.lang.Object name_ = "";
+    /**
+     * <code>optional string name = 2;</code>
+     *
+     * <pre>
+     * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+     * </pre>
+     */
+    public boolean hasName() {
+      return ((bitField0_ & 0x00000002) == 0x00000002);
+    }
+    /**
+     * <code>optional string name = 2;</code>
+     *
+     * <pre>
+     * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+     * </pre>
+     */
+    public java.lang.String getName() {
+      java.lang.Object ref = name_;
+      if (!(ref instanceof java.lang.String)) {
+        org.jetbrains.kotlin.protobuf.ByteString bs =
+            (org.jetbrains.kotlin.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        if (bs.isValidUtf8()) {
+          name_ = s;
+        }
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>optional string name = 2;</code>
+     *
+     * <pre>
+     * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+     * </pre>
+     */
+    public org.jetbrains.kotlin.protobuf.ByteString
+        getNameBytes() {
+      java.lang.Object ref = name_;
+      if (ref instanceof String) {
+        org.jetbrains.kotlin.protobuf.ByteString b = 
+            org.jetbrains.kotlin.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        name_ = b;
+        return b;
+      } else {
+        return (org.jetbrains.kotlin.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>optional string name = 2;</code>
+     *
+     * <pre>
+     * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+     * </pre>
+     */
+    public Builder setName(
+        java.lang.String value) {
+      if (value == null) {
+    throw new NullPointerException();
+  }
+  bitField0_ |= 0x00000002;
+      name_ = value;
+      
+      return this;
+    }
+    /**
+     * <code>optional string name = 2;</code>
+     *
+     * <pre>
+     * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+     * </pre>
+     */
+    public Builder clearName() {
+      bitField0_ = (bitField0_ & ~0x00000002);
+      name_ = getDefaultInstance().getName();
+      
+      return this;
+    }
+    /**
+     * <code>optional string name = 2;</code>
+     *
+     * <pre>
+     * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+     * </pre>
+     */
+    public Builder setNameBytes(
+        org.jetbrains.kotlin.protobuf.ByteString value) {
+      if (value == null) {
+    throw new NullPointerException();
+  }
+  bitField0_ |= 0x00000002;
+      name_ = value;
+      
+      return this;
+    }
+
+    private java.util.List<java.lang.Integer> fqName_ = java.util.Collections.emptyList();
+    private void ensureFqNameIsMutable() {
+      if (!((bitField0_ & 0x00000004) == 0x00000004)) {
+        fqName_ = new java.util.ArrayList<java.lang.Integer>(fqName_);
+        bitField0_ |= 0x00000004;
+       }
+    }
+    /**
+     * <code>repeated int32 fq_name = 3 [packed = true];</code>
+     */
+    public java.util.List<java.lang.Integer>
+        getFqNameList() {
+      return java.util.Collections.unmodifiableList(fqName_);
+    }
+    /**
+     * <code>repeated int32 fq_name = 3 [packed = true];</code>
+     */
+    public int getFqNameCount() {
+      return fqName_.size();
+    }
+    /**
+     * <code>repeated int32 fq_name = 3 [packed = true];</code>
+     */
+    public int getFqName(int index) {
+      return fqName_.get(index);
+    }
+    /**
+     * <code>repeated int32 fq_name = 3 [packed = true];</code>
+     */
+    public Builder setFqName(
+        int index, int value) {
+      ensureFqNameIsMutable();
+      fqName_.set(index, value);
+      
+      return this;
+    }
+    /**
+     * <code>repeated int32 fq_name = 3 [packed = true];</code>
+     */
+    public Builder addFqName(int value) {
+      ensureFqNameIsMutable();
+      fqName_.add(value);
+      
+      return this;
+    }
+    /**
+     * <code>repeated int32 fq_name = 3 [packed = true];</code>
+     */
+    public Builder addAllFqName(
+        java.lang.Iterable<? extends java.lang.Integer> values) {
+      ensureFqNameIsMutable();
+      org.jetbrains.kotlin.protobuf.AbstractMessageLite.Builder.addAll(
+          values, fqName_);
+      
+      return this;
+    }
+    /**
+     * <code>repeated int32 fq_name = 3 [packed = true];</code>
+     */
+    public Builder clearFqName() {
+      fqName_ = java.util.Collections.emptyList();
+      bitField0_ = (bitField0_ & ~0x00000004);
+      
       return this;
     }
 

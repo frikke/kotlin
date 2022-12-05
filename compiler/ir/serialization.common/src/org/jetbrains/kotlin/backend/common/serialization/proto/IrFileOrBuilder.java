@@ -82,4 +82,25 @@ public interface IrFileOrBuilder extends
    * <code>repeated .org.jetbrains.kotlin.backend.common.serialization.proto.Actual actual = 6;</code>
    */
   int getActualCount();
+
+  /**
+   * <code>optional int32 identifier = 7;</code>
+   *
+   * <pre>
+   * A number that is unique for each IrFile in the klib.
+   * Used to unambiguously refer to files in FileSignatures,
+   * since the file's name and package fqname are not enough (KT-50963).
+   * </pre>
+   */
+  boolean hasIdentifier();
+  /**
+   * <code>optional int32 identifier = 7;</code>
+   *
+   * <pre>
+   * A number that is unique for each IrFile in the klib.
+   * Used to unambiguously refer to files in FileSignatures,
+   * since the file's name and package fqname are not enough (KT-50963).
+   * </pre>
+   */
+  int getIdentifier();
 }

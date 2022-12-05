@@ -145,6 +145,11 @@ public final class IrFile extends
             actual_.add(input.readMessage(org.jetbrains.kotlin.backend.common.serialization.proto.Actual.PARSER, extensionRegistry));
             break;
           }
+          case 56: {
+            bitField0_ |= 0x00000002;
+            identifier_ = input.readInt32();
+            break;
+          }
         }
       }
     } catch (org.jetbrains.kotlin.protobuf.InvalidProtocolBufferException e) {
@@ -348,6 +353,33 @@ public final class IrFile extends
     return actual_.get(index);
   }
 
+  public static final int IDENTIFIER_FIELD_NUMBER = 7;
+  private int identifier_;
+  /**
+   * <code>optional int32 identifier = 7;</code>
+   *
+   * <pre>
+   * A number that is unique for each IrFile in the klib.
+   * Used to unambiguously refer to files in FileSignatures,
+   * since the file's name and package fqname are not enough (KT-50963).
+   * </pre>
+   */
+  public boolean hasIdentifier() {
+    return ((bitField0_ & 0x00000002) == 0x00000002);
+  }
+  /**
+   * <code>optional int32 identifier = 7;</code>
+   *
+   * <pre>
+   * A number that is unique for each IrFile in the klib.
+   * Used to unambiguously refer to files in FileSignatures,
+   * since the file's name and package fqname are not enough (KT-50963).
+   * </pre>
+   */
+  public int getIdentifier() {
+    return identifier_;
+  }
+
   private void initFields() {
     declarationId_ = java.util.Collections.emptyList();
     fileEntry_ = org.jetbrains.kotlin.backend.common.serialization.proto.FileEntry.getDefaultInstance();
@@ -355,6 +387,7 @@ public final class IrFile extends
     annotation_ = java.util.Collections.emptyList();
     explicitlyExportedToCompiler_ = java.util.Collections.emptyList();
     actual_ = java.util.Collections.emptyList();
+    identifier_ = 0;
   }
   private byte memoizedIsInitialized = -1;
   public final boolean isInitialized() {
@@ -419,6 +452,9 @@ public final class IrFile extends
     for (int i = 0; i < actual_.size(); i++) {
       output.writeMessage(6, actual_.get(i));
     }
+    if (((bitField0_ & 0x00000002) == 0x00000002)) {
+      output.writeInt32(7, identifier_);
+    }
     output.writeRawBytes(unknownFields);
   }
 
@@ -481,6 +517,10 @@ public final class IrFile extends
     for (int i = 0; i < actual_.size(); i++) {
       size += org.jetbrains.kotlin.protobuf.CodedOutputStream
         .computeMessageSize(6, actual_.get(i));
+    }
+    if (((bitField0_ & 0x00000002) == 0x00000002)) {
+      size += org.jetbrains.kotlin.protobuf.CodedOutputStream
+        .computeInt32Size(7, identifier_);
     }
     size += unknownFields.size();
     memoizedSerializedSize = size;
@@ -588,6 +628,8 @@ public final class IrFile extends
       bitField0_ = (bitField0_ & ~0x00000010);
       actual_ = java.util.Collections.emptyList();
       bitField0_ = (bitField0_ & ~0x00000020);
+      identifier_ = 0;
+      bitField0_ = (bitField0_ & ~0x00000040);
       return this;
     }
 
@@ -640,6 +682,10 @@ public final class IrFile extends
         bitField0_ = (bitField0_ & ~0x00000020);
       }
       result.actual_ = actual_;
+      if (((from_bitField0_ & 0x00000040) == 0x00000040)) {
+        to_bitField0_ |= 0x00000002;
+      }
+      result.identifier_ = identifier_;
       result.bitField0_ = to_bitField0_;
       return result;
     }
@@ -698,6 +744,9 @@ public final class IrFile extends
           actual_.addAll(other.actual_);
         }
         
+      }
+      if (other.hasIdentifier()) {
+        setIdentifier(other.getIdentifier());
       }
       setUnknownFields(
           getUnknownFields().concat(other.unknownFields));
@@ -1252,6 +1301,62 @@ public final class IrFile extends
       ensureActualIsMutable();
       actual_.remove(index);
 
+      return this;
+    }
+
+    private int identifier_ ;
+    /**
+     * <code>optional int32 identifier = 7;</code>
+     *
+     * <pre>
+     * A number that is unique for each IrFile in the klib.
+     * Used to unambiguously refer to files in FileSignatures,
+     * since the file's name and package fqname are not enough (KT-50963).
+     * </pre>
+     */
+    public boolean hasIdentifier() {
+      return ((bitField0_ & 0x00000040) == 0x00000040);
+    }
+    /**
+     * <code>optional int32 identifier = 7;</code>
+     *
+     * <pre>
+     * A number that is unique for each IrFile in the klib.
+     * Used to unambiguously refer to files in FileSignatures,
+     * since the file's name and package fqname are not enough (KT-50963).
+     * </pre>
+     */
+    public int getIdentifier() {
+      return identifier_;
+    }
+    /**
+     * <code>optional int32 identifier = 7;</code>
+     *
+     * <pre>
+     * A number that is unique for each IrFile in the klib.
+     * Used to unambiguously refer to files in FileSignatures,
+     * since the file's name and package fqname are not enough (KT-50963).
+     * </pre>
+     */
+    public Builder setIdentifier(int value) {
+      bitField0_ |= 0x00000040;
+      identifier_ = value;
+      
+      return this;
+    }
+    /**
+     * <code>optional int32 identifier = 7;</code>
+     *
+     * <pre>
+     * A number that is unique for each IrFile in the klib.
+     * Used to unambiguously refer to files in FileSignatures,
+     * since the file's name and package fqname are not enough (KT-50963).
+     * </pre>
+     */
+    public Builder clearIdentifier() {
+      bitField0_ = (bitField0_ & ~0x00000040);
+      identifier_ = 0;
+      
       return this;
     }
 

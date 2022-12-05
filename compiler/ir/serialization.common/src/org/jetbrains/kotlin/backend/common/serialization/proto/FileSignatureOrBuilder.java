@@ -6,4 +6,62 @@ package org.jetbrains.kotlin.backend.common.serialization.proto;
 public interface FileSignatureOrBuilder extends
     // @@protoc_insertion_point(interface_extends:org.jetbrains.kotlin.backend.common.serialization.proto.FileSignature)
     org.jetbrains.kotlin.protobuf.MessageLiteOrBuilder {
+
+  /**
+   * <code>optional int32 file_identifier = 1 [default = -1];</code>
+   *
+   * <pre>
+   * An identifier of this file in the current module, used to distinguish files with matching names and packages
+   * (we unfortunately allow this at the moment).
+   * </pre>
+   */
+  boolean hasFileIdentifier();
+  /**
+   * <code>optional int32 file_identifier = 1 [default = -1];</code>
+   *
+   * <pre>
+   * An identifier of this file in the current module, used to distinguish files with matching names and packages
+   * (we unfortunately allow this at the moment).
+   * </pre>
+   */
+  int getFileIdentifier();
+
+  /**
+   * <code>optional string name = 2;</code>
+   *
+   * <pre>
+   * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+   * </pre>
+   */
+  boolean hasName();
+  /**
+   * <code>optional string name = 2;</code>
+   *
+   * <pre>
+   * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+   * </pre>
+   */
+  java.lang.String getName();
+  /**
+   * <code>optional string name = 2;</code>
+   *
+   * <pre>
+   * Marked optional for compatibility, because previously we serialized file signatures as an empty structure.
+   * </pre>
+   */
+  org.jetbrains.kotlin.protobuf.ByteString
+      getNameBytes();
+
+  /**
+   * <code>repeated int32 fq_name = 3 [packed = true];</code>
+   */
+  java.util.List<java.lang.Integer> getFqNameList();
+  /**
+   * <code>repeated int32 fq_name = 3 [packed = true];</code>
+   */
+  int getFqNameCount();
+  /**
+   * <code>repeated int32 fq_name = 3 [packed = true];</code>
+   */
+  int getFqName(int index);
 }
