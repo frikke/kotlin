@@ -45,10 +45,11 @@ internal class DynamicCompilerDriver : CompilerDriver() {
     }
 
     private fun produceKlib(engine: PhaseEngine<PhaseContext>, config: KonanConfig, environment: KotlinCoreEnvironment) {
+        // Perform dry run of K2 pipeline and ignore its result, to try out K2 over all native tests.
+        // TODO After all tests are fixed -> don't invoke K1 pipeline, and use K2's result.
         if (environment.configuration.getBoolean(CommonConfigurationKeys.USE_FIR))
-            produceKLibK2(engine, config, environment)
-        else
-            produceKlibK1(engine, config, environment)
+            if (!produceKLibK2(engine, config, environment)) return
+        produceKlibK1(engine, config, environment)
     }
 
     private fun produceKlibK1(engine: PhaseEngine<PhaseContext>, config: KonanConfig, environment: KotlinCoreEnvironment) {
@@ -77,12 +78,13 @@ internal class DynamicCompilerDriver : CompilerDriver() {
             engine: PhaseEngine<PhaseContext>,
             config: KonanConfig,
             environment: KotlinCoreEnvironment
-    ) {
+    ): Boolean {
         val frontendOutput = engine.useContext(K2FrontendContextImpl(config)) { it.runFrontend(environment) }
         if (frontendOutput == K2FrontendPhaseOutput.ShouldNotGenerateCode) {
-            return
+            return false
         }
         require(frontendOutput is K2FrontendPhaseOutput.Full)
         frontendOutput.firFiles.forEach { println(it.render()) }
+        return true
     }
 }
