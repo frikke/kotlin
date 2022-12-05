@@ -9,6 +9,7 @@ import kotlinx.cinterop.usingJvmCInteropCallbacks
 import org.jetbrains.kotlin.backend.konan.KonanConfig
 import org.jetbrains.kotlin.backend.konan.driver.phases.*
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
+import org.jetbrains.kotlin.fir.render
 import org.jetbrains.kotlin.konan.target.CompilerOutputKind
 import org.jetbrains.kotlin.konan.util.usingNativeMemoryAllocator
 
@@ -43,6 +44,12 @@ internal class DynamicCompilerDriver : CompilerDriver() {
     }
 
     private fun produceKlib(engine: PhaseEngine<PhaseContext>, config: KonanConfig, environment: KotlinCoreEnvironment) {
+        val k2FrontendOutput = engine.useContext(K2FrontendContextImpl(config)) { it.runFrontend(environment) }
+        when (k2FrontendOutput) {
+            is K2FrontendPhaseOutput.ShouldNotGenerateCode -> return
+            is K2FrontendPhaseOutput.Full -> k2FrontendOutput.firFiles.forEach { println(it.render()) }
+        }
+
         val frontendOutput = engine.useContext(FrontendContextImpl(config)) { it.runFrontend(environment) }
         if (frontendOutput == FrontendPhaseOutput.ShouldNotGenerateCode) {
             return
