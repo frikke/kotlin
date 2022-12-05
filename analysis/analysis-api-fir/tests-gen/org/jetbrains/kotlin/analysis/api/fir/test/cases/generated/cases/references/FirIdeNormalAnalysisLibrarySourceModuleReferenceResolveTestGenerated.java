@@ -113,6 +113,12 @@ public class FirIdeNormalAnalysisLibrarySourceModuleReferenceResolveTestGenerate
     }
 
     @Test
+    @TestMetadata("DanglingAnnotationsResolved.kt")
+    public void testDanglingAnnotationsResolved() throws Exception {
+        runTest("analysis/analysis-api/testData/referenceResolve/DanglingAnnotationsResolved.kt");
+    }
+
+    @Test
     @TestMetadata("DefaultObjectAsExtensionReceiverForFunction.kt")
     public void testDefaultObjectAsExtensionReceiverForFunction() throws Exception {
         runTest("analysis/analysis-api/testData/referenceResolve/DefaultObjectAsExtensionReceiverForFunction.kt");

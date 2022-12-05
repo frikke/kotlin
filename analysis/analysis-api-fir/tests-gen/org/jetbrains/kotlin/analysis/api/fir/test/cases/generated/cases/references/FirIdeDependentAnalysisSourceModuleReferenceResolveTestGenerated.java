@@ -113,6 +113,12 @@ public class FirIdeDependentAnalysisSourceModuleReferenceResolveTestGenerated ex
     }
 
     @Test
+    @TestMetadata("DanglingAnnotationsResolved.kt")
+    public void testDanglingAnnotationsResolved() throws Exception {
+        runTest("analysis/analysis-api/testData/referenceResolve/DanglingAnnotationsResolved.kt");
+    }
+
+    @Test
     @TestMetadata("DefaultObjectAsExtensionReceiverForFunction.kt")
     public void testDefaultObjectAsExtensionReceiverForFunction() throws Exception {
         runTest("analysis/analysis-api/testData/referenceResolve/DefaultObjectAsExtensionReceiverForFunction.kt");
@@ -1589,6 +1595,12 @@ public class FirIdeDependentAnalysisSourceModuleReferenceResolveTestGenerated ex
         @TestMetadata("CoroutineSuspensionPoint.kt")
         public void testCoroutineSuspensionPoint() throws Exception {
             runTest("analysis/analysis-api/testData/referenceResolve/withErrors/CoroutineSuspensionPoint.kt");
+        }
+
+        @Test
+        @TestMetadata("DanglingAnnotations.kt")
+        public void testDanglingAnnotations() throws Exception {
+            runTest("analysis/analysis-api/testData/referenceResolve/withErrors/DanglingAnnotations.kt");
         }
 
         @Test
