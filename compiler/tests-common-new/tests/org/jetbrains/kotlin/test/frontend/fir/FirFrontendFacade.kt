@@ -23,6 +23,7 @@ import org.jetbrains.kotlin.fir.*
 import org.jetbrains.kotlin.fir.checkers.registerExtendedCommonCheckers
 import org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar
 import org.jetbrains.kotlin.fir.session.FirJvmSessionFactory
+import org.jetbrains.kotlin.fir.session.FirNativeSessionFactory
 import org.jetbrains.kotlin.fir.session.FirSessionConfigurator
 import org.jetbrains.kotlin.ir.backend.js.jsResolveLibraries
 import org.jetbrains.kotlin.ir.backend.js.resolverLogger
@@ -146,6 +147,7 @@ class FirFrontendFacade(
                     moduleName,
                     moduleInfoProvider.firSessionProvider,
                     dependencyList,
+                    listOf(),
                     languageVersionSettings,
                 )
             }
