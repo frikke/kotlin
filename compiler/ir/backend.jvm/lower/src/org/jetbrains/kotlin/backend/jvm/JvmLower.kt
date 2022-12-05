@@ -476,23 +476,22 @@ private fun buildJvmLoweringPhases(
                 jvmStaticInObjectPhase then
                 repeatedAnnotationPhase then
 
+                // TODO fix
+//                provisionalFunctionExpressionPhase,
+//        inlineCallableReferenceToLambdaPhase,
+//        directInvokeLowering,
+//        functionReferencePhase,
+
+                functionInliningPhase then
+                createSeparateCallForInlinedLambdas then
+                markNecessaryInlinedClassesAsRegenerated then
+
                 typeAliasAnnotationMethodsPhase then
                 jvmOverloadsAnnotationPhase then
                 mainMethodGenerationPhase then
 
                 jvmLateinitLowering then
-//            sharedVariablesPhase then // TODO maybe enable but put before it arrayConstructorPhase
-            inventNamesForLocalClassesPhase then
-
-//            localClassesInInlineLambdasPhase then
-//            localClassesInInlineFunctionsPhase then
-//            localClassesExtractionFromInlineFunctionsPhase then
-
-                functionInliningPhase then
-                createSeparateCallForInlinedLambdas then
-                markNecessaryInlinedClassesAsRegenerated then
-//            sharedVariablesPhase then
-
+                inventNamesForLocalClassesPhase then
 
                 buildLoweringsPhase(phases) then
                 generateMultifileFacadesPhase then

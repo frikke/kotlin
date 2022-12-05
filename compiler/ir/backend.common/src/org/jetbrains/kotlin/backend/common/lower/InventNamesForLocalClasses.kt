@@ -7,6 +7,7 @@ package org.jetbrains.kotlin.backend.common.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.ir.getAdditionalStatementsFromInlinedBlock
+import org.jetbrains.kotlin.backend.common.ir.getNonDefaultAdditionalStatementsFromInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.getOriginalStatementsFromInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
 import org.jetbrains.kotlin.ir.IrElement
@@ -49,14 +50,19 @@ abstract class InventNamesForLocalClasses(
         private val localFunctionNames = mutableMapOf<IrFunctionSymbol, String>()
 
         override fun visitContainerExpression(expression: IrContainerExpression, data: Data) {
-            if (!processingInlinedFunction && expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
-                val inlinedAt = expression.inlineCall.symbol.owner.name.asString()
+            if (expression is IrInlinedFunctionBlock && !generateNamesForRegeneratedObjects) {
+                return expression.getNonDefaultAdditionalStatementsFromInlinedBlock().forEach { it.accept(this, data) }
+            }
 
+            if (!processingInlinedFunction && expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
                 expression.getAdditionalStatementsFromInlinedBlock().forEach { it.accept(this, data) }
+
                 processingInlinedFunction = true
+                val inlinedAt = expression.inlineCall.symbol.owner.name.asString()
                 val newData = data.copy(enclosingName = data.enclosingName + "$\$inlined\$$inlinedAt", isLocal = true)
                 expression.getOriginalStatementsFromInlinedBlock().forEach { it.accept(this, newData) }
                 processingInlinedFunction = false
+
                 return
             }
             super.visitContainerExpression(expression, data)
