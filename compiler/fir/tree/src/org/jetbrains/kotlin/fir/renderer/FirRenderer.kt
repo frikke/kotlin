@@ -389,7 +389,7 @@ class FirRenderer(
 
         override fun visitDanglingModifierList(danglingModifierList: FirDanglingModifierList) {
             annotationRenderer?.render(danglingModifierList)
-            print(danglingModifierList.diagnostic.reason)
+            print("<DANGLING MODIFIER: ${danglingModifierList.diagnostic.reason}>")
         }
 
         override fun visitBlock(block: FirBlock) {
