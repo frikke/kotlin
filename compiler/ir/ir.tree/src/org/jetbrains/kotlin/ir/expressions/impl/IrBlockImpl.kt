@@ -20,7 +20,6 @@ import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
-import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrReturnableBlockSymbol
@@ -99,29 +98,8 @@ class IrInlinedFunctionBlockImpl(
         inlineCall: IrFunctionAccessExpression,
         inlinedElement: IrElement,
         origin: IrStatementOrigin?,
-        evaluationStatements: List<IrStatement> = emptyList(),
-        evaluationStatementsFromDefault: List<IrStatement> = emptyList(),
         statements: List<IrStatement>,
     ) : this(startOffset, endOffset, type, inlineCall, inlinedElement, origin) {
-        if (evaluationStatements.isNotEmpty()) {
-            val blockForNewStatements = IrCompositeImpl(
-                UNDEFINED_OFFSET, UNDEFINED_OFFSET, type,
-                InlinedFunctionArguments, statements = evaluationStatements
-            )
-            this.statements.add(blockForNewStatements)
-        }
-
-        if (evaluationStatementsFromDefault.isNotEmpty()) {
-            val blockForNewStatementsFromDefault = IrCompositeImpl(
-                UNDEFINED_OFFSET, UNDEFINED_OFFSET, type,
-                InlinedFunctionDefaultArguments, statements = evaluationStatementsFromDefault
-            )
-            this.statements.add(blockForNewStatementsFromDefault)
-        }
-
         this.statements.addAll(statements)
     }
 }
-
-object InlinedFunctionArguments : IrStatementOrigin
-object InlinedFunctionDefaultArguments : IrStatementOrigin

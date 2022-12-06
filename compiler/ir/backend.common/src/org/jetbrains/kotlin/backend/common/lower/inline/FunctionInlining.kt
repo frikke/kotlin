@@ -193,7 +193,7 @@ class FunctionInlining(
                 }
             }
 
-            val (evaluationStatements, evaluationStatementsFromDefault) = evaluateArguments(callSite, copiedCallee)
+            val evaluationStatements = evaluateArguments(callSite, copiedCallee)
             val statements = (copiedCallee.body as? IrBlockBody)?.statements
                 ?: error("Body not found for function ${callee.render()}")
 
@@ -210,12 +210,11 @@ class FunctionInlining(
             val inlinedBlock = IrInlinedFunctionBlockImpl(
                 startOffset = callSite.startOffset,
                 endOffset = callSite.endOffset,
-                type = context.irBuiltIns.unitType,
+                type = callSite.type,
                 inlineCall = callSite,
                 inlinedElement = originalInlinedElement,
                 origin = null,
-                evaluationStatements, evaluationStatementsFromDefault,
-                statements = newStatements
+                statements = evaluationStatements + newStatements
             )
 
             return IrReturnableBlockImpl(
@@ -736,7 +735,7 @@ class FunctionInlining(
             throw AssertionError("type not found")
         }
 
-        private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): Pair<List<IrStatement>, List<IrStatement>> {
+        private fun evaluateArguments(callSite: IrFunctionAccessExpression, callee: IrFunction): List<IrStatement> {
             val arguments = buildParameterToArgument(callSite, callee)
             val evaluationStatements = mutableListOf<IrVariable>()
             val evaluationStatementsFromDefault = mutableListOf<IrVariable>()
@@ -803,7 +802,20 @@ class FunctionInlining(
                 substituteMap[argument.parameter] = IrGetValueWithoutLocation(newVariable.symbol)
             }
 
-            return Pair(evaluationStatements, evaluationStatementsFromDefault)
+            val blockForNewStatements = IrCompositeImpl(
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.unitType,
+                InlinedFunctionArguments, statements = evaluationStatements
+            )
+
+            val blockForNewStatementsFromDefault = IrCompositeImpl(
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.unitType,
+                InlinedFunctionDefaultArguments, statements = evaluationStatementsFromDefault
+            )
+
+            return listOfNotNull(
+                blockForNewStatements.takeIf { evaluationStatements.isNotEmpty() },
+                blockForNewStatementsFromDefault.takeIf { evaluationStatementsFromDefault.isNotEmpty() }
+            )
         }
     }
 
@@ -829,6 +841,8 @@ class FunctionInlining(
 }
 
 object InlinedFunctionReference : IrStatementOrigin
+object InlinedFunctionArguments : IrStatementOrigin
+object InlinedFunctionDefaultArguments : IrStatementOrigin
 
 class InlinerExpressionLocationHint(val inlineAtSymbol: IrSymbol) : IrStatementOrigin {
     override fun toString(): String =

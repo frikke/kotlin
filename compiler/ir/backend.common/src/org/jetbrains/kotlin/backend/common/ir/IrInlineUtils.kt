@@ -6,10 +6,11 @@
 package org.jetbrains.kotlin.backend.common.ir
 
 import org.jetbrains.kotlin.backend.common.lower.VariableRemapper
+import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionArguments
+import org.jetbrains.kotlin.backend.common.lower.inline.InlinedFunctionDefaultArguments
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
-import org.jetbrains.kotlin.ir.builders.IrStatementsBuilder
-import org.jetbrains.kotlin.ir.builders.irTemporary
+import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
@@ -175,13 +176,19 @@ fun IrInlinedFunctionBlock.getOriginalStatementsFromInlinedBlock(): List<IrState
         .filter { it !is IrComposite || !(it.origin is InlinedFunctionArguments || it.origin is InlinedFunctionDefaultArguments) }
 }
 
-fun IrInlinedFunctionBlock.putStatementsBeforeActualInline(statements: List<IrStatement>) {
+fun IrInlinedFunctionBlock.putStatementBeforeActualInline(builder: IrBuilderWithScope, statement: IrStatement) {
     val evaluateStatements = this.statements
         .filterIsInstance<IrComposite>()
         .singleOrNull { it.origin is InlinedFunctionArguments }?.statements
 
-    evaluateStatements?.addAll(0, statements)
-        ?: this.statements.add(0, IrCompositeImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, this.type, InlinedFunctionArguments, statements))
+    if (evaluateStatements != null) {
+        evaluateStatements.add(0, statement)
+        return
+    }
+
+    val newInlinedArgumentsBlock = builder
+        .irComposite(UNDEFINED_OFFSET, UNDEFINED_OFFSET, InlinedFunctionArguments, builder.context.irBuiltIns.unitType) { +statement }
+    this.statements.add(0, newInlinedArgumentsBlock)
 }
 
 fun IrInlinedFunctionBlock.putStatementsInFrontOfInlinedFunction(statements: List<IrStatement>) {

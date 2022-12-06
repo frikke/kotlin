@@ -8,10 +8,11 @@ package org.jetbrains.kotlin.backend.jvm.lower
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.ir.getAdditionalStatementsFromInlinedBlock
 import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
-import org.jetbrains.kotlin.backend.common.ir.putStatementsBeforeActualInline
+import org.jetbrains.kotlin.backend.common.ir.putStatementBeforeActualInline
 import org.jetbrains.kotlin.backend.common.phaser.makeIrModulePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.functionInliningPhase
+import org.jetbrains.kotlin.backend.jvm.ir.createJvmIrBuilder
 import org.jetbrains.kotlin.backend.jvm.ir.isInlineParameter
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.IrFile
@@ -41,7 +42,9 @@ class CreateSeparateCallForInlinedLambdasLowering(val context: JvmBackendContext
 
             // we don't need to transform body of original function, just arguments that were extracted as variables
             expression.getAdditionalStatementsFromInlinedBlock().forEach { it.transformChildrenVoid() }
-            newCalls.takeIf { it.isNotEmpty() }?.let { expression.putStatementsBeforeActualInline(it) }
+            newCalls.reversed().forEach {
+                expression.putStatementBeforeActualInline(context.createJvmIrBuilder(it.symbol), it)
+            }
             return expression
         }
 
