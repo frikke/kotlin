@@ -198,6 +198,9 @@ fun IrInlinedFunctionBlock.putStatementsInFrontOfInlinedFunction(statements: Lis
     this.statements.addAll(if (insertAfter == -1) 0 else insertAfter + 1, statements)
 }
 
+val IrContainerExpression.tryToExtractInlinedBlock: IrContainerExpression
+    get() = (this as? IrReturnableBlock)?.statements?.singleOrNull() as? IrInlinedFunctionBlock ?: this
+
 val IrReturnableBlock.inlineFunction: IrFunction?
     get() = (this.statements.singleOrNull() as? IrInlinedFunctionBlock)?.definitelyInlineFunction
 

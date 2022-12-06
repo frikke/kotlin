@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 
 import org.jetbrains.kotlin.backend.common.ir.inlineFunction
+import org.jetbrains.kotlin.backend.common.ir.tryToExtractInlinedBlock
 import org.jetbrains.kotlin.ir.backend.js.JsLoweredDeclarationOrigin
 import org.jetbrains.kotlin.ir.backend.js.utils.JsGenerationContext
 import org.jetbrains.kotlin.ir.backend.js.utils.emptyScope
@@ -40,7 +41,8 @@ class IrElementToJsStatementTransformer : BaseIrElementToJsNodeTransformer<JsSta
             context.newFile(it.file, context.currentFunction, context.localNames)
         } ?: context
 
-        val statements = expression.statements.map { it.accept(this, newContext) }
+        val container = expression.tryToExtractInlinedBlock.statements
+        val statements = container.map { it.accept(this, newContext) }
 
         return if (expression is IrReturnableBlock) {
             val label = context.getNameForReturnableBlock(expression)
