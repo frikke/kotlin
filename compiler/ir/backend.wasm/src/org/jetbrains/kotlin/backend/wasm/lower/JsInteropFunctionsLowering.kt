@@ -64,6 +64,13 @@ class JsInteropFunctionsLowering(val context: WasmBackendContext) : DeclarationT
         return (newDeclarations ?: listOf(declaration)) + additionalDeclarations
     }
 
+    private fun doubleIfNumber(possiblyNumber: IrType): IrType {
+        val isNullable = possiblyNumber.isNullable()
+        val notNullType = if (isNullable) possiblyNumber.makeNotNull() else possiblyNumber
+        if (notNullType != builtIns.numberType) return possiblyNumber
+        return if (isNullable) builtIns.doubleType.makeNullable() else builtIns.doubleType
+    }
+
     /**
      *  external fun foo(x: KotlinType): KotlinType
      *
@@ -77,6 +84,12 @@ class JsInteropFunctionsLowering(val context: WasmBackendContext) : DeclarationT
         // [ComplexExternalDeclarationsToTopLevelFunctionsLowering]
         if (function.valueParameters.any { it.defaultValue != null })
             return null
+
+        // Patch function types for Number parameters as double
+        function.returnType = doubleIfNumber(function.returnType)
+        for (parameter in function.valueParameters) {
+            parameter.type = doubleIfNumber(parameter.type)
+        }
 
         val valueParametersAdapters = function.valueParameters.map {
             it.type.kotlinToJsAdapterIfNeeded(isReturn = false)
