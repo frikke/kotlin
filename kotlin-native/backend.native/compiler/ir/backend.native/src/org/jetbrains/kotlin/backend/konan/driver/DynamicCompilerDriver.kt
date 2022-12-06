@@ -83,7 +83,6 @@ internal class DynamicCompilerDriver : CompilerDriver() {
             return false
         }
         require(frontendOutput is K2FrontendPhaseOutput.Full)
-        frontendOutput.firFiles.forEach { println(it.render()) }
         return true
     }
 }
