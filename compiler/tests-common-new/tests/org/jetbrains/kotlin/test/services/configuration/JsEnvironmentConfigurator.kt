@@ -58,10 +58,10 @@ class JsEnvironmentConfigurator(testServices: TestServices) : EnvironmentConfigu
 
         // Keep names short to keep path lengths under 255 for Windows
         private val outputDirByMode = mapOf(
-            TranslationMode.FULL to "out",
-            TranslationMode.FULL_DCE_MINIMIZED_NAMES to "outMin",
-            TranslationMode.PER_MODULE to "outPm",
-            TranslationMode.PER_MODULE_DCE_MINIMIZED_NAMES to "outPmMin"
+            TranslationMode.FULL_DEV to "out",
+            TranslationMode.FULL_PROD_MINIMIZED_NAMES to "outMin",
+            TranslationMode.PER_MODULE_DEV to "outPm",
+            TranslationMode.PER_MODULE_PROD_MINIMIZED_NAMES to "outPmMin"
         )
 
         private const val OUTPUT_KLIB_DIR_NAME = "outputKlibDir"
@@ -86,11 +86,11 @@ class JsEnvironmentConfigurator(testServices: TestServices) : EnvironmentConfigu
             return testName + outputFileSuffix
         }
 
-        fun getJsModuleArtifactPath(testServices: TestServices, moduleName: String, translationMode: TranslationMode = TranslationMode.FULL): String {
+        fun getJsModuleArtifactPath(testServices: TestServices, moduleName: String, translationMode: TranslationMode = TranslationMode.FULL_DEV): String {
             return getJsArtifactsOutputDir(testServices, translationMode).absolutePath + File.separator + getJsArtifactSimpleName(testServices, moduleName) + "_v5"
         }
 
-        fun getRecompiledJsModuleArtifactPath(testServices: TestServices, moduleName: String, translationMode: TranslationMode = TranslationMode.FULL): String {
+        fun getRecompiledJsModuleArtifactPath(testServices: TestServices, moduleName: String, translationMode: TranslationMode = TranslationMode.FULL_DEV): String {
             return getJsArtifactsRecompiledOutputDir(testServices, translationMode).absolutePath + File.separator + getJsArtifactSimpleName(testServices, moduleName) + "_v5"
         }
 
@@ -98,11 +98,11 @@ class JsEnvironmentConfigurator(testServices: TestServices) : EnvironmentConfigu
             return getJsKlibOutputDir(testServices).absolutePath + File.separator + getJsArtifactSimpleName(testServices, moduleName)
         }
 
-        fun getJsArtifactsOutputDir(testServices: TestServices, translationMode: TranslationMode = TranslationMode.FULL): File {
+        fun getJsArtifactsOutputDir(testServices: TestServices, translationMode: TranslationMode = TranslationMode.FULL_DEV): File {
             return testServices.temporaryDirectoryManager.getOrCreateTempDirectory(outputDirByMode[translationMode]!!)
         }
 
-        fun getJsArtifactsRecompiledOutputDir(testServices: TestServices, translationMode: TranslationMode = TranslationMode.FULL): File {
+        fun getJsArtifactsRecompiledOutputDir(testServices: TestServices, translationMode: TranslationMode = TranslationMode.FULL_DEV): File {
             return testServices.temporaryDirectoryManager.getOrCreateTempDirectory(outputDirByMode[translationMode]!! + "-recompiled")
         }
 

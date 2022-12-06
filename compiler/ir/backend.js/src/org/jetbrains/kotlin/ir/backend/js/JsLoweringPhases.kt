@@ -29,6 +29,12 @@ private fun DeclarationContainerLoweringPass.runOnFilesPostfix(files: Iterable<I
 
 private fun ClassLoweringPass.runOnFilesPostfix(moduleFragment: IrModuleFragment) = moduleFragment.files.forEach { runOnFilePostfix(it) }
 
+private fun List<Lowering>.toCompilerPhase() =
+    map {
+        @Suppress("USELESS_CAST")
+        it.modulePhase as CompilerPhase<JsIrBackendContext, Iterable<IrModuleFragment>, Iterable<IrModuleFragment>>
+    }.reduce { acc, lowering -> acc.then(lowering) }
+
 private fun makeJsModulePhase(
     lowering: (JsIrBackendContext) -> FileLoweringPass,
     name: String,
@@ -946,10 +952,56 @@ val pirLowerings = loweringList.filter { it is DeclarationLowering || it is Body
 val jsPhases = SameTypeNamedCompilerPhase(
     name = "IrModuleLowering",
     description = "IR module lowering",
-    lower = loweringList.map {
-        @Suppress("USELESS_CAST")
-        it.modulePhase as CompilerPhase<JsIrBackendContext, Iterable<IrModuleFragment>, Iterable<IrModuleFragment>>
-    }.reduce { acc, lowering -> acc.then(lowering) },
+    lower = loweringList.toCompilerPhase(),
+    actions = setOf(defaultDumper.toMultiModuleAction(), validationAction.toMultiModuleAction()),
+    nlevels = 1
+)
+
+private val es6CollectConstructorsWhichNeedBoxParameterLowering = makeDeclarationTransformerPhase(
+    ::ES6CollectConstructorsWhichNeedBoxParameters,
+    name = "ES6CollectConstructorsWhichNeedBoxParameters",
+    description = "[Optimization] Collect all of the constructors which requires box parameter",
+)
+
+private val es6BoxParameterOptimization = makeBodyLoweringPhase(
+    ::ES6ConstructorBoxParameterOptimizationLowering,
+    name = "ES6ConstructorBoxParameterOptimizationLowering",
+    description = "[Optimization] Collect all of the constructors which requires box parameter",
+    prerequisite = setOf(es6CollectConstructorsWhichNeedBoxParameterLowering)
+)
+
+private val es6CollectPrimaryConstructorsWhichCouldBeOptimizedLowering = makeDeclarationTransformerPhase(
+    ::ES6CollectPrimaryConstructorsWhichCouldBeOptimizedLowering,
+    name = "ES6CollectPrimaryConstructorsWhichCouldBeOptimizedLowering",
+    description = "[Optimization] Collect all of the constructors which could be translated into a regular constructor",
+)
+
+private val es6PrimaryConstructorOptimizationLowering = makeDeclarationTransformerPhase(
+    ::ES6PrimaryConstructorOptimizationLowering,
+    name = "ES6PrimaryConstructorOptimizationLowering",
+    description = "[Optimization] Replace synthetically generated static fabric method with a plain old ES6 constructors whenever it's possible",
+    prerequisite = setOf(es6CollectPrimaryConstructorsWhichCouldBeOptimizedLowering)
+)
+
+private val es6PrimaryConstructorUsageOptimizationLowering = makeBodyLoweringPhase(
+    ::ES6PrimaryConstructorUsageOptimizationLowering,
+    name = "ES6PrimaryConstructorUsageOptimizationLowering",
+    description = "[Optimization] Replace usage of synthetically generated static fabric method with a plain old ES6 constructors whenever it's possible",
+    prerequisite = setOf(es6BoxParameterOptimization, es6PrimaryConstructorOptimizationLowering)
+)
+
+val optimizationLoweringList = listOf<Lowering>(
+    es6CollectConstructorsWhichNeedBoxParameterLowering,
+    es6CollectPrimaryConstructorsWhichCouldBeOptimizedLowering,
+    es6BoxParameterOptimization,
+    es6PrimaryConstructorOptimizationLowering,
+    es6PrimaryConstructorUsageOptimizationLowering,
+)
+
+val jsOptimizationPhases = SameTypeNamedCompilerPhase(
+    name = "IrModuleOptimizationLowering",
+    description = "IR module optimization lowering",
+    lower = optimizationLoweringList.toCompilerPhase(),
     actions = setOf(defaultDumper.toMultiModuleAction(), validationAction.toMultiModuleAction()),
     nlevels = 1
 )
