@@ -5,11 +5,11 @@
 
 package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 
-import org.jetbrains.kotlin.ir.backend.js.utils.isTheLastReturnStatementIn
-import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
+import org.jetbrains.kotlin.backend.common.ir.inlineFunction
 import org.jetbrains.kotlin.ir.backend.js.JsLoweredDeclarationOrigin
 import org.jetbrains.kotlin.ir.backend.js.utils.JsGenerationContext
 import org.jetbrains.kotlin.ir.backend.js.utils.emptyScope
+import org.jetbrains.kotlin.ir.backend.js.utils.isTheLastReturnStatementIn
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrVariable
@@ -36,8 +36,8 @@ class IrElementToJsStatementTransformer : BaseIrElementToJsNodeTransformer<JsSta
     }
 
     override fun visitBlock(expression: IrBlock, context: JsGenerationContext): JsStatement {
-        val newContext = (expression as? IrReturnableBlock)?.inlineFunctionSymbol?.let {
-            context.newFile(it.owner.file, context.currentFunction, context.localNames)
+        val newContext = (expression as? IrReturnableBlock)?.inlineFunction?.let {
+            context.newFile(it.file, context.currentFunction, context.localNames)
         } ?: context
 
         val statements = expression.statements.map { it.accept(this, newContext) }
@@ -57,9 +57,9 @@ class IrElementToJsStatementTransformer : BaseIrElementToJsNodeTransformer<JsSta
     }
 
     private fun List<JsStatement>.wrapInCommentsInlineFunctionCall(expression: IrReturnableBlock): List<JsStatement> {
-        val inlineFunctionSymbol = expression.inlineFunctionSymbol ?: return this
-        val correspondingProperty = (inlineFunctionSymbol.owner as? IrSimpleFunction)?.correspondingPropertySymbol
-        val owner = correspondingProperty?.owner ?: inlineFunctionSymbol.owner
+        val inlineFunction = expression.inlineFunction ?: return this
+        val correspondingProperty = (inlineFunction as? IrSimpleFunction)?.correspondingPropertySymbol
+        val owner = correspondingProperty?.owner ?: inlineFunction
         val funName = owner.fqNameWhenAvailable ?: owner.name
         return listOf(JsSingleLineComment(" Inline function '$funName' call")) + this
     }
