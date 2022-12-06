@@ -27,9 +27,15 @@ class JvmIrSerializerSession(
     private val fileClassFqName: FqName,
     skipExpects: Boolean = false,
 ) : IrFileSerializer(
-    messageLogger, declarationTable, expectDescriptorToSymbol, CompatibilityMode.CURRENT,
+    messageLogger,
+    declarationTable,
+    expectDescriptorToSymbol,
+    CompatibilityMode.CURRENT,
     bodiesOnlyForInlines = mode == JvmSerializeIrMode.INLINE,
-    skipExpects, normalizeAbsolutePaths = false, sourceBaseDirs = emptyList()
+    skipExpects,
+    normalizeAbsolutePaths = false,
+    sourceBaseDirs = emptyList(),
+    fileToFileIdentifier = emptyMap(),
 ) {
     init {
         assert(mode != JvmSerializeIrMode.NONE)

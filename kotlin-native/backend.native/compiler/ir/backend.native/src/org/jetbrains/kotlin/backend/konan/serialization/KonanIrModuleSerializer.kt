@@ -30,6 +30,15 @@ class KonanIrModuleSerializer(
     override fun backendSpecificFileFilter(file: IrFile): Boolean =
             file.fileEntry.name != IrProviderForCEnumAndCStructStubs.cTypeDefinitionsFileName
 
-    override fun createSerializerForFile(file: IrFile): KonanIrFileSerializer =
-            KonanIrFileSerializer(messageLogger, KonanDeclarationTable(globalDeclarationTable), expectDescriptorToSymbol, skipExpects = skipExpects, compatibilityMode = compatibilityMode, normalizeAbsolutePaths = normalizeAbsolutePaths, sourceBaseDirs = sourceBaseDirs)
+    override fun createSerializerForFile(file: IrFile, fileToIndexMap: Map<IrFile, Int>): KonanIrFileSerializer =
+            KonanIrFileSerializer(
+                messageLogger,
+                KonanDeclarationTable(globalDeclarationTable),
+                expectDescriptorToSymbol,
+                skipExpects = skipExpects,
+                compatibilityMode = compatibilityMode,
+                normalizeAbsolutePaths = normalizeAbsolutePaths,
+                sourceBaseDirs = sourceBaseDirs,
+                fileToFileIdentifier = fileToIndexMap,
+            )
 }

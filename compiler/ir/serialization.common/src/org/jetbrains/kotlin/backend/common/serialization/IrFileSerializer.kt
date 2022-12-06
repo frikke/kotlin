@@ -121,7 +121,8 @@ open class IrFileSerializer(
     private val skipExpects: Boolean = false,
     private val addDebugInfo: Boolean = true,
     private val normalizeAbsolutePaths: Boolean = false,
-    private val sourceBaseDirs: Collection<String>
+    private val sourceBaseDirs: Collection<String>,
+    private val fileToFileIdentifier: Map<IrFile, Int>,
 ) {
     private val loopIndex = mutableMapOf<IrLoop, Int>()
     private var currentLoopIndex = 0
@@ -255,8 +256,16 @@ open class IrFileSerializer(
         return proto.build()
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    private fun serializeFileSignature(signature: IdSignature.FileSignature): ProtoFileSignature = ProtoFileSignature.getDefaultInstance()
+    private fun serializeFileSignature(signature: IdSignature.FileSignature): ProtoFileSignature {
+        val proto = ProtoFileSignature.newBuilder()
+        val fileSymbol = signature.fileSymbol ?: error("Expected a signature constructed from IrFileSymbol")
+        fileToFileIdentifier[fileSymbol.owner]?.let {
+            proto.fileIdentifier = it
+        }
+        proto.name = signature.fileName
+        proto.addAllFqName(serializeFqName(signature.packageFqName().asString()))
+        return proto.build()
+    }
 
     private fun serializeLocalSignature(signature: IdSignature.LocalSignature): ProtoLocalSignature {
         val proto = ProtoLocalSignature.newBuilder()
@@ -1404,15 +1413,10 @@ open class IrFileSerializer(
         }
     }
 
-    fun serializeIrFile(file: IrFile): SerializedIrFile {
-        var result: SerializedIrFile? = null
-
+    fun serializeIrFile(file: IrFile): SerializedIrFile =
         declarationTable.inFile(file) {
-            result = serializeIrFileImpl(file)
+            serializeIrFileImpl(file)
         }
-
-        return result!!
-    }
 
     private fun serializeIrFileImpl(file: IrFile): SerializedIrFile {
         val topLevelDeclarations = mutableListOf<SerializedDeclaration>()
@@ -1421,6 +1425,8 @@ open class IrFileSerializer(
             .setFileEntry(serializeFileEntry(file.fileEntry))
             .addAllFqName(serializeFqName(file.fqName.asString()))
             .addAllAnnotation(serializeAnnotations(file.annotations))
+
+        fileToFileIdentifier[file]?.let(proto::setIdentifier)
 
         file.declarations.forEach {
             if (skipExpects && it.descriptor.isExpectMember && !it.descriptor.isSerializableExpectClass) {

@@ -11,9 +11,15 @@ import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.util.IrMessageLogger
 import org.jetbrains.kotlin.library.SerializedIrFile
 import org.jetbrains.kotlin.library.SerializedIrModule
+import org.jetbrains.kotlin.utils.mapToIndex
 
-abstract class IrModuleSerializer<F : IrFileSerializer>(protected val messageLogger: IrMessageLogger, protected val compatibilityMode: CompatibilityMode, protected val normalizeAbsolutePaths: Boolean, protected val sourceBaseDirs: Collection<String>) {
-    abstract fun createSerializerForFile(file: IrFile): F
+abstract class IrModuleSerializer<F : IrFileSerializer>(
+    protected val messageLogger: IrMessageLogger,
+    protected val compatibilityMode: CompatibilityMode,
+    protected val normalizeAbsolutePaths: Boolean,
+    protected val sourceBaseDirs: Collection<String>
+) {
+    abstract fun createSerializerForFile(file: IrFile, fileToIndexMap: Map<IrFile, Int>): F
 
     /**
      * Allows to skip [file] during serialization.
@@ -23,16 +29,16 @@ abstract class IrModuleSerializer<F : IrFileSerializer>(protected val messageLog
     protected open fun backendSpecificFileFilter(file: IrFile): Boolean =
         true
 
-    private fun serializeIrFile(file: IrFile): SerializedIrFile {
-        val fileSerializer = createSerializerForFile(file)
+    private fun serializeIrFile(fileToIndexMap: Map<IrFile, Int>, file: IrFile): SerializedIrFile {
+        val fileSerializer = createSerializerForFile(file, fileToIndexMap)
         return fileSerializer.serializeIrFile(file)
     }
 
     fun serializedIrModule(module: IrModuleFragment): SerializedIrModule {
-        val serializedFiles = module.files
+        val filesToSerialize = module.files
             .filter { it.packageFragmentDescriptor !is FunctionInterfacePackageFragment }
             .filter(this::backendSpecificFileFilter)
-            .map(this::serializeIrFile)
-        return SerializedIrModule(serializedFiles)
+        val fileToFileIdentifier = filesToSerialize.mapToIndex()
+        return SerializedIrModule(filesToSerialize.map { serializeIrFile(fileToFileIdentifier, it) })
     }
 }

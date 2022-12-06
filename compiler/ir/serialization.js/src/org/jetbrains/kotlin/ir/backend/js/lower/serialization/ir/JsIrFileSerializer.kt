@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.backend.common.serialization.DeclarationTable
 import org.jetbrains.kotlin.backend.common.serialization.IrFileSerializer
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.ir.declarations.IrAnnotationContainer
+import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.util.IrMessageLogger
 import org.jetbrains.kotlin.ir.util.hasAnnotation
@@ -23,7 +24,8 @@ class JsIrFileSerializer(
     skipExpects: Boolean,
     bodiesOnlyForInlines: Boolean = false,
     normalizeAbsolutePaths: Boolean,
-    sourceBaseDirs: Collection<String>
+    sourceBaseDirs: Collection<String>,
+    fileToFileIdentifier: Map<IrFile, Int>,
 ) : IrFileSerializer(
     messageLogger,
     declarationTable,
@@ -32,7 +34,8 @@ class JsIrFileSerializer(
     bodiesOnlyForInlines = bodiesOnlyForInlines,
     skipExpects = skipExpects,
     normalizeAbsolutePaths = normalizeAbsolutePaths,
-    sourceBaseDirs = sourceBaseDirs
+    sourceBaseDirs = sourceBaseDirs,
+    fileToFileIdentifier = fileToFileIdentifier
 ) {
     companion object {
         private val JS_EXPORT_FQN = FqName("kotlin.js.JsExport")

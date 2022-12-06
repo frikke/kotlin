@@ -436,6 +436,12 @@ sealed class IdSignature {
             fileSymbol, fileSymbol.owner.fqName, fileSymbol.owner.fileEntry.name
         )
 
+        /**
+         * If this signature was constructed from an [IrFileSymbol], returns the symbol, or `null` otherwise.
+         */
+        val fileSymbol: IrFileSymbol?
+            get() = id as? IrFileSymbol
+
         override fun equals(other: Any?): Boolean = other is FileSignature && id == other.id
 
         override fun hashCode(): Int = id.hashCode()

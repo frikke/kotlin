@@ -31,7 +31,7 @@ class JsIrModuleSerializer(
         if (shouldCheckSignaturesOnUniqueness) JsUniqIdClashTracker() else IdSignatureClashTracker.DEFAULT_TRACKER
     )
 
-    override fun createSerializerForFile(file: IrFile): JsIrFileSerializer =
+    override fun createSerializerForFile(file: IrFile, fileToIndexMap: Map<IrFile, Int>): JsIrFileSerializer =
         JsIrFileSerializer(
             messageLogger,
             DeclarationTable(globalDeclarationTable),
@@ -39,6 +39,7 @@ class JsIrModuleSerializer(
             compatibilityMode = compatibilityMode,
             skipExpects = skipExpects,
             normalizeAbsolutePaths = normalizeAbsolutePaths,
-            sourceBaseDirs = sourceBaseDirs
+            sourceBaseDirs = sourceBaseDirs,
+            fileToFileIdentifier = fileToIndexMap,
         )
 }

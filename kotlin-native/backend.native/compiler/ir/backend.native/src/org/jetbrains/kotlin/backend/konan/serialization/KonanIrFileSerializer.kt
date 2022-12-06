@@ -7,21 +7,33 @@ import org.jetbrains.kotlin.backend.konan.RuntimeNames
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.ir.declarations.IrAnnotationContainer
 import org.jetbrains.kotlin.ir.declarations.IrClass
+import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.util.IrMessageLogger
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 
 class KonanIrFileSerializer(
-    messageLogger: IrMessageLogger,
-    declarationTable: DeclarationTable,
-    expectDescriptorToSymbol: MutableMap<DeclarationDescriptor, IrSymbol>,
-    skipExpects: Boolean,
-    bodiesOnlyForInlines: Boolean = false,
-    compatibilityMode: CompatibilityMode,
-    normalizeAbsolutePaths: Boolean,
-    sourceBaseDirs: Collection<String>
-): IrFileSerializer(messageLogger, declarationTable, expectDescriptorToSymbol, compatibilityMode, bodiesOnlyForInlines, skipExpects, normalizeAbsolutePaths = normalizeAbsolutePaths, sourceBaseDirs = sourceBaseDirs) {
+        messageLogger: IrMessageLogger,
+        declarationTable: DeclarationTable,
+        expectDescriptorToSymbol: MutableMap<DeclarationDescriptor, IrSymbol>,
+        skipExpects: Boolean,
+        bodiesOnlyForInlines: Boolean = false,
+        compatibilityMode: CompatibilityMode,
+        normalizeAbsolutePaths: Boolean,
+        sourceBaseDirs: Collection<String>,
+        fileToFileIdentifier: Map<IrFile, Int>,
+) : IrFileSerializer(
+    messageLogger,
+    declarationTable,
+    expectDescriptorToSymbol,
+    compatibilityMode,
+    bodiesOnlyForInlines,
+    skipExpects,
+    normalizeAbsolutePaths = normalizeAbsolutePaths,
+    sourceBaseDirs = sourceBaseDirs,
+    fileToFileIdentifier = fileToFileIdentifier,
+) {
 
     override fun backendSpecificExplicitRoot(node: IrAnnotationContainer): Boolean {
         val fqn = when (node) {
