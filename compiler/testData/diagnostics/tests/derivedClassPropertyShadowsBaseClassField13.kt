@@ -1,3 +1,5 @@
+// FIR_IDENTICAL
+// !LANGUAGE: -PreferJavaFieldOverload
 // WITH_STDLIB
 // FILE: Base.java
 
@@ -32,9 +34,9 @@ class Derived : Base() {
 }
 
 fun test(d: Derived) {
-    d.a
-    d.<!BASE_CLASS_FIELD_SHADOWS_DERIVED_CLASS_PROPERTY("Base; with custom getter")!>b<!>
-    d.<!BASE_CLASS_FIELD_SHADOWS_DERIVED_CLASS_PROPERTY("Base; with lateinit")!>c<!>
-    d.<!BASE_CLASS_FIELD_SHADOWS_DERIVED_CLASS_PROPERTY("Base; with custom getter")!>d<!>
-    d.<!BASE_CLASS_FIELD_SHADOWS_DERIVED_CLASS_PROPERTY("Base; with custom setter")!>e<!> = ""
+    d.<!OVERLOAD_RESOLUTION_AMBIGUITY!>a<!>
+    d.<!OVERLOAD_RESOLUTION_AMBIGUITY!>b<!>
+    d.<!OVERLOAD_RESOLUTION_AMBIGUITY!>c<!>
+    d.<!OVERLOAD_RESOLUTION_AMBIGUITY!>d<!>
+    d.<!OVERLOAD_RESOLUTION_AMBIGUITY!>e<!> = ""
 }

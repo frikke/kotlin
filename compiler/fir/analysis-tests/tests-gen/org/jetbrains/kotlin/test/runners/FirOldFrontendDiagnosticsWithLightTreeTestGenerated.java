@@ -220,6 +220,12 @@ public class FirOldFrontendDiagnosticsWithLightTreeTestGenerated extends Abstrac
         }
 
         @Test
+        @TestMetadata("derivedClassPropertyShadowsBaseClassField13.kt")
+        public void testDerivedClassPropertyShadowsBaseClassField13() throws Exception {
+            runTest("compiler/testData/diagnostics/tests/derivedClassPropertyShadowsBaseClassField13.kt");
+        }
+
+        @Test
         @TestMetadata("DiamondFunction.kt")
         public void testDiamondFunction() throws Exception {
             runTest("compiler/testData/diagnostics/tests/DiamondFunction.kt");

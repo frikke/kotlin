@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.resolve.jvm.checkers
 
 import com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.descriptors.PropertyDescriptor
@@ -20,6 +21,7 @@ import org.jetbrains.kotlin.resolve.jvm.diagnostics.ErrorsJvm
 
 object JvmPropertyVsFieldAmbiguityCallChecker : CallChecker {
     override fun check(resolvedCall: ResolvedCall<*>, reportOn: PsiElement, context: CallCheckerContext) {
+        if (!context.languageVersionSettings.supportsFeature(LanguageFeature.PreferJavaFieldOverload)) return
         val resultingDescriptor = resolvedCall.resultingDescriptor as? PropertyDescriptor ?: return
         if (!resultingDescriptor.isJavaField) return
         val ownContainingClass = resultingDescriptor.containingDeclaration as? ClassDescriptor ?: return
@@ -30,11 +32,14 @@ object JvmPropertyVsFieldAmbiguityCallChecker : CallChecker {
 
         // If we have visible alternative property, we leave everything as is (see KT-54393)
         ownContainingClass.unsubstitutedMemberScope.getContributedVariables(
-            resultingDescriptor.name, NoLookupLocation.FROM_TEST
+            resultingDescriptor.name, NoLookupLocation.FOR_ALREADY_TRACKED
         ).forEach { alternativePropertyDescriptor ->
             if (alternativePropertyDescriptor !== resultingDescriptor) {
                 val hasLateInit = alternativePropertyDescriptor.isLateInit
-                if (!hasLateInit && alternativePropertyDescriptor.getter?.isDefault != false) return@forEach
+                if (!hasLateInit &&
+                    alternativePropertyDescriptor.getter?.isDefault != false &&
+                    alternativePropertyDescriptor.setter?.isDefault != false
+                ) return@forEach
                 val propertyClassDescriptor =
                     DescriptorUtils.unwrapFakeOverride(alternativePropertyDescriptor).containingDeclaration as? ClassDescriptor
                 if (fieldClassDescriptor != null && propertyClassDescriptor != null &&
@@ -44,7 +49,7 @@ object JvmPropertyVsFieldAmbiguityCallChecker : CallChecker {
                         /* receiver = */ resolvedCall.dispatchReceiver,
                         /* what = */ alternativePropertyDescriptor,
                         /* from = */ context.scope.ownerDescriptor,
-                        /* useSpecialRulesForPrivateSealedConstructors = */ true
+                        /* useSpecialRulesForPrivateSealedConstructors = */ false
                     )
                 ) {
 
@@ -52,7 +57,11 @@ object JvmPropertyVsFieldAmbiguityCallChecker : CallChecker {
                         ErrorsJvm.BASE_CLASS_FIELD_SHADOWS_DERIVED_CLASS_PROPERTY.on(
                             reportOn,
                             fieldClassDescriptor?.fqNameSafe?.asString() ?: "unknown class",
-                            if (hasLateInit) "with lateinit" else "with custom getter"
+                            when {
+                                hasLateInit -> "with lateinit"
+                                alternativePropertyDescriptor.getter?.isDefault == false -> "with custom getter"
+                                else -> "with custom setter"
+                            }
                         )
                     )
                     return
