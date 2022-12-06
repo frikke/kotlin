@@ -9,36 +9,30 @@ import org.jetbrains.kotlin.descriptors.java.JavaVisibilities
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
-import org.jetbrains.kotlin.fir.analysis.checkers.expression.FirQualifiedAccessExpressionChecker
+import org.jetbrains.kotlin.fir.analysis.checkers.expression.FirCallableReferenceAccessChecker
 import org.jetbrains.kotlin.fir.analysis.diagnostics.jvm.FirJvmErrors
 import org.jetbrains.kotlin.fir.containingClassLookupTag
 import org.jetbrains.kotlin.fir.declarations.utils.hasBackingField
 import org.jetbrains.kotlin.fir.declarations.utils.visibility
 import org.jetbrains.kotlin.fir.expressions.FirCallableReferenceAccess
-import org.jetbrains.kotlin.fir.expressions.FirQualifiedAccessExpression
 import org.jetbrains.kotlin.fir.expressions.impl.FirNoReceiverExpression
 import org.jetbrains.kotlin.fir.packageFqName
 import org.jetbrains.kotlin.fir.references.FirResolvedNamedReference
-import org.jetbrains.kotlin.fir.resolve.fullyExpandedType
-import org.jetbrains.kotlin.fir.resolve.lookupSuperTypes
-import org.jetbrains.kotlin.fir.resolve.scope
-import org.jetbrains.kotlin.fir.resolve.toFirRegularClassSymbol
+import org.jetbrains.kotlin.fir.resolve.*
 import org.jetbrains.kotlin.fir.scopes.FakeOverrideTypeCalculator
 import org.jetbrains.kotlin.fir.symbols.impl.FirFieldSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
-import org.jetbrains.kotlin.fir.types.ConeClassLikeType
 import org.jetbrains.kotlin.fir.types.coneType
 import org.jetbrains.kotlin.name.ClassId
 
-object FirJavaShadowedFieldReferenceChecker : FirQualifiedAccessExpressionChecker() {
-    override fun check(expression: FirQualifiedAccessExpression, context: CheckerContext, reporter: DiagnosticReporter) {
-        if (expression !is FirCallableReferenceAccess) return
-
+object FirJavaShadowedFieldReferenceChecker : FirCallableReferenceAccessChecker() {
+    override fun check(expression: FirCallableReferenceAccess, context: CheckerContext, reporter: DiagnosticReporter) {
         val reference = expression.calleeReference as? FirResolvedNamedReference ?: return
         val referredSymbol = reference.resolvedSymbol as? FirFieldSymbol ?: return
         if (referredSymbol.visibility != JavaVisibilities.ProtectedAndPackage) return
         val session = context.session
         val fieldContainingClassSymbol = referredSymbol.containingClassLookupTag()?.toFirRegularClassSymbol(session) ?: return
+        // Would it be visible, if it would be package private instead of protected-and-package?
         if (context.containingFile?.packageFqName == fieldContainingClassSymbol.classId.packageFqName) {
             return
         }
@@ -54,11 +48,9 @@ object FirJavaShadowedFieldReferenceChecker : FirQualifiedAccessExpressionChecke
             if (!it.hasBackingField) return@processPropertiesByName
             val propertyContainingClassSymbol = it.containingClassLookupTag()?.toFirRegularClassSymbol(session)
                 ?: return@processPropertiesByName
-            if (lookupSuperTypes(
-                    listOf(propertyContainingClassSymbol), lookupInterfaces = false, deep = true, session, substituteTypes = false
-                ).any { superType ->
-                    (superType as? ConeClassLikeType)?.fullyExpandedType(session)?.lookupTag?.classId == fieldContainingClassSymbol.classId
-                }
+            if (propertyContainingClassSymbol.isSubclassOf(
+                    fieldContainingClassSymbol.toLookupTag(), session, isStrict = true, lookupInterfaces = false
+                )
             ) {
                 shadowingPropertyClassId = propertyContainingClassSymbol.classId
             }

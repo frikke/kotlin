@@ -18,7 +18,11 @@ object JvmExpressionCheckers : ExpressionCheckers() {
         get() = setOf(
             FirInterfaceDefaultMethodCallChecker,
             FirJavaSamInterfaceConstructorReferenceChecker,
-            FirJavaShadowedFieldReferenceChecker
+        )
+
+    override val callableReferenceAccessCheckers: Set<FirCallableReferenceAccessChecker>
+        get() = setOf(
+            FirJavaShadowedFieldReferenceChecker,
         )
 
     override val functionCallCheckers: Set<FirFunctionCallChecker>

@@ -51,12 +51,30 @@ open class IntermediatePublic : BaseJava() {
 }
 
 class Derived : Intermediate() {
-    // This should be the only erroneous place (and only in K2)
+    // This should be the first erroneous place (only in K2)
     fun foo() = this::<!JAVA_SHADOWED_PROTECTED_FIELD_REFERENCE!>a<!>
 
     fun bar() = a // Non-reference
 
     fun baz() = this::<!UNRESOLVED_REFERENCE!>b<!> // Non-protected
+}
+
+typealias Alias = Intermediate
+
+class DerivedAlias : Alias() {
+    // This should be the second erroneous place (only in K2)
+    fun foo() = this::<!JAVA_SHADOWED_PROTECTED_FIELD_REFERENCE!>a<!>
+}
+
+fun local() {
+    open class LocalIntermediate : BaseJava() {
+        private val a = ""
+    }
+
+    class LocalDerived : LocalIntermediate() {
+        // This should be the third and the last erroneous place (only in K2)
+        fun foo() = this::<!JAVA_SHADOWED_PROTECTED_FIELD_REFERENCE!>a<!>
+    }
 }
 
 class DerivedWithoutBackingField : IntermediateWithoutField() {

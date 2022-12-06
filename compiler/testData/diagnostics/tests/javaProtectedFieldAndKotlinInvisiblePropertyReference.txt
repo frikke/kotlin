@@ -58,6 +58,7 @@ package base {
 }
 
 package derived {
+    public fun local(): kotlin.Unit
     public fun test(/*0*/ d: derived.Derived): kotlin.Unit
 
     public final class Derived : derived.Intermediate {
@@ -68,6 +69,18 @@ package derived {
         invisible_fake final override /*1*/ /*fake_override*/ var b: kotlin.String!
         public final fun bar(): kotlin.String!
         public final fun baz(): kotlin.reflect.KMutableProperty0<kotlin.String!>
+        public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+        public final fun foo(): kotlin.reflect.KMutableProperty0<kotlin.String!>
+        public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+        public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+    }
+
+    public final class DerivedAlias : derived.Alias /* = derived.Intermediate */ {
+        public constructor DerivedAlias()
+        invisible_fake final override /*1*/ /*fake_override*/ val a: kotlin.String
+        protected/*protected and package*/ final override /*1*/ /*fake_override*/ var a: kotlin.String!
+        invisible_fake final override /*1*/ /*fake_override*/ val b: kotlin.String
+        invisible_fake final override /*1*/ /*fake_override*/ var b: kotlin.String!
         public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
         public final fun foo(): kotlin.reflect.KMutableProperty0<kotlin.String!>
         public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
@@ -136,4 +149,5 @@ package derived {
         public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
         public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
     }
+    public typealias Alias = derived.Intermediate
 }
