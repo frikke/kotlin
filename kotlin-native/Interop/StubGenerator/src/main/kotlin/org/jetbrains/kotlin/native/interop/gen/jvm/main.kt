@@ -237,8 +237,12 @@ private fun processCLibSafe(flavor: KotlinPlatform, cinteropArguments: CInteropA
             }
         }
 
-private fun processCLib(flavor: KotlinPlatform, cinteropArguments: CInteropArguments,
-                        additionalArgs: InternalInteropOptions, runFromDaemon: Boolean): Array<String>? {
+private fun processCLib(
+        flavor: KotlinPlatform,
+        cinteropArguments: CInteropArguments,
+        additionalArgs: InternalInteropOptions,
+        runFromDaemon: Boolean,
+): Array<String>? = withExceptionPrettifier {
     val ktGenRoot = additionalArgs.generated
     val nativeLibsDir = additionalArgs.natives
     val defFile = cinteropArguments.def?.let { File(it) }
