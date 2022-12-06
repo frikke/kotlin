@@ -10,15 +10,11 @@ import org.jetbrains.kotlin.fir.containingClassLookupTag
 import org.jetbrains.kotlin.fir.declarations.FirField
 import org.jetbrains.kotlin.fir.declarations.FirProperty
 import org.jetbrains.kotlin.fir.languageVersionSettings
-import org.jetbrains.kotlin.fir.resolve.BodyResolveComponents
+import org.jetbrains.kotlin.fir.resolve.*
 import org.jetbrains.kotlin.fir.resolve.calls.AbstractConeCallConflictResolver
 import org.jetbrains.kotlin.fir.resolve.calls.Candidate
-import org.jetbrains.kotlin.fir.resolve.fullyExpandedType
 import org.jetbrains.kotlin.fir.resolve.inference.InferenceComponents
-import org.jetbrains.kotlin.fir.resolve.lookupSuperTypes
-import org.jetbrains.kotlin.fir.resolve.toFirRegularClassSymbol
 import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTag
-import org.jetbrains.kotlin.fir.types.ConeClassLikeType
 import org.jetbrains.kotlin.fir.unwrapFakeOverrides
 import org.jetbrains.kotlin.resolve.calls.results.TypeSpecificityComparator
 
@@ -85,8 +81,6 @@ class JvmPlatformOverloadsConflictResolver(
         val session = inferenceComponents.session
         val thisClass = this.toFirRegularClassSymbol(session)?.fir ?: return false
 
-        return lookupSuperTypes(thisClass, lookupInterfaces = true, deep = true, session, substituteTypes = false).any { superType ->
-            (superType as? ConeClassLikeType)?.fullyExpandedType(session)?.lookupTag?.classId == other.classId
-        }
+        return thisClass.isSubclassOf(other, session, isStrict = true)
     }
 }

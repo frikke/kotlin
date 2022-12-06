@@ -2957,6 +2957,11 @@ public class LazyBodyIsNotTouchedTilContractsPhaseTestGenerated extends Abstract
             runTest("compiler/fir/analysis-tests/testData/resolve/problems/emptySelectorInQualifiedExpression.kt");
         }
 
+        @TestMetadata("enumEntryFieldShadow.kt")
+        public void testEnumEntryFieldShadow() throws Exception {
+            runTest("compiler/fir/analysis-tests/testData/resolve/problems/enumEntryFieldShadow.kt");
+        }
+
         @TestMetadata("expectConstructor.kt")
         public void testExpectConstructor() throws Exception {
             runTest("compiler/fir/analysis-tests/testData/resolve/problems/expectConstructor.kt");

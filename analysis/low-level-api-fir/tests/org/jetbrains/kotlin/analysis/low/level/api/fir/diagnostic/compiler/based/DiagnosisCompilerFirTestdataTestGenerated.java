@@ -3356,6 +3356,12 @@ public class DiagnosisCompilerFirTestdataTestGenerated extends AbstractDiagnosis
             }
 
             @Test
+            @TestMetadata("enumEntryFieldShadow.kt")
+            public void testEnumEntryFieldShadow() throws Exception {
+                runTest("compiler/fir/analysis-tests/testData/resolve/problems/enumEntryFieldShadow.kt");
+            }
+
+            @Test
             @TestMetadata("expectConstructor.kt")
             public void testExpectConstructor() throws Exception {
                 runTest("compiler/fir/analysis-tests/testData/resolve/problems/expectConstructor.kt");
