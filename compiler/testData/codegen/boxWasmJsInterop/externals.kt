@@ -1,4 +1,4 @@
-// IGNORE_BACKEND_K2: JS_IR
+// IGNORE_BACKEND: JS_IR, JS
 // FILE: externals.js
 function createObject() {
     return {
