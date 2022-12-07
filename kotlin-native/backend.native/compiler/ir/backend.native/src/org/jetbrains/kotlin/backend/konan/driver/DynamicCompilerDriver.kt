@@ -83,6 +83,7 @@ internal class DynamicCompilerDriver : CompilerDriver() {
             return false
         }
         require(frontendOutput is K2FrontendPhaseOutput.Full)
+        engine.writeKlib(frontendOutput.serializerOutput)
         return true
     }
 }
