@@ -10,7 +10,6 @@ import org.jetbrains.kotlin.backend.konan.KonanConfig
 import org.jetbrains.kotlin.backend.konan.driver.phases.*
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
-import org.jetbrains.kotlin.fir.render
 import org.jetbrains.kotlin.konan.target.CompilerOutputKind
 import org.jetbrains.kotlin.konan.util.usingNativeMemoryAllocator
 
@@ -78,12 +77,15 @@ internal class DynamicCompilerDriver : CompilerDriver() {
             config: KonanConfig,
             environment: KotlinCoreEnvironment
     ): Boolean {
-        val frontendOutput = engine.useContext(K2FrontendContextImpl(config)) { it.runFrontend(environment) }
-        if (frontendOutput == K2FrontendPhaseOutput.ShouldNotGenerateCode) {
-            return false
+        val k2frontendContext = K2FrontendContextImpl(environment, config)
+        val frontendOutput = engine.useContext(k2frontendContext) { it.runFrontend(environment) }
+
+        val serializerOutput = when(frontendOutput) {
+            is K2FrontendPhaseOutput.IR -> engine.useContext(k2frontendContext) { it.runSerializerFirNative(frontendOutput) }
+            is K2FrontendPhaseOutput.Serialized -> frontendOutput.serializerOutput
+            is K2FrontendPhaseOutput.ShouldNotGenerateCode -> return false
         }
-        require(frontendOutput is K2FrontendPhaseOutput.Full)
-        engine.writeKlib(frontendOutput.serializerOutput)
+        engine.writeKlib(serializerOutput)
         return true
     }
 }
