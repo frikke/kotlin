@@ -342,7 +342,7 @@ internal class BlockGenerator(private val codegen: CodeGenerator) {
 }
 
 private val ObjCExportCodeGeneratorBase.retainBlock: LlvmCallable
-    get() = llvm.externalStdlibFunction(
+    get() = llvm.externalNativeRuntimeFunction(
             "objc_retainBlock",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType))

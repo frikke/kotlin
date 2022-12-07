@@ -29,7 +29,7 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
     }
 
     private val objcMsgSend = constPointer(
-            llvm.externalStdlibFunction(
+            llvm.externalNativeRuntimeFunction(
                     "objc_msgSend",
                     LlvmRetType(llvm.int8PtrType),
                     listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType)),
@@ -37,27 +37,27 @@ internal open class ObjCCodeGenerator(val codegen: CodeGenerator) {
             ).llvmValue
     )
 
-    val objcRelease = llvm.externalStdlibFunction(
+    val objcRelease = llvm.externalNativeRuntimeFunction(
             "llvm.objc.release",
             LlvmRetType(llvm.voidType),
             listOf(LlvmParamType(llvm.int8PtrType)),
             listOf(LlvmFunctionAttribute.NoUnwind)
     )
 
-    val objcAlloc = llvm.externalStdlibFunction(
+    val objcAlloc = llvm.externalNativeRuntimeFunction(
             "objc_alloc",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType))
     )
 
-    val objcAutoreleaseReturnValue = llvm.externalStdlibFunction(
+    val objcAutoreleaseReturnValue = llvm.externalNativeRuntimeFunction(
             "llvm.objc.autoreleaseReturnValue",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType)),
             listOf(LlvmFunctionAttribute.NoUnwind)
     )
 
-    val objcRetainAutoreleasedReturnValue = llvm.externalStdlibFunction(
+    val objcRetainAutoreleasedReturnValue = llvm.externalNativeRuntimeFunction(
             "llvm.objc.retainAutoreleasedReturnValue",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType)),

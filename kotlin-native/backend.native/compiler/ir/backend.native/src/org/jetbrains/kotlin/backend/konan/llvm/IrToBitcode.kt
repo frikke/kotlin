@@ -1623,7 +1623,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
         } else {
             // e.g. ObjCObject, ObjCObjectBase etc.
             if (dstClass.isObjCMetaClass()) {
-                val isClass = llvm.externalStdlibFunction(
+                val isClass = llvm.externalNativeRuntimeFunction(
                         "object_isClass",
                         LlvmRetType(llvm.int8Type),
                         listOf(LlvmParamType(llvm.int8PtrType))
@@ -2672,7 +2672,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
         if (generationState.llvmModuleSpecification.importsKotlinDeclarationsFromOtherSharedLibraries()) {
             // When some dynamic caches are used, we consider that stdlib is in the dynamic cache as well.
             // Runtime is linked into stdlib module only, so import runtime global from it.
-            val global = codegen.importStdlibGlobal(name, value.llvmType)
+            val global = codegen.importNativeRuntimeGlobal(name, value.llvmType)
             val initializer = generateFunctionNoRuntime(codegen, functionType(llvm.voidType, false), "") {
                 store(value.llvm, global)
                 ret(null)

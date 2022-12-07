@@ -1275,7 +1275,7 @@ internal abstract class FunctionGenerationContext(
                 val name = irClass.descriptor.getExternalObjCMetaClassBinaryName()
                 val objCClass = getObjCClass(name, origin)
 
-                val getClass = llvm.externalStdlibFunction(
+                val getClass = llvm.externalNativeRuntimeFunction(
                         "object_getClass",
                         LlvmRetType(llvm.int8PtrType),
                         listOf(LlvmParamType(llvm.int8PtrType))
@@ -1470,13 +1470,13 @@ internal abstract class FunctionGenerationContext(
     }
 
     private val kotlinExceptionRtti: ConstPointer
-        get() = constPointer(importStdlibGlobal(
+        get() = constPointer(importNativeRuntimeGlobal(
                 "_ZTI18ExceptionObjHolder", // typeinfo for ObjHolder
                 llvm.int8PtrType
         )).bitcast(llvm.int8PtrType)
 
     private val objcNSExceptionRtti: ConstPointer by lazy {
-        constPointer(importStdlibGlobal(
+        constPointer(importNativeRuntimeGlobal(
                 "OBJC_EHTYPE_\$_NSException", // typeinfo for NSException*
                 llvm.int8PtrType
         )).bitcast(llvm.int8PtrType)

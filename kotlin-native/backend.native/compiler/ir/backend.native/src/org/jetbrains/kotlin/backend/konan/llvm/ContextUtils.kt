@@ -13,7 +13,6 @@ import org.jetbrains.kotlin.backend.konan.*
 import org.jetbrains.kotlin.backend.konan.Context
 import org.jetbrains.kotlin.backend.konan.descriptors.isInteropLibrary
 import org.jetbrains.kotlin.library.resolver.TopologicalLibraryOrder
-import org.jetbrains.kotlin.backend.konan.ir.llvmSymbolOrigin
 import org.jetbrains.kotlin.descriptors.konan.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.util.*
@@ -360,7 +359,7 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
         }
     }
 
-    internal fun externalStdlibFunction(
+    internal fun externalNativeRuntimeFunction(
             name: String,
             returnType: LlvmRetType,
             parameterTypes: List<LlvmParamType> = emptyList(),
@@ -372,8 +371,8 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
                     isVararg, independent = false)
     )
 
-    internal fun externalStdlibFunction(name: String, signature: LlvmFunctionSignature) =
-            externalStdlibFunction(name, signature.returnType, signature.parameterTypes, signature.functionAttributes, signature.isVararg)
+    internal fun externalNativeRuntimeFunction(name: String, signature: LlvmFunctionSignature) =
+            externalNativeRuntimeFunction(name, signature.returnType, signature.parameterTypes, signature.functionAttributes, signature.isVararg)
 
     val imports get() = generationState.llvmImports
 
@@ -770,27 +769,27 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
         else -> "__gxx_personality_v0"
     }
 
-    val cxxStdTerminate = externalStdlibFunction(
+    val cxxStdTerminate = externalNativeRuntimeFunction(
             "_ZSt9terminatev", // mangled C++ 'std::terminate'
             returnType = LlvmRetType(voidType),
             functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind)
     )
 
-    val gxxPersonalityFunction = externalStdlibFunction(
+    val gxxPersonalityFunction = externalNativeRuntimeFunction(
             personalityFunctionName,
             returnType = LlvmRetType(int32Type),
             functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind),
             isVararg = true
     )
 
-    val cxaBeginCatchFunction = externalStdlibFunction(
+    val cxaBeginCatchFunction = externalNativeRuntimeFunction(
             "__cxa_begin_catch",
             returnType = LlvmRetType(int8PtrType),
             functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind),
             parameterTypes = listOf(LlvmParamType(int8PtrType))
     )
 
-    val cxaEndCatchFunction = externalStdlibFunction(
+    val cxaEndCatchFunction = externalNativeRuntimeFunction(
             "__cxa_end_catch",
             returnType = LlvmRetType(voidType),
             functionAttributes = listOf(LlvmFunctionAttribute.NoUnwind)
