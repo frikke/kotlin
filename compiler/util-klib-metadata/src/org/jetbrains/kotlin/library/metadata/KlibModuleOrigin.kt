@@ -37,8 +37,6 @@ val ModuleDescriptor.kotlinLibrary get() =
         .library
 
 sealed class CompiledKlibFileOrigin {
-    object CurrentFile : CompiledKlibFileOrigin()
-
     object EntireModule : CompiledKlibFileOrigin()
 
     object StdlibRuntime : CompiledKlibFileOrigin()

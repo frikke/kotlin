@@ -172,18 +172,23 @@ internal fun ContextUtils.addGlobal(name: String, type: LLVMTypeRef, isExported:
     return LLVMAddGlobal(llvm.module, type, name)!!
 }
 
-internal fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef, origin: CompiledKlibModuleOrigin, fileOrigin: CompiledKlibFileOrigin): LLVMValueRef {
-    llvm.imports.add(origin, fileOrigin)
-
+private fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef): LLVMValueRef {
     val found = LLVMGetNamedGlobal(llvm.module, name)
-    return if (found != null) {
-        assert (getGlobalType(found) == type)
-        assert (LLVMGetInitializer(found) == null) { "$name is already declared in the current module" }
-        found
-    } else {
+    return if (found == null)
         addGlobal(name, type, isExported = false)
+    else {
+        require(getGlobalType(found) == type)
+        require(LLVMGetInitializer(found) == null) { "$name is already declared in the current module" }
+        found
     }
 }
+
+internal fun ContextUtils.importGlobal(
+        name: String, type: LLVMTypeRef,
+        origin: CompiledKlibModuleOrigin, fileOrigin: CompiledKlibFileOrigin
+) = importGlobal(name, type).also { llvm.imports.add(origin, fileOrigin) }
+
+internal fun ContextUtils.importObjCGlobal(name: String, type: LLVMTypeRef) = importGlobal(name, type)
 
 internal fun ContextUtils.importStdlibGlobal(name: String, type: LLVMTypeRef) =
         importGlobal(name, type, context.standardLlvmSymbolsOrigin, CompiledKlibFileOrigin.StdlibRuntime)

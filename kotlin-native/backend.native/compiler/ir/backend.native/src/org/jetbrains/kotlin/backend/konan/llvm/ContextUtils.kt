@@ -24,10 +24,8 @@ import org.jetbrains.kotlin.library.metadata.CompiledKlibModuleOrigin
 import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
 import org.jetbrains.kotlin.library.metadata.CurrentKlibModuleOrigin
 import org.jetbrains.kotlin.library.metadata.DeserializedKlibModuleOrigin
-import org.jetbrains.kotlin.library.metadata.resolver.TopologicalLibraryOrder
 import org.jetbrains.kotlin.library.uniqueName
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.utils.addToStdlib.cast
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
@@ -419,7 +417,6 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
             }
 
             val libraryFile = when (fileOrigin) {
-                CompiledKlibFileOrigin.CurrentFile -> return
                 CompiledKlibFileOrigin.EntireModule -> null
                 is CompiledKlibFileOrigin.CertainFile -> LlvmImports.LibraryFile(library, fileOrigin.fqName, fileOrigin.filePath)
                 CompiledKlibFileOrigin.StdlibRuntime -> stdlibRuntime
