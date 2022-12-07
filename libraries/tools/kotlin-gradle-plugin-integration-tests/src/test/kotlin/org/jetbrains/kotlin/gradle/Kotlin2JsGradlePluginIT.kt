@@ -572,6 +572,7 @@ abstract class AbstractKotlin2JsGradlePluginIT(protected val irBackend: Boolean)
 
     @DisplayName("moduleKind option works")
     @GradleTest
+    @Disabled // Rhino doesn't support ES6 syntax
     fun testModuleKind(gradleVersion: GradleVersion) {
         project("kotlin2JsModuleKind", gradleVersion) {
             build("runRhino") {
@@ -617,6 +618,7 @@ abstract class AbstractKotlin2JsGradlePluginIT(protected val irBackend: Boolean)
 
     @DisplayName("test compilation can access internal symbols of main compilation")
     @GradleTest
+    @Disabled // Rhino doesn't support ES6 syntax
     fun testCompilerTestAccessInternalProduction(gradleVersion: GradleVersion) {
         project("kotlin2JsInternalTest", gradleVersion) {
             build("runRhino") {
