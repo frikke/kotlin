@@ -83,7 +83,7 @@ class FunctionInlining(
     private val insertAdditionalImplicitCasts: Boolean = false,
     private val inlinePureArguments: Boolean = true,
     private val regenerateInlinedAnonymousObjects: Boolean = false,
-    private val inlineArgumentsWithTheirOriginalType: Boolean = false
+    private val inlineArgumentsWithTheirOriginalTypeAndOffset: Boolean = false
 ) : IrElementTransformerVoidWithContext(), BodyLoweringPass {
     private var containerScope: ScopeWithIr? = null
 
@@ -404,9 +404,8 @@ class FunctionInlining(
                     is IrConstructor -> {
                         val classTypeParametersCount = inlinedFunction.parentAsClass.typeParameters.size
                         IrConstructorCallImpl.fromSymbolOwner(
-                            // TODO irCall fix for js
-                            irFunctionReference.startOffset,
-                            irFunctionReference.endOffset,
+                            if (inlineArgumentsWithTheirOriginalTypeAndOffset) irFunctionReference.startOffset else irCall.startOffset,
+                            if (inlineArgumentsWithTheirOriginalTypeAndOffset) irFunctionReference.endOffset else irCall.endOffset,
                             inlinedFunction.returnType,
                             inlinedFunction.symbol,
                             classTypeParametersCount,
@@ -415,9 +414,8 @@ class FunctionInlining(
                     }
                     is IrSimpleFunction ->
                         IrCallImpl(
-                            // TODO irCall fix for js
-                            irFunctionReference.startOffset,
-                            irFunctionReference.endOffset,
+                            if (inlineArgumentsWithTheirOriginalTypeAndOffset) irFunctionReference.startOffset else irCall.startOffset,
+                            if (inlineArgumentsWithTheirOriginalTypeAndOffset) irFunctionReference.endOffset else irCall.endOffset,
                             inlinedFunction.returnType,
                             inlinedFunction.symbol,
                             inlinedFunction.typeParameters.size,
@@ -661,7 +659,7 @@ class FunctionInlining(
                             startOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
                             endOffset = if (it.isDefaultArg) irExpression.startOffset else UNDEFINED_OFFSET,
                             irExpression = irExpression,
-                            irType = if (inlineArgumentsWithTheirOriginalType) it.parameter.getOriginalType() else irExpression.type,
+                            irType = if (inlineArgumentsWithTheirOriginalTypeAndOffset) it.parameter.getOriginalType() else irExpression.type,
                             nameHint = callee.symbol.owner.name.asStringStripSpecialMarkers() + "_" + it.parameter.name.asStringStripSpecialMarkers(),
                             isMutable = false
                         )
@@ -789,7 +787,7 @@ class FunctionInlining(
                         irExpression = IrBlockImpl(
                             if (argument.isDefaultArg) variableInitializer.startOffset else UNDEFINED_OFFSET,
                             if (argument.isDefaultArg) variableInitializer.endOffset else UNDEFINED_OFFSET,
-                            if (inlineArgumentsWithTheirOriginalType) argument.parameter.getOriginalType() else variableInitializer.type,
+                            if (inlineArgumentsWithTheirOriginalTypeAndOffset) argument.parameter.getOriginalType() else variableInitializer.type,
                             InlinerExpressionLocationHint((currentScope.irElement as IrSymbolOwner).symbol)
                         ).apply {
                             statements.add(variableInitializer)
