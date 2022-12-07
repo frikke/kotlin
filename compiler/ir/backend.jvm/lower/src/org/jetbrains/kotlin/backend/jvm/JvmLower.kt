@@ -15,6 +15,7 @@ import org.jetbrains.kotlin.backend.common.phaser.*
 import org.jetbrains.kotlin.backend.jvm.ir.constantValue
 import org.jetbrains.kotlin.backend.jvm.ir.shouldContainSuspendMarkers
 import org.jetbrains.kotlin.backend.jvm.lower.*
+import org.jetbrains.kotlin.config.JVMConfigurationKeys
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.descriptors.DescriptorVisibility
 import org.jetbrains.kotlin.ir.IrElement
@@ -279,39 +280,6 @@ private val kotlinNothingValueExceptionPhase = makeIrFilePhase<CommonBackendCont
     description = "Throw proper exception for calls returning value of type 'kotlin.Nothing'"
 )
 
-private val localClassesInInlineLambdasPhase = makeIrModulePhase<JvmBackendContext>(
-//private val localClassesInInlineLambdasPhase = makeIrFilePhase(
-    { context ->
-        LocalClassesInInlineLambdasLowering(
-            context, NameUtils::sanitizeAsJavaIdentifier, JvmVisibilityPolicy(), forceFieldsForInlineCaptures = true
-        )
-    },
-    name = "LocalClassesInInlineLambdasPhase",
-    description = "Extract local classes from inline lambdas",
-//    prerequisite = setOf(inventNamesForLocalClassesPhase)
-)
-
-private val localClassesInInlineFunctionsPhase = makeIrModulePhase<JvmBackendContext>(
-//private val localClassesInInlineFunctionsPhase = makeIrFilePhase(
-    { context ->
-        LocalClassesInInlineFunctionsLowering(
-            context, NameUtils::sanitizeAsJavaIdentifier, JvmVisibilityPolicy(), forceFieldsForInlineCaptures = true
-        )
-    },
-    name = "LocalClassesInInlineFunctionsPhase",
-    description = "Extract local classes from inline functions",
-//    prerequisite = setOf(inventNamesForLocalClassesPhase)
-)
-
-private val localClassesExtractionFromInlineFunctionsPhase = makeIrModulePhase<JvmBackendContext>(
-//private val localClassesExtractionFromInlineFunctionsPhase = makeIrFilePhase(
-    { LocalClassesExtractionFromInlineFunctionsLowering(it) },
-    name = "localClassesExtractionFromInlineFunctionsPhase",
-    description = "Move local classes from inline functions into nearest declaration container",
-//    prerequisite = setOf(localClassesInInlineFunctionsPhase)
-)
-
-//private val functionInliningPhase = makeIrFilePhase<JvmBackendContext>(
 internal val functionInliningPhase = makeIrModulePhase<JvmBackendContext>(
     { context ->
         class JvmInlineFunctionResolver : InlineFunctionResolver {
@@ -319,6 +287,11 @@ internal val functionInliningPhase = makeIrModulePhase<JvmBackendContext>(
                 return (symbol.owner as? IrSimpleFunction)?.resolveFakeOverride() ?: symbol.owner
             }
         }
+
+        if (!context.configuration.getBoolean(JVMConfigurationKeys.ENABLE_IR_INLINER)) {
+            return@makeIrModulePhase FileLoweringPass.Empty
+        }
+
         FunctionInlining(
             context, JvmInlineFunctionResolver(), context.innerClassesSupport,
             inlinePureArguments = false,
