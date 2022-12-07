@@ -41,13 +41,6 @@ abstract class AbstractFileStructureTest : AbstractLowLevelApiSingleFileTest() {
                     } else {
                         elementToComment[ktDeclaration] = comment
                     }
-
-                    PsiTreeUtil.getChildrenOfTypeAsList(body, KtModifierList::class.java).forEach {
-                        if (it.nextSibling is PsiErrorElement) {
-                            val danglingModifier = declarationToStructureElement[ktFile] ?: return@forEach
-                            elementToComment[it] = danglingModifier.createComment()
-                        }
-                    }
                 }
                 is KtFunction -> {
                     val lBrace = ktDeclaration.bodyBlockExpression?.lBrace

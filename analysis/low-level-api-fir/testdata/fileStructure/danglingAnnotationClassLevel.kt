@@ -1,12 +1,12 @@
 class Foo {/* NonReanalyzableDeclarationStructureElement */
-    @Suppress("") @MustBeDocumented/* RootStructureElement */
+    @Suppress("") @MustBeDocumented
 }
 class Bar {/* NonReanalyzableDeclarationStructureElement */
-    @Suppress("") @MustBeDocumented/* RootStructureElement */
+    @Suppress("") @MustBeDocumented
 }
 class Outer {/* NonReanalyzableDeclarationStructureElement */
     class Inner {/* NonReanalyzableDeclarationStructureElement */
-        @Suppress("") @MustBeDocumented/* RootStructureElement */
+        @Suppress("") @MustBeDocumented
     }
     fun foo() {/* ReanalyzableFunctionStructureElement */
         class Local {
