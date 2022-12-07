@@ -80,8 +80,8 @@ private val validateIrAfterLowering = makeCustomPhase(
 )
 
 // TODO make all lambda-related stuff work with IrFunctionExpression and drop this phase
-private val provisionalFunctionExpressionPhase = makeIrFilePhase<CommonBackendContext>(
-//private val provisionalFunctionExpressionPhase = makeIrModulePhase<CommonBackendContext>(
+//private val provisionalFunctionExpressionPhase = makeIrFilePhase<CommonBackendContext>(
+private val provisionalFunctionExpressionPhase = makeIrModulePhase<CommonBackendContext>(
     { ProvisionalFunctionExpressionLowering() },
     name = "FunctionExpression",
     description = "Transform IrFunctionExpression to a local function reference"
@@ -330,30 +330,21 @@ internal val functionInliningPhase = makeIrModulePhase<JvmBackendContext>(
     description = "Perform function inlining",
     prerequisite = setOf(
         expectDeclarationsRemovingPhase,
-//        sharedVariablesPhase,
-//        localDeclarationsPhase
-
-
-//        sharedVariablesLoweringPhase,
-//        localClassesInInlineLambdasPhase,
-//        localClassesExtractionFromInlineFunctionsPhase,
-//        syntheticAccessorLoweringPhase,
-//        wrapInlineDeclarationsWithReifiedTypeParametersLowering
     )
 )
 
 private val jvmFilePhases = listOf(
-    provisionalFunctionExpressionPhase,
+//    provisionalFunctionExpressionPhase,
 
-    kCallableNamePropertyPhase,
-    annotationPhase,
-    annotationImplementationPhase,
-    polymorphicSignaturePhase,
-    varargPhase,
+//    kCallableNamePropertyPhase,
+//    annotationPhase,
+//    annotationImplementationPhase,
+//    polymorphicSignaturePhase,
+//    varargPhase,
 
-    inlineCallableReferenceToLambdaPhase,
-    directInvokeLowering,
-    functionReferencePhase,
+//    inlineCallableReferenceToLambdaPhase,
+//    directInvokeLowering,
+//    functionReferencePhase,
     suspendLambdaPhase,
     propertyReferenceDelegationPhase,
     singletonOrConstantDelegationPhase,
@@ -475,22 +466,29 @@ private fun buildJvmLoweringPhases(
                 jvmStaticInObjectPhase then
                 repeatedAnnotationPhase then
 
-                // TODO fix
-//                provisionalFunctionExpressionPhase,
-//        inlineCallableReferenceToLambdaPhase,
-//        directInvokeLowering,
-//        functionReferencePhase,
-
                 functionInliningPhase then
                 createSeparateCallForInlinedLambdas then
                 markNecessaryInlinedClassesAsRegenerated then
 
+                // Note: following plahses can be moved to file level, but are located here because of `functionInliningPhase`
                 typeAliasAnnotationMethodsPhase then
+                provisionalFunctionExpressionPhase then
+
                 jvmOverloadsAnnotationPhase then
                 mainMethodGenerationPhase then
 
+                kCallableNamePropertyPhase then
+                annotationPhase then
+                annotationImplementationPhase then
+                polymorphicSignaturePhase then
+                varargPhase then
+
                 jvmLateinitLowering then
                 inventNamesForLocalClassesPhase then
+
+                inlineCallableReferenceToLambdaPhase then
+                directInvokeLowering then
+                functionReferencePhase then
 
                 buildLoweringsPhase(phases) then
                 generateMultifileFacadesPhase then
