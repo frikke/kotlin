@@ -22,7 +22,6 @@ import org.jetbrains.kotlin.konan.target.KonanTarget
 import org.jetbrains.kotlin.library.KotlinLibrary
 import org.jetbrains.kotlin.library.uniqueName
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.utils.addToStdlib.cast
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
@@ -414,7 +413,6 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
             }
 
             val libraryFile = when (fileOrigin) {
-                CompiledKlibFileOrigin.CurrentFile -> return
                 CompiledKlibFileOrigin.EntireModule -> null
                 is CompiledKlibFileOrigin.CertainFile -> LlvmImports.LibraryFile(library, fileOrigin.fqName, fileOrigin.filePath)
                 CompiledKlibFileOrigin.StdlibRuntime -> stdlibRuntime
