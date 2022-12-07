@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFactoryImpl
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.konan.target.CompilerOutputKind
+import org.jetbrains.kotlin.descriptors.konan.DeserializedKlibModuleOrigin
 import org.jetbrains.kotlin.name.FqName
 
 internal fun moduleValidationCallback(state: ActionState, module: IrModuleFragment, context: Context) {
@@ -374,10 +375,10 @@ internal val umbrellaCompilation = SameTypeNamedCompilerPhase(
                         module.files += functionInterfaceFiles
 
                     if (generationState.shouldLinkRuntimeNativeLibraries) {
+                        val stdlib = (context.standardLlvmSymbolsOrigin as DeserializedKlibModuleOrigin).library
                         filesReferencedByNativeRuntime.forEach {
                             generationState.llvmImports.add(
-                                    origin = context.standardLlvmSymbolsOrigin,
-                                    fileOrigin = CompiledKlibFileOrigin.CertainFile(it.fqName.asString(), it.path))
+                                    CompiledKlibFileOrigin.CertainFile(stdlib, it.fqName.asString(), it.path))
                         }
                     }
 

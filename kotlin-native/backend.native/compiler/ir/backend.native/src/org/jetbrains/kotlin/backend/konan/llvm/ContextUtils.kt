@@ -217,9 +217,7 @@ internal interface ContextUtils : RuntimeAware {
                     this.computePrivateTypeInfoSymbolName(context.irLinker.getExternalDeclarationFileName(this))
                 }
 
-                constPointer(importGlobal(typeInfoSymbolName, runtime.typeInfoType,
-                        origin = this.llvmSymbolOrigin,
-                        fileOrigin = context.irLinker.getFileOrigin(this)))
+                constPointer(importGlobal(typeInfoSymbolName, runtime.typeInfoType, generationState.computeOrigin(this)))
             } else {
                 generationState.llvmDeclarations.forClass(this).typeInfo
             }
@@ -346,7 +344,7 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
     }
 
     internal fun externalFunction(llvmFunctionProto: LlvmFunctionProto): LlvmCallable {
-        this.imports.add(llvmFunctionProto.origin, llvmFunctionProto.fileOrigin, onlyBitcode = llvmFunctionProto.independent)
+        this.imports.add(llvmFunctionProto.origin, onlyBitcode = llvmFunctionProto.independent)
         val found = LLVMGetNamedFunction(module, llvmFunctionProto.name)
         if (found != null) {
             assert(getFunctionType(found) == llvmFunctionProto.llvmFunctionType) {
@@ -370,8 +368,7 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
             isVararg: Boolean = false
     ) = externalFunction(
             LlvmFunctionProto(name, returnType, parameterTypes, functionAttributes,
-                    origin = context.standardLlvmSymbolsOrigin,
-                    fileOrigin = CompiledKlibFileOrigin.StdlibRuntime,
+                    origin = CompiledKlibFileOrigin.StdlibRuntime,
                     isVararg, independent = false)
     )
 
@@ -402,22 +399,17 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
         private val stdlibRuntime by lazy { findStdlibFile(KonanFqNames.internalPackageName, "Runtime.kt") }
         private val stdlibKFunctionImpl by lazy { findStdlibFile(KonanFqNames.internalPackageName, "KFunctionImpl.kt") }
 
-        override fun add(origin: CompiledKlibModuleOrigin, fileOrigin: CompiledKlibFileOrigin, onlyBitcode: Boolean) {
-            val library = when (origin) {
-                CurrentKlibModuleOrigin -> context.config.libraryToCache?.klib?.takeIf { context.config.producePerFileCache } ?: return
-                is DeserializedKlibModuleOrigin -> origin.library
-            }
-
-            if (library !in allLibraries) {
-                error("Library (${library.libraryName}) is used but not requested.\nRequested libraries: ${allLibraries.joinToString { it.libraryName }}")
-            }
-
-            val libraryFile = when (fileOrigin) {
-                CompiledKlibFileOrigin.EntireModule -> null
-                is CompiledKlibFileOrigin.CertainFile -> LlvmImports.LibraryFile(library, fileOrigin.fqName, fileOrigin.filePath)
+        override fun add(origin: CompiledKlibFileOrigin, onlyBitcode: Boolean) {
+            val libraryFile = when (origin) {
+                CompiledKlibFileOrigin.CurrentFile -> return
+                is CompiledKlibFileOrigin.EntireModule -> null
+                is CompiledKlibFileOrigin.CertainFile -> LlvmImports.LibraryFile(origin.library, origin.fqName, origin.filePath)
                 CompiledKlibFileOrigin.StdlibRuntime -> stdlibRuntime
                 CompiledKlibFileOrigin.StdlibKFunctionImpl -> stdlibKFunctionImpl
             }
+            val library = libraryFile?.library ?: (origin as CompiledKlibFileOrigin.EntireModule).library
+            if (library !in allLibraries)
+                error("Library (${library.libraryName}) is used but not requested.\nRequested libraries: ${allLibraries.joinToString { it.libraryName }}")
 
             usedBitcode.add(library)
             if (!onlyBitcode) {

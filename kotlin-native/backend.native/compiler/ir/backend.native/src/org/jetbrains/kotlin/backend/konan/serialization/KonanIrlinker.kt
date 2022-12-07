@@ -32,7 +32,6 @@ import org.jetbrains.kotlin.backend.konan.descriptors.findPackage
 import org.jetbrains.kotlin.backend.konan.descriptors.toFieldInfo
 import org.jetbrains.kotlin.backend.konan.ir.interop.IrProviderForCEnumAndCStructStubs
 import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.descriptors.konan.CompiledKlibFileOrigin
 import org.jetbrains.kotlin.descriptors.konan.DeserializedKlibModuleOrigin
 import org.jetbrains.kotlin.descriptors.konan.isNativeStdlib
 import org.jetbrains.kotlin.descriptors.konan.klibModuleOrigin
@@ -427,15 +426,6 @@ internal class KonanIrLinker(
         }
 
         else -> error("Unknown package fragment kind ${packageFragment::class.java}")
-    }
-
-    fun getFileOrigin(declaration: IrDeclaration): CompiledKlibFileOrigin {
-        val packageFragment = declaration.getPackageFragment()
-        return when {
-            packageFragment.isFunctionInterfaceFile -> CompiledKlibFileOrigin.StdlibKFunctionImpl
-            packageFragment.packageFragmentDescriptor.containingDeclaration.isFromInteropLibrary() -> CompiledKlibFileOrigin.EntireModule
-            else -> CompiledKlibFileOrigin.CertainFile(packageFragment.fqName.asString(), getExternalDeclarationFileName(declaration))
-        }
     }
 
     private val IrClass.firstNonClassParent: IrDeclarationParent
