@@ -55,11 +55,11 @@ abstract class AbstractNativeKlibABITest : AbstractNativeSimpleTest() {
         override fun isIgnoredTest(projectInfo: ProjectInfo): Boolean {
             if (super.isIgnoredTest(projectInfo)) return true
 
-            if (testRunSettings.get<CacheMode>().staticCacheRequiredForEveryLibrary
-                && (projectInfo.name == "changeFunctionVisibility" || projectInfo.name == "changePropertyVisibility" || projectInfo.name == "changeClassVisibility")
-            ) {
-                return true
-            }
+//            if (testRunSettings.get<CacheMode>().staticCacheRequiredForEveryLibrary
+//                && (projectInfo.name == "changeFunctionVisibility" || projectInfo.name == "changePropertyVisibility" || projectInfo.name == "changeClassVisibility")
+//            ) {
+//                return true
+//            }
 
             return false
         }

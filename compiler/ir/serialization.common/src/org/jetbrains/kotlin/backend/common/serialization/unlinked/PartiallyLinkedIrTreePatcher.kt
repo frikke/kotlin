@@ -331,12 +331,13 @@ internal class PartiallyLinkedIrTreePatcher(
         }
 
         override fun visitReturn(expression: IrReturn) = expression.maybeThrowLinkageError {
-            checkReferencedDeclaration(returnTargetSymbol)
+            checkReferencedDeclaration(returnTargetSymbol, checkVisibility = false)
         }
 
         override fun visitBlock(expression: IrBlock) = expression.maybeThrowLinkageError {
             if (this is IrReturnableBlock)
-                checkReferencedDeclaration(symbol) ?: checkReferencedDeclaration(inlineFunctionSymbol)
+                checkReferencedDeclaration(symbol, checkVisibility = false)
+                    ?: checkReferencedDeclaration(inlineFunctionSymbol, checkVisibility = false)
             else null
         }
 
@@ -440,7 +441,10 @@ internal class PartiallyLinkedIrTreePatcher(
             )
         }
 
-        private fun <T : IrExpression> T.checkReferencedDeclaration(symbol: IrSymbol?): PartialLinkageCase? {
+        private fun <T : IrExpression> T.checkReferencedDeclaration(
+            symbol: IrSymbol?,
+            checkVisibility: Boolean = true
+        ): PartialLinkageCase? {
             symbol ?: return null
 
             if (!symbol.isBound && !symbol.isPublicApi) {
@@ -453,34 +457,66 @@ internal class PartiallyLinkedIrTreePatcher(
             if (origin == PartiallyLinkedDeclarationOrigin.MISSING_DECLARATION)
                 return ExpressionUsesMissingDeclaration(this, symbol)
 
-            return when (symbol) {
-                is IrClassifierSymbol -> ExpressionUsesPartiallyLinkedClassifier(this, symbol.explore() ?: return null)
+            val partialLinkageCase = when (symbol) {
+                is IrClassifierSymbol -> symbol.explore()?.let { ExpressionUsesPartiallyLinkedClassifier(this, it) }
 
-                is IrEnumEntrySymbol -> checkReferencedDeclaration(symbol.owner.correspondingClass?.symbol)
+                is IrEnumEntrySymbol -> checkReferencedDeclaration(symbol.owner.correspondingClass?.symbol, checkVisibility = false)
 
-                is IrPropertySymbol -> checkReferencedDeclaration(symbol.owner.getter?.symbol)
-                    ?: checkReferencedDeclaration(symbol.owner.setter?.symbol)
-                    ?: checkReferencedDeclaration(symbol.owner.backingField?.symbol)
+                is IrPropertySymbol -> checkReferencedDeclaration(symbol.owner.getter?.symbol, checkVisibility = false)
+                    ?: checkReferencedDeclaration(symbol.owner.setter?.symbol, checkVisibility = false)
+                    ?: checkReferencedDeclaration(symbol.owner.backingField?.symbol, checkVisibility = false)
 
-                else -> {
-                    val unusableClassifierInReferencedDeclaration = when (symbol) {
-                        is IrFunctionSymbol -> with(symbol.owner) {
-                            extensionReceiverParameter?.type?.precalculatedUnusableClassifier()
-                                ?: valueParameters.firstNotNullOfOrNull { it.type.precalculatedUnusableClassifier() }
-                                ?: returnType.precalculatedUnusableClassifier()
-                                ?: typeParameters.firstNotNullOfOrNull { it.superTypes.precalculatedUnusableClassifier() }
-                                ?: dispatchReceiverParameter?.type?.precalculatedUnusableClassifier()
-                        }
+                else -> when (symbol) {
+                    is IrFunctionSymbol -> with(symbol.owner) {
+                        extensionReceiverParameter?.type?.precalculatedUnusableClassifier()
+                            ?: valueParameters.firstNotNullOfOrNull { it.type.precalculatedUnusableClassifier() }
+                            ?: returnType.precalculatedUnusableClassifier()
+                            ?: typeParameters.firstNotNullOfOrNull { it.superTypes.precalculatedUnusableClassifier() }
+                            ?: dispatchReceiverParameter?.type?.precalculatedUnusableClassifier()
+                    }
 
-                        is IrFieldSymbol -> symbol.owner.type.precalculatedUnusableClassifier()
-                        is IrValueSymbol -> symbol.owner.type.precalculatedUnusableClassifier()
+                    is IrFieldSymbol -> symbol.owner.type.precalculatedUnusableClassifier()
+                    is IrValueSymbol -> symbol.owner.type.precalculatedUnusableClassifier()
 
-                        else -> null
-                    } ?: return null
-
+                    else -> null
+                }?.let { unusableClassifierInReferencedDeclaration ->
                     ExpressionUsesDeclarationThatUsesPartiallyLinkedClassifier(this, symbol, unusableClassifierInReferencedDeclaration)
                 }
             }
+
+            if (partialLinkageCase != null)
+                return partialLinkageCase
+            else if (!checkVisibility)
+                return null
+
+            // Do the minimal visibility check: Make sure that private declaration is not used outside of its declaring model.
+            // This should be enough to fix KT-54469 (cases #2 and #3).
+            val signature = symbol.signature
+            if (signature != null
+                && (!signature.isPubliclyVisible || (signature as? IdSignature.CompositeSignature)?.container is IdSignature.FileSignature)
+            ) {
+                // Special case: A declaration with private signature can't be referenced from another module. So nothing to check.
+                return null
+            }
+
+            val declaration = symbol.owner as? IrDeclarationWithVisibility ?: return null
+            val visibility = declaration.visibility
+
+            if (visibility == DescriptorVisibilities.PUBLIC
+                || visibility == DescriptorVisibilities.PROTECTED
+                || visibility == DescriptorVisibilities.INTERNAL
+            ) {
+                // Effectively public. Nothing to check.
+                return null
+            }
+
+            val containingModule = PLModule.determineModuleFor(declaration)
+            if (containingModule == currentFile.module) {
+                // OK. Used in the same module.
+                return null
+            }
+
+            return ExpressionsUsesInaccessibleDeclaration(this, symbol, containingModule, currentFile.module)
         }
 
         private fun <T : IrExpression, D : IrDeclaration> T.checkReferencedDeclarationType(

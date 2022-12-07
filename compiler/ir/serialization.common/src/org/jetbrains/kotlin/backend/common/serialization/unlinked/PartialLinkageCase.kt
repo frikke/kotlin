@@ -97,4 +97,11 @@ internal sealed interface PartialLinkageCase {
         val actualDeclarationSymbol: IrSymbol,
         val expectedDeclarationDescription: String
     ) : PartialLinkageCase
+
+    class ExpressionsUsesInaccessibleDeclaration(
+        val expression: IrExpression,
+        val referencedDeclarationSymbol: IrSymbol,
+        val containingModule: PartialLinkageUtils.Module,
+        val useSiteModule: PartialLinkageUtils.Module
+    ) : PartialLinkageCase
 }
