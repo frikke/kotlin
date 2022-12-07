@@ -32,7 +32,6 @@ dependencies {
     api(project(":compiler:fir:checkers"))
     api(project(":compiler:fir:checkers:checkers.jvm"))
     api(project(":compiler:fir:checkers:checkers.js"))
-    api(project(":compiler:fir:checkers:checkers.native"))
     api(project(":kotlin-util-klib"))
     api(project(":kotlin-util-io"))
 
