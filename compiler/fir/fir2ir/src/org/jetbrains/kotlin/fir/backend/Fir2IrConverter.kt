@@ -441,7 +441,7 @@ class Fir2IrConverter(
                     kotlinBuiltIns
                 )
             }
-            val signatureComposer = FirBasedSignatureComposer(mangler)
+            val signatureComposer = FirBasedSignatureComposer(mangler, dependentComposers = dependentComponents.map { it.signatureComposer as FirBasedSignatureComposer })
             val wrappedSignaturer = WrappedDescriptorSignatureComposer(signaturer, signatureComposer)
             val symbolTable = SymbolTable(wrappedSignaturer, irFactory, dependentTables = dependentComponents.map { it.symbolTable })
             return createModuleFragmentWithSymbolTable(
@@ -504,7 +504,7 @@ class Fir2IrConverter(
 
             val classifierStorage = Fir2IrClassifierStorage(components, dependentComponents.map { it.classifierStorage })
             components.classifierStorage = classifierStorage
-            components.delegatedMemberGenerator = DelegatedMemberGenerator(components)
+            components.delegatedMemberGenerator = DelegatedMemberGenerator(components, dependentComponents.map { it.delegatedMemberGenerator })
             val declarationStorage = Fir2IrDeclarationStorage(components, moduleDescriptor, dependentComponents.map { it.declarationStorage })
             components.declarationStorage = declarationStorage
             components.visibilityConverter = visibilityConverter
