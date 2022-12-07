@@ -140,15 +140,18 @@ bitcode {
             headersDirs.from(files("src/main/cpp"))
         }
 
-        module("exceptionsSupport", file("src/exceptions_support")) {
+        module("exceptionsSupport") {
+            srcRoot.set(layout.projectDirectory.dir("src/exceptions_support"))
             headersDirs.from(files("src/main/cpp"))
         }
 
-        module("source_info_core_symbolication", file("src/source_info/core_symbolication")) {
+        module("source_info_core_symbolication") {
+            srcRoot.set(layout.projectDirectory.dir("src/source_info/core_symbolication"))
             headersDirs.from(files("src/main/cpp"))
             onlyIf { targetSupportsCoreSymbolication(target.name) }
         }
-        module("source_info_libbacktrace", file("src/source_info/libbacktrace")) {
+        module("source_info_libbacktrace") {
+            srcRoot.set(layout.projectDirectory.dir("src/source_info/libbacktrace"))
             headersDirs.from(files("src/main/cpp", "src/libbacktrace/c/include"))
             onlyIf { targetSupportsLibBacktrace(target.name) }
         }
@@ -161,38 +164,47 @@ bitcode {
             headersDirs.from(files("src/main/cpp"))
         }
 
-        module("profileRuntime", file("src/profile_runtime"))
+        module("profileRuntime") {
+            srcRoot.set(layout.projectDirectory.dir("src/profile_runtime"))
+        }
 
         module("objc") {
             headersDirs.from(files("src/main/cpp"))
         }
 
-        module("test_support", outputGroup = "test") {
+        module("test_support") {
+            outputGroup.set("test")
             headersDirs.from(files("src/main/cpp"), googletest.headersDirs)
-            dependsOn("downloadGoogleTest")
+            dependencies.add(tasks.named("downloadGoogleTest"))
         }
 
-        module("legacy_memory_manager", file("src/legacymm")) {
+        module("legacy_memory_manager") {
+            srcRoot.set(layout.projectDirectory.dir("src/legacymm"))
             headersDirs.from(files("src/main/cpp"))
         }
 
-        module("experimental_memory_manager", file("src/mm")) {
+        module("experimental_memory_manager") {
+            srcRoot.set(layout.projectDirectory.dir("src/mm"))
             headersDirs.from(files("src/gc/common/cpp", "src/main/cpp"))
         }
 
-        module("common_gc", file("src/gc/common")) {
+        module("common_gc") {
+            srcRoot.set(layout.projectDirectory.dir("src/gc/common"))
             headersDirs.from(files("src/mm/cpp", "src/main/cpp"))
         }
 
-        module("noop_gc", file("src/gc/noop")) {
+        module("noop_gc") {
+            srcRoot.set(layout.projectDirectory.dir("src/gc/noop"))
             headersDirs.from(files("src/gc/noop/cpp", "src/gc/common/cpp", "src/mm/cpp", "src/main/cpp"))
         }
 
-        module("same_thread_ms_gc", file("src/gc/stms")) {
+        module("same_thread_ms_gc") {
+            srcRoot.set(layout.projectDirectory.dir("src/gc/stms"))
             headersDirs.from(files("src/gc/stms/cpp", "src/gc/common/cpp", "src/mm/cpp", "src/main/cpp"))
         }
 
-        module("concurrent_ms_gc", file("src/gc/cms")) {
+        module("concurrent_ms_gc") {
+            srcRoot.set(layout.projectDirectory.dir("src/gc/cms"))
             headersDirs.from(files("src/gc/cms/cpp", "src/gc/common/cpp", "src/mm/cpp", "src/main/cpp"))
 
             onlyIf { targetSupportsThreads(target.name) }
@@ -215,11 +227,13 @@ bitcode {
         }
 
         testsGroup("mimalloc_runtime_tests") {
-            testedModules.addAll("main", "legacy_memory_manager", "strict", "mimalloc", "opt_alloc", "objc")
+            testedModules.addAll("main", "legacy_memory_manager", "strict", "opt_alloc", "objc")
+            dependentModules.addAll("mimalloc")
         }
 
         testsGroup("experimentalMM_mimalloc_runtime_tests") {
-            testedModules.addAll("main", "experimental_memory_manager", "common_gc", "same_thread_ms_gc", "mimalloc", "opt_alloc", "objc")
+            testedModules.addAll("main", "experimental_memory_manager", "common_gc", "same_thread_ms_gc", "opt_alloc", "objc")
+            dependentModules.addAll("mimalloc")
         }
 
         testsGroup("experimentalMM_std_alloc_runtime_tests") {
@@ -227,7 +241,8 @@ bitcode {
         }
 
         testsGroup("experimentalMM_cms_mimalloc_runtime_tests") {
-            testedModules.addAll("main", "experimental_memory_manager", "common_gc", "concurrent_ms_gc", "mimalloc", "opt_alloc", "objc")
+            testedModules.addAll("main", "experimental_memory_manager", "common_gc", "concurrent_ms_gc", "opt_alloc", "objc")
+            dependentModules.addAll("mimalloc")
         }
 
         testsGroup("experimentalMM_cms_std_alloc_runtime_tests") {
@@ -235,7 +250,8 @@ bitcode {
         }
 
         testsGroup("experimentalMM_noop_mimalloc_runtime_tests") {
-            testedModules.addAll("main", "experimental_memory_manager", "common_gc", "noop_gc", "mimalloc", "opt_alloc", "objc")
+            testedModules.addAll("main", "experimental_memory_manager", "common_gc", "noop_gc", "opt_alloc", "objc")
+            dependentModules.addAll("mimalloc")
         }
 
         testsGroup("experimentalMM_noop_std_alloc_runtime_tests") {

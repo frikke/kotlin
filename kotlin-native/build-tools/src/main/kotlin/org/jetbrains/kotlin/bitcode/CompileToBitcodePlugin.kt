@@ -7,14 +7,23 @@ package org.jetbrains.kotlin.bitcode
 
 import kotlinBuildProperties
 import org.gradle.api.Action
+import org.gradle.api.Named
 import org.gradle.api.Plugin
+import org.gradle.api.PolymorphicDomainObjectContainer
 import org.gradle.api.Project
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.attributes.Usage
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.ConfigurableFileTree
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.Provider
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
+import org.gradle.api.specs.Spec
+import org.gradle.api.tasks.TaskProvider
 import org.gradle.kotlin.dsl.*
 import org.gradle.language.base.plugins.LifecycleBasePlugin
 import org.jetbrains.kotlin.ExecClang
@@ -102,8 +111,71 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
         val sanitizer by _target::sanitizer
         abstract val testedModules: ListProperty<String>
         abstract val testSupportModules: ListProperty<String>
+        abstract val dependentModules: ListProperty<String>
         abstract val testFrameworkModules: ListProperty<String>
         abstract val testLauncherModule: Property<String>
+    }
+
+    abstract class Module @Inject constructor(
+            private val owner: CompileToBitcodeExtension,
+            private val name: String,
+            private val _target: TargetWithSanitizer,
+    ) : Named {
+        val target by _target::target
+        val sanitizer by _target::sanitizer
+
+        override fun getName() = name
+
+        private val project by owner::project
+
+        abstract val outputGroup: Property<String>
+        abstract val srcRoot: DirectoryProperty
+        abstract val outputFile: RegularFileProperty
+        abstract val outputDirectory: DirectoryProperty
+        abstract val compiler: Property<String>
+        abstract val linkerArgs: ListProperty<String>
+        abstract val compilerArgs: ListProperty<String>
+        abstract val headersDirs: ConfigurableFileCollection
+        abstract val inputFiles: ConfigurableFileTree
+        abstract val compilerWorkingDirectory: DirectoryProperty
+        abstract val dependencies: ListProperty<TaskProvider<*>>
+        protected abstract val onlyIf: ListProperty<Spec<in Module>>
+
+        fun onlyIf(spec: Spec<in Module>) {
+            this.onlyIf.add(spec)
+        }
+
+        val task = project.tasks.register<CompileToBitcode>(fullTaskName(name, target.name, sanitizer), _target).apply {
+            configure {
+                outputGroup.finalizeValue()
+
+                this.moduleName.set(this@Module.name)
+                this.outputFile.set(this@Module.outputFile)
+                this.outputDirectory.set(this@Module.outputDirectory)
+                this.compiler.set(this@Module.compiler)
+                this.linkerArgs.set(this@Module.linkerArgs)
+                this.compilerArgs.set(this@Module.compilerArgs)
+                this.headersDirs.from(this@Module.headersDirs)
+                this.inputFiles.from(this@Module.inputFiles.dir)
+                this.inputFiles.setIncludes(this@Module.inputFiles.includes)
+                this.inputFiles.setExcludes(this@Module.inputFiles.excludes)
+                this.compilerWorkingDirectory.set(this@Module.compilerWorkingDirectory)
+                when (outputGroup.get()) {
+                    "test" -> this.group = VERIFICATION_BUILD_TASK_GROUP
+                    "main" -> this.group = BUILD_TASK_GROUP
+                }
+                this.description = "Compiles '${this@Module.name}' to bitcode for $_target"
+                // TODO: Should depend only on the toolchain needed to build for the _target
+                dependsOn(":kotlin-native:dependencies:update")
+                dependsOn(this@Module.dependencies)
+
+                onlyIf {
+                    this@Module.onlyIf.get().all { spec ->
+                        spec.isSatisfiedBy(this@Module)
+                    }
+                }
+            }
+        }
     }
 
     abstract class Target @Inject constructor(
@@ -159,32 +231,34 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             }
         }
 
-        fun module(name: String, srcRoot: File = project.file("src/$name"), outputGroup: String = "main", configurationBlock: CompileToBitcode.() -> Unit = {}) {
-            val targetName = target.name
-            val taskName = fullTaskName(name, targetName, sanitizer)
-            val task = project.tasks.register<CompileToBitcode>(taskName, _target)
-            task.configure {
-                this.moduleName.set(name)
-                this.outputFile.convention(moduleName.flatMap { project.layout.buildDirectory.file("bitcode/$outputGroup/$target${sanitizer.dirSuffix}/$it.bc") })
-                this.outputDirectory.convention(moduleName.flatMap { project.layout.buildDirectory.dir("bitcode/$outputGroup/$target${sanitizer.dirSuffix}/$it") })
+        private val modules: PolymorphicDomainObjectContainer<Module> = project.objects.polymorphicDomainObjectContainer(Module::class.java).apply {
+            registerFactory(Module::class.java) { name ->
+                project.objects.newInstance<Module>(owner, name, _target)
+            }
+        }
+
+        fun module(
+                name: String,
+                action: Action<in Module>,
+        ): Module {
+            val module = modules.create<Module>(name) {
+                this.srcRoot.convention(project.layout.projectDirectory.dir("src/$name"))
+                this.outputGroup.convention("main")
+                this.outputFile.convention(this.outputGroup.flatMap { project.layout.buildDirectory.file("bitcode/$it/$target${sanitizer.dirSuffix}/$name.bc") })
+                this.outputDirectory.convention(this.outputGroup.flatMap { project.layout.buildDirectory.dir("bitcode/$it/$target${sanitizer.dirSuffix}/$name") })
                 this.compiler.convention("clang++")
                 this.compilerArgs.set(owner.DEFAULT_CPP_FLAGS)
-                this.inputFiles.from(srcRoot.resolve("cpp"))
+                this.inputFiles.from(this.srcRoot.dir("cpp"))
                 this.inputFiles.include("**/*.cpp", "**/*.mm")
                 this.inputFiles.exclude("**/*Test.cpp", "**/*TestSupport.cpp", "**/*Test.mm", "**/*TestSupport.mm")
-                this.headersDirs.from(this.inputFiles.dir)
+                this.headersDirs.from(this.srcRoot.dir("cpp"))
                 this.compilerWorkingDirectory.set(project.layout.projectDirectory.dir("src"))
-                when (outputGroup) {
-                    "test" -> this.group = VERIFICATION_BUILD_TASK_GROUP
-                    "main" -> this.group = BUILD_TASK_GROUP
-                }
-                this.description = "Compiles '$name' to bitcode for $targetName${sanitizer.description}"
-                dependsOn(":kotlin-native:dependencies:update")
-                configurationBlock()
+                action.execute(this)
+                outputGroup.finalizeValue()
             }
-            addToCompdb(task.get()) // TODO: Do not force task configuration.
-            if (outputGroup == "main") {
-                compileElementsBitcode.artifact(task)
+            addToCompdb(module.task.get()) // TODO: Do not force task configuration.
+            if (module.outputGroup.get() == "main") {
+                compileElementsBitcode.artifact(module.task)
                 // TODO: This seems to go against gradle conventions. So, each module should probably be in
                 //       a gradle project of its own. Current project should be used for grouping (i.e. reexporting all
                 //       compileElementsBitcode from subprojects under a single umbrella configuration) and integration testing.
@@ -202,13 +276,16 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                                 attributes {
                                     attribute(TargetWithSanitizer.TARGET_ATTRIBUTE, _target)
                                 }
-                                artifact(task)
+                                artifact(module.task)
                             }
                         }
                     }
                 }
             }
+            return module
         }
+
+        fun module(name: String): Provider<Module> = modules.named(name)
 
         fun testsGroup(
                 testTaskName: String,
@@ -222,27 +299,25 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             val target = testsGroup.target
             val sanitizer = testsGroup.sanitizer
             val testName = fullTaskName(testTaskName, target.name, sanitizer)
-            val testedModulesMainTasks = testsGroup.testedModules.get().map {
-                val name = fullTaskName(it, target.name, sanitizer)
-                project.tasks.getByName(name) as CompileToBitcode
-            }
-            val testedModulesTestTasks = testedModulesMainTasks.mapNotNull {
-                val name = "${it.name}TestBitcode"
+            val testedModules = testsGroup.testedModules.get().map { this.module(it).get() }
+            val testedModulesTestTasks = testedModules.mapNotNull { module ->
+                val name = "${fullTaskName(module.name, target.name, sanitizer)}TestBitcode"
                 val task = project.tasks.findByName(name) as? CompileToBitcode
                         ?: project.tasks.create(name, CompileToBitcode::class.java, _target).apply {
-                            this.moduleName.set(it.moduleName)
-                            this.outputFile.convention(moduleName.flatMap { project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${it}Tests.bc") })
-                            this.outputDirectory.convention(moduleName.flatMap { project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${it}Tests") })
+                            this.moduleName.set(module.name)
+                            this.outputFile.convention(project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}Tests.bc"))
+                            this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}Tests"))
                             this.compiler.convention("clang++")
-                            this.compilerArgs.set(it.compilerArgs)
-                            this.inputFiles.from(it.inputFiles.dir)
+                            this.compilerArgs.set(module.compilerArgs)
+                            this.inputFiles.from(module.inputFiles.dir)
                             this.inputFiles.include("**/*Test.cpp", "**/*Test.mm")
-                            this.headersDirs.setFrom(it.headersDirs)
+                            this.headersDirs.setFrom(module.headersDirs)
                             this.headersDirs.from(googleTestExtension.headersDirs)
-                            this.compilerWorkingDirectory.set(it.compilerWorkingDirectory)
+                            this.compilerWorkingDirectory.set(module.compilerWorkingDirectory)
                             this.group = VERIFICATION_BUILD_TASK_GROUP
-                            this.description = "Compiles '${it.name}' tests to bitcode for $target${sanitizer.description}"
+                            this.description = "Compiles '${module.name}' tests to bitcode for $_target"
 
+                            // TODO: Should depend only on the toolchain needed to build for the _target
                             dependsOn(":kotlin-native:dependencies:update")
                             dependsOn("downloadGoogleTest")
 
@@ -250,41 +325,31 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                         }
                 task.takeUnless { t -> t.inputFiles.isEmpty }
             }
-            val testSupportModulesMainTasks = testsGroup.testSupportModules.get().map {
-                val name = fullTaskName(it, target.name, sanitizer)
-                project.tasks.getByName(name) as CompileToBitcode
-            }
-            val testedAndTestSupportModulesTestSupportTasks = (testedModulesMainTasks + testSupportModulesMainTasks).mapNotNull {
-                val name = "${it.name}TestSupportBitcode"
+            val testSupportModules = testsGroup.testSupportModules.get().map { this.module(it).get() }
+            val testedAndTestSupportModulesTestSupportTasks = (testedModules + testSupportModules).mapNotNull { module ->
+                val name = "${fullTaskName(module.name, target.name, sanitizer)}TestSupportBitcode"
                 val task = project.tasks.findByName(name) as? CompileToBitcode
                         ?: project.tasks.create(name, CompileToBitcode::class.java, _target).apply {
-                            this.moduleName.set(it.moduleName)
-                            this.outputFile.convention(moduleName.flatMap { project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${it}TestSupport.bc") })
-                            this.outputDirectory.convention(moduleName.flatMap { project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${it}TestSupport") })
+                            this.moduleName.set(module.name)
+                            this.outputFile.convention(project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}TestSupport.bc"))
+                            this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}TestSupport"))
                             this.compiler.convention("clang++")
-                            this.compilerArgs.set(it.compilerArgs)
-                            this.inputFiles.from(it.inputFiles.dir)
+                            this.compilerArgs.set(module.compilerArgs)
+                            this.inputFiles.from(module.inputFiles.dir)
                             this.inputFiles.include("**/*TestSupport.cpp", "**/*TestSupport.mm")
-                            this.headersDirs.setFrom(it.headersDirs)
+                            this.headersDirs.setFrom(module.headersDirs)
                             this.headersDirs.from(googleTestExtension.headersDirs)
-                            this.compilerWorkingDirectory.set(it.compilerWorkingDirectory)
+                            this.compilerWorkingDirectory.set(module.compilerWorkingDirectory)
                             this.group = VERIFICATION_BUILD_TASK_GROUP
-                            this.description = "Compiles '${it.name}' test support to bitcode for $target${sanitizer.description}"
+                            this.description = "Compiles '${module.name}' test support to bitcode for $_target"
 
+                            // TODO: Should depend only on the toolchain needed to build for the _target
                             dependsOn(":kotlin-native:dependencies:update")
                             dependsOn("downloadGoogleTest")
 
                             addToCompdb(this)
                         }
                 task.takeUnless { t -> t.inputFiles.isEmpty }
-            }
-            val testFrameworkMainTasks = testsGroup.testFrameworkModules.get().map {
-                val name = fullTaskName(it, target.name, sanitizer)
-                project.tasks.getByName(name) as CompileToBitcode
-            }
-            val testLauncherMainTask = testsGroup.testLauncherModule.get().let {
-                val name = fullTaskName(it, target.name, sanitizer)
-                project.tasks.getByName(name) as CompileToBitcode
             }
 
             val compileTask = project.tasks.register<CompileToExecutable>("${testName}Compile") {
@@ -296,11 +361,18 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                 this.llvmLinkFirstStageOutputFile.set(project.layout.buildDirectory.file("bitcode/test/$target/$testName-firstStage.bc"))
                 this.llvmLinkOutputFile.set(project.layout.buildDirectory.file("bitcode/test/$target/$testName.bc"))
                 this.compilerOutputFile.set(project.layout.buildDirectory.file("obj/$target/$testName.o"))
-                this.mimallocEnabled.set(testsGroup.testedModules.get().any { it.contains("mimalloc") })
-                this.mainFile.set(testLauncherMainTask.outputFile)
-                val tasksToLink = (testedModulesTestTasks + testedModulesMainTasks + testFrameworkMainTasks + testSupportModulesMainTasks + testedAndTestSupportModulesTestSupportTasks)
-                this.inputFiles.setFrom(tasksToLink.map { it.outputFile })
-
+                this.mimallocEnabled.set(testsGroup.dependentModules.get().any { it.contains("mimalloc") })
+                this.mainFile.set(testsGroup.testLauncherModule.get().let { module(it).flatMap { it.task.flatMap { it.outputFile } } })
+                // Include main sources from every dependency.
+                this.inputFiles.from(testedModules.map { it.task })
+                this.inputFiles.from(testSupportModules.map { it.task })
+                this.inputFiles.from(testsGroup.dependentModules.get().map { module(it).flatMap { it.task } })
+                this.inputFiles.from(testsGroup.testFrameworkModules.get().map { module(it).flatMap { it.task } })
+                // Include test support sources from tested and test support dependencies.
+                this.inputFiles.from(testedAndTestSupportModulesTestSupportTasks)
+                // Include test sources from tested dependencies.
+                this.inputFiles.from(testedModulesTestTasks)
+                // Limit parallelism.
                 usesService(compileTestsSemaphore)
             }
 

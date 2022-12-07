@@ -55,7 +55,8 @@ open class RuntimeTestingPlugin : Plugin<Project> {
             val bitcodeExtension = project.extensions.getByType<CompileToBitcodeExtension>()
 
             bitcodeExtension.allTargets {
-                module("googletest", outputGroup = "test") {
+                module("googletest") {
+                    outputGroup.set("test")
                     inputFiles.from(googleTestRoot.resolve("googletest/src"))
                     inputFiles.include("*.cc")
                     inputFiles.exclude("gtest-all.cc", "gtest_main.cc")
@@ -64,10 +65,11 @@ open class RuntimeTestingPlugin : Plugin<Project> {
                             googleTestRoot.resolve("googletest")
                     )
                     compilerArgs.set(listOf("-std=c++17", "-O2"))
-                    dependsOn(dependencies)
+                    this.dependencies.addAll(dependencies)
                 }
 
-                module("googlemock", outputGroup = "test") {
+                module("googlemock") {
+                    outputGroup.set("test")
                     inputFiles.from(googleTestRoot.resolve("googlemock/src"))
                     inputFiles.include("*.cc")
                     inputFiles.exclude("gmock-all.cc", "gmock_main.cc")
@@ -77,7 +79,7 @@ open class RuntimeTestingPlugin : Plugin<Project> {
                             googleTestRoot.resolve("googletest/include"),
                     )
                     compilerArgs.set(listOf("-std=c++17", "-O2"))
-                    dependsOn(dependencies)
+                    this.dependencies.addAll(dependencies)
                 }
             }
         }
