@@ -157,26 +157,23 @@ internal class LlvmFunctionProto(
         returnType: LlvmRetType,
         parameterTypes: List<LlvmParamType> = emptyList(),
         functionAttributes: List<LlvmFunctionAttribute> = emptyList(),
-        val origin: CompiledKlibModuleOrigin,
-        val fileOrigin: CompiledKlibFileOrigin,
+        val origin: CompiledKlibFileOrigin,
         isVararg: Boolean = false,
         val independent: Boolean = false,
 ) : LlvmFunctionSignature(returnType, parameterTypes, isVararg, functionAttributes) {
     constructor(
             name: String,
             signature: LlvmFunctionSignature,
-            origin: CompiledKlibModuleOrigin,
-            fileOrigin: CompiledKlibFileOrigin,
+            origin: CompiledKlibFileOrigin,
             independent: Boolean = false,
-    ) : this(name, signature.returnType, signature.parameterTypes, signature.functionAttributes, origin, fileOrigin, signature.isVararg, independent)
+    ) : this(name, signature.returnType, signature.parameterTypes, signature.functionAttributes, origin, signature.isVararg, independent)
 
     constructor(irFunction: IrFunction, symbolName: String, contextUtils: ContextUtils) : this(
             name = symbolName,
             returnType = contextUtils.getLlvmFunctionReturnType(irFunction),
             parameterTypes = contextUtils.getLlvmFunctionParameterTypes(irFunction),
             functionAttributes = inferFunctionAttributes(contextUtils, irFunction),
-            origin = irFunction.llvmSymbolOrigin,
-            fileOrigin = contextUtils.context.irLinker.getFileOrigin(irFunction),
+            origin = contextUtils.generationState.computeOrigin(irFunction),
             independent = irFunction.hasAnnotation(RuntimeNames.independent)
     )
 }

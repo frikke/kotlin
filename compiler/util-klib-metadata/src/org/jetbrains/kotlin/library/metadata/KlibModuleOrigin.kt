@@ -37,11 +37,13 @@ val ModuleDescriptor.kotlinLibrary get() =
         .library
 
 sealed class CompiledKlibFileOrigin {
-    object EntireModule : CompiledKlibFileOrigin()
+    object CurrentFile : CompiledKlibFileOrigin() // No dependency should be added.
 
     object StdlibRuntime : CompiledKlibFileOrigin()
 
     object StdlibKFunctionImpl : CompiledKlibFileOrigin()
 
-    class CertainFile(val fqName: String, val filePath: String) : CompiledKlibFileOrigin()
+    class EntireModule(val library: KotlinLibrary) : CompiledKlibFileOrigin()
+
+    class CertainFile(val library: KotlinLibrary, val fqName: String, val filePath: String) : CompiledKlibFileOrigin()
 }

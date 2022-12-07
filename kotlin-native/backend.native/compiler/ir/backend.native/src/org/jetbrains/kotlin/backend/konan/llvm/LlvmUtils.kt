@@ -183,15 +183,13 @@ private fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef): LLVMValu
     }
 }
 
-internal fun ContextUtils.importGlobal(
-        name: String, type: LLVMTypeRef,
-        origin: CompiledKlibModuleOrigin, fileOrigin: CompiledKlibFileOrigin
-) = importGlobal(name, type).also { llvm.imports.add(origin, fileOrigin) }
+internal fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef, origin: CompiledKlibFileOrigin) =
+        importGlobal(name, type).also { llvm.imports.add(origin) }
 
 internal fun ContextUtils.importObjCGlobal(name: String, type: LLVMTypeRef) = importGlobal(name, type)
 
 internal fun ContextUtils.importStdlibGlobal(name: String, type: LLVMTypeRef) =
-        importGlobal(name, type, context.standardLlvmSymbolsOrigin, CompiledKlibFileOrigin.StdlibRuntime)
+        importGlobal(name, type, CompiledKlibFileOrigin.StdlibRuntime)
 
 internal abstract class AddressAccess {
     abstract fun getAddress(generationContext: FunctionGenerationContext?): LLVMValueRef

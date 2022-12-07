@@ -18,7 +18,6 @@ import org.jetbrains.kotlin.backend.konan.llvm.objc.*
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
-import org.jetbrains.kotlin.library.metadata.CompiledKlibModuleOrigin
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.konan.ForeignExceptionMode
@@ -1266,12 +1265,11 @@ internal abstract class FunctionGenerationContext(
         assert(!irClass.isInterface)
 
         return if (irClass.isExternalObjCClass()) {
-            val llvmSymbolOrigin = irClass.llvmSymbolOrigin
-            val fileOrigin = context.irLinker.getFileOrigin(irClass)
+            val origin = generationState.computeOrigin(irClass)
 
             if (irClass.isObjCMetaClass()) {
                 val name = irClass.descriptor.getExternalObjCMetaClassBinaryName()
-                val objCClass = getObjCClass(name, llvmSymbolOrigin, fileOrigin)
+                val objCClass = getObjCClass(name, origin)
 
                 val getClass = llvm.externalStdlibFunction(
                         "object_getClass",
@@ -1280,7 +1278,7 @@ internal abstract class FunctionGenerationContext(
                 )
                 call(getClass, listOf(objCClass), exceptionHandler = exceptionHandler)
             } else {
-                getObjCClass(irClass.descriptor.getExternalObjCClassBinaryName(), llvmSymbolOrigin, fileOrigin)
+                getObjCClass(irClass.descriptor.getExternalObjCClassBinaryName(), origin)
             }
         } else {
             if (irClass.isObjCMetaClass()) {
@@ -1304,8 +1302,8 @@ internal abstract class FunctionGenerationContext(
         }
     }
 
-    fun getObjCClass(binaryName: String, llvmSymbolOrigin: CompiledKlibModuleOrigin, fileOrigin: CompiledKlibFileOrigin): LLVMValueRef {
-        llvm.imports.add(llvmSymbolOrigin, fileOrigin)
+    fun getObjCClass(binaryName: String, origin: CompiledKlibFileOrigin): LLVMValueRef {
+        llvm.imports.add(origin)
         return load(codegen.objCDataGenerator!!.genClassRef(binaryName).llvm)
     }
 

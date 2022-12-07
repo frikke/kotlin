@@ -28,11 +28,11 @@ internal class KotlinObjCClassInfoGenerator(override val generationState: Native
         val classMethods = companionObject?.generateMethodDescs().orEmpty()
 
         val superclassName = irClass.getSuperClassNotAny()!!.let {
-            llvm.imports.add(it.llvmSymbolOrigin, context.irLinker.getFileOrigin(it))
+            llvm.imports.add(generationState.computeOrigin(it))
             it.descriptor.getExternalObjCClassBinaryName()
         }
         val protocolNames = irClass.getSuperInterfaces().map {
-            llvm.imports.add(it.llvmSymbolOrigin, context.irLinker.getFileOrigin(it))
+            llvm.imports.add(generationState.computeOrigin(it))
             it.name.asString().removeSuffix("Protocol")
         }
 
@@ -161,8 +161,7 @@ internal fun CodeGenerator.kotlinObjCClassInfo(irClass: IrClass): LLVMValueRef {
         importGlobal(
                 irClass.kotlinObjCClassInfoSymbolName,
                 runtime.kotlinObjCClassInfo,
-                origin = irClass.llvmSymbolOrigin,
-                fileOrigin = context.irLinker.getFileOrigin(irClass)
+                generationState.computeOrigin(irClass)
         )
     } else {
         llvmDeclarations.forClass(irClass).objCDeclarations!!.classInfoGlobal.llvmGlobal

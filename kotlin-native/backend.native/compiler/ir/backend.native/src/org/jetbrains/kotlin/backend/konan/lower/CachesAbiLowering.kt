@@ -171,7 +171,7 @@ internal class ImportCachesAbiTransformer(val generationState: NativeGenerationS
 
             irClass?.isInner == true && innerClassesSupport.getOuterThisField(irClass) == field -> {
                 val accessor = cachesAbiSupport.getOuterThisAccessor(irClass)
-                llvmImports.add(irClass.llvmSymbolOrigin, irLinker.getFileOrigin(irClass))
+                llvmImports.add(generationState.computeOrigin(irClass))
                 return irCall(expression.startOffset, expression.endOffset, accessor, emptyList()).apply {
                     putValueArgument(0, expression.receiver)
                 }
@@ -179,7 +179,7 @@ internal class ImportCachesAbiTransformer(val generationState: NativeGenerationS
 
             property?.isLateinit == true -> {
                 val accessor = cachesAbiSupport.getLateinitPropertyAccessor(property)
-                llvmImports.add(property.llvmSymbolOrigin, irLinker.getFileOrigin(property))
+                llvmImports.add(generationState.computeOrigin(property))
                 return irCall(expression.startOffset, expression.endOffset, accessor, emptyList()).apply {
                     if (irClass != null)
                         putValueArgument(0, expression.receiver)

@@ -19,7 +19,7 @@ import org.jetbrains.kotlin.resolve.descriptorUtil.module
 internal interface LlvmImports {
     data class LibraryFile(val library: KotlinLibrary, val fqName: String, val filePath: String)
 
-    fun add(origin: CompiledKlibModuleOrigin, fileOrigin: CompiledKlibFileOrigin, onlyBitcode: Boolean = false)
+    fun add(origin: CompiledKlibFileOrigin, onlyBitcode: Boolean = false)
     fun bitcodeIsUsed(library: KonanLibrary): Boolean
     fun nativeDependenciesAreUsed(library: KonanLibrary): Boolean
     fun usedBitcode(): List<LibraryFile>
