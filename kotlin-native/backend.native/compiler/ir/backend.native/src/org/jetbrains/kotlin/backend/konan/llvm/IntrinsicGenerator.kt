@@ -312,17 +312,21 @@ internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnv
     private fun FunctionGenerationContext.emitIsExperimentalMM(): LLVMValueRef =
             llvm.int1(context.memoryModel == MemoryModel.EXPERIMENTAL)
 
-    private fun FunctionGenerationContext.emitCmpxchg(callSite: IrCall, args: List<LLVMValueRef>, retId: Int, resultSlot: LLVMValueRef?): LLVMValueRef {
+    // cmpxcgh llvm instruction return pair. idnex is index of required element of this pair
+    enum class CmpExchangeMode(val index:Int) {
+        SWAP(0),
+        SET(1)
+    }
+
+    private fun FunctionGenerationContext.emitCmpExchange(callSite: IrCall, args: List<LLVMValueRef>, mode: CmpExchangeMode, resultSlot: LLVMValueRef?): LLVMValueRef {
         val field = context.mapping.functionToVolatileField[callSite.symbol.owner]!!
         require(args.size == 3)
         val address = environment.getObjectFieldPointer(args[0], field)
         return if (isObjectRef(args[1])) {
             require(context.memoryModel == MemoryModel.EXPERIMENTAL)
-            if (retId == 1) {
-                call(llvm.CompareAndSetVolatileHeapRef, listOf(address, args[1], args[2]))
-            } else {
-                require(retId == 0)
-                call(llvm.CompareAndSwapVolatileHeapRef, listOf(address, args[1], args[2]),
+            when (mode) {
+                CmpExchangeMode.SET -> call(llvm.CompareAndSetVolatileHeapRef, listOf(address, args[1], args[2]))
+                CmpExchangeMode.SWAP -> call(llvm.CompareAndSwapVolatileHeapRef, listOf(address, args[1], args[2]),
                         environment.calculateLifetime(callSite), resultSlot = resultSlot)
             }
         } else {
@@ -332,7 +336,7 @@ internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnv
                     SingleThread = 0
             )!!
 
-            LLVMBuildExtractValue(builder, cmp, retId, "")!!
+            LLVMBuildExtractValue(builder, cmp, mode.index, "")!!
         }
     }
 
@@ -354,10 +358,10 @@ internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnv
     }
 
     private fun FunctionGenerationContext.emitCompareAndSet(callSite: IrCall, args: List<LLVMValueRef>): LLVMValueRef {
-        return emitCmpxchg(callSite, args, 1, null)
+        return emitCmpExchange(callSite, args, CmpExchangeMode.SET, null)
     }
     private fun FunctionGenerationContext.emitCompareAndSwap(callSite: IrCall, args: List<LLVMValueRef>, resultSlot: LLVMValueRef?): LLVMValueRef {
-        return emitCmpxchg(callSite, args, 0, resultSlot)
+        return emitCmpExchange(callSite, args, CmpExchangeMode.SWAP, resultSlot)
     }
     private fun FunctionGenerationContext.emitGetAndSet(callSite: IrCall, args: List<LLVMValueRef>, resultSlot: LLVMValueRef?): LLVMValueRef {
         return emitAtomicRMW(callSite, args, LLVMAtomicRMWBinOp.LLVMAtomicRMWBinOpXchg, resultSlot)
