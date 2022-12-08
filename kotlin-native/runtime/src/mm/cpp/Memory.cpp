@@ -189,7 +189,7 @@ extern "C" ALWAYS_INLINE RUNTIME_NOTHROW void UpdateHeapRef(ObjHeader** location
 }
 
 extern "C" ALWAYS_INLINE RUNTIME_NOTHROW void UpdateVolatileHeapRef(ObjHeader** location, const ObjHeader* object) {
-    mm::SetHeapRefAtomic(location, const_cast<ObjHeader*>(object));
+    mm::SetHeapRefAtomicSeqCst(location, const_cast<ObjHeader*>(object));
 }
 
 extern "C" ALWAYS_INLINE RUNTIME_NOTHROW OBJ_GETTER(CompareAndSwapVolatileHeapRef, ObjHeader** location, ObjHeader* expectedValue, ObjHeader* newValue) {
