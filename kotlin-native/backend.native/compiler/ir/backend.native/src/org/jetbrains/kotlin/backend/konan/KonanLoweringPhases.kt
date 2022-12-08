@@ -275,8 +275,8 @@ internal val tailrecPhase = makeKonanFileLoweringPhase(
 )
 
 internal val volatilePhase = makeKonanFileLoweringPhase(
-        ::VolatileLowering,
-        name = "Volatile",
+        ::VolatileFieldsLowering,
+        name = "VolatileFields",
         description = "Volatile fields processing",
         prerequisite = setOf(localFunctionsPhase)
 )
