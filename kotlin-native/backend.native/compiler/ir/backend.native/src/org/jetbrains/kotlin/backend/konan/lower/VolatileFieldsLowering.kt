@@ -93,26 +93,26 @@ internal class VolatileFieldsLowering(val context: Context) : FileLoweringPass {
             }
 
 
-    private inline fun IrField.atomicFunction(type: NativeMapping.AtomicFunctionType, builder : () -> IrSimpleFunction): IrSimpleFunction {
-        val key = NativeMapping.AtomicFunctionKey(this, type)
+    private inline fun atomicFunction(irField: IrField, type: NativeMapping.AtomicFunctionType, builder: () -> IrSimpleFunction): IrSimpleFunction {
+        val key = NativeMapping.AtomicFunctionKey(irField, type)
         return context.mapping.volatileFieldToAtomicFunction.getOrPut(key) {
             builder().also {
-                context.mapping.functionToVolatileField[it] = this@atomicFunction
+                context.mapping.functionToVolatileField[it] = irField
             }
         }
     }
 
-    fun IrField.compareAndSetFunction() = atomicFunction(NativeMapping.AtomicFunctionType.COMPARE_AND_SET) {
-        buildCasFunction(this, IntrinsicType.COMPARE_AND_SET, context.irBuiltIns.booleanType)
+    private fun compareAndSetFunction(irField: IrField) = atomicFunction(irField, NativeMapping.AtomicFunctionType.COMPARE_AND_SET) {
+        this.buildCasFunction(irField, IntrinsicType.COMPARE_AND_SET, this.context.irBuiltIns.booleanType)
     }
-    fun IrField.compareAndSwapFunction() = atomicFunction(NativeMapping.AtomicFunctionType.COMPARE_AND_SWAP) {
-        buildCasFunction(this, IntrinsicType.COMPARE_AND_SWAP, type)
+    private fun compareAndSwapFunction(irField: IrField) = atomicFunction(irField, NativeMapping.AtomicFunctionType.COMPARE_AND_SWAP) {
+        this.buildCasFunction(irField, IntrinsicType.COMPARE_AND_SWAP, irField.type)
     }
-    fun IrField.getAndSetFunction() = atomicFunction(NativeMapping.AtomicFunctionType.GET_AND_SET) {
-        buildAtomicRWMFunction(this, IntrinsicType.GET_AND_SET)
+    private fun getAndSetFunction(irField: IrField) = atomicFunction(irField, NativeMapping.AtomicFunctionType.GET_AND_SET) {
+        this.buildAtomicRWMFunction(irField, IntrinsicType.GET_AND_SET)
     }
-    fun IrField.getAndAddFunction() = atomicFunction(NativeMapping.AtomicFunctionType.GET_AND_ADD) {
-        buildAtomicRWMFunction(this, IntrinsicType.GET_AND_ADD)
+    private fun getAndAddFunction(irField: IrField) = atomicFunction(irField, NativeMapping.AtomicFunctionType.GET_AND_ADD) {
+        this.buildAtomicRWMFunction(irField, IntrinsicType.GET_AND_ADD)
     }
 
     private fun IrField.isInteger() = type == context.irBuiltIns.intType ||
@@ -135,10 +135,10 @@ internal class VolatileFieldsLowering(val context: Context) : FileLoweringPass {
                                 null
                             } else {
                                 listOfNotNull(it,
-                                        field.compareAndSetFunction(),
-                                        field.compareAndSwapFunction(),
-                                        field.getAndSetFunction(),
-                                        if (field.isInteger()) field.getAndAddFunction() else null
+                                        compareAndSetFunction(field),
+                                        compareAndSwapFunction(field),
+                                        getAndSetFunction(field),
+                                        if (field.isInteger()) getAndAddFunction(field) else null
                                 )
                             }
                         }
@@ -178,16 +178,16 @@ internal class VolatileFieldsLowering(val context: Context) : FileLoweringPass {
                 }
             }
 
+            private val intrinsicMap = mapOf(
+                    IntrinsicType.COMPARE_AND_SET_FIELD to ::compareAndSetFunction,
+                    IntrinsicType.COMPARE_AND_SWAP_FIELD to ::compareAndSwapFunction,
+                    IntrinsicType.GET_AND_SET_FIELD to ::getAndSetFunction,
+                    IntrinsicType.GET_AND_ADD_FIELD to ::getAndAddFunction,
+            )
+
             override fun visitCall(expression: IrCall): IrExpression {
                 expression.transformChildrenVoid(this)
-                val intrinsicType = tryGetIntrinsicType(expression)
-                when (intrinsicType) {
-                    IntrinsicType.COMPARE_AND_SET_FIELD -> {}
-                    IntrinsicType.COMPARE_AND_SWAP_FIELD -> {}
-                    IntrinsicType.GET_AND_SET_FIELD -> {}
-                    IntrinsicType.GET_AND_ADD_FIELD -> {}
-                    else -> return expression
-                }
+                val intrinsicType = tryGetIntrinsicType(expression).takeIf { it in intrinsicMap } ?: return expression
                 builder.at(expression)
                 val reference = expression.getValueArgument(0) as? IrPropertyReference
                         ?: return unsupported("Only compile-time known IrProperties supported for $intrinsicType")
@@ -199,13 +199,7 @@ internal class VolatileFieldsLowering(val context: Context) : FileLoweringPass {
                 if (backingField?.hasAnnotation(KonanFqNames.volatile) != true) {
                     return unsupported("Only volatile properties are supported for $intrinsicType")
                 }
-                val function = when (intrinsicType) {
-                    IntrinsicType.COMPARE_AND_SET_FIELD -> backingField.compareAndSetFunction()
-                    IntrinsicType.COMPARE_AND_SWAP_FIELD -> backingField.compareAndSwapFunction()
-                    IntrinsicType.GET_AND_SET_FIELD -> backingField.getAndSetFunction()
-                    IntrinsicType.GET_AND_ADD_FIELD -> backingField.getAndAddFunction()
-                    else -> error("Unknown intrinsic $intrinsicType")
-                }
+                val function = intrinsicMap[intrinsicType]!!(backingField)
                 return builder.irCall(function).apply {
                     dispatchReceiver = expression.extensionReceiver
                     putValueArgument(0, expression.getValueArgument(1))
