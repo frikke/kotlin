@@ -1,5 +1,6 @@
 // IGNORE_BACKEND_K2: JVM_IR
 // FIR status: questionable bytecode listing difference (open/final methods in final class)
+// IGNORE_INLINER: IR
 // WITH_STDLIB
 // WITH_COROUTINES
 // CHECK_BYTECODE_LISTING
