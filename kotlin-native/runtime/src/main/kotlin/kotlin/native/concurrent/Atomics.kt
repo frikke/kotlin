@@ -390,16 +390,16 @@ public class FreezableAtomicReference<T>(private var value_: T) {
 
 /**
  * Compares the value of the field referenced by [fieldRef] from [this] object to [expectedValue], and if they are equal,
- * atomically replace it with [newValue].
+ * atomically replaces it with [newValue].
  *
  * Comparison is done by reference or value depending on field representation.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
- * If property referenced by [fieldRef] has untrivial setter it will not be called.
+ * If property referenced by [fieldRef] has nontrivial setter it will not be called.
  *
- * Returns if the actual field value matched [expectedValue]
+ * Returns true if the actual field value matched [expectedValue]
  *
  * Legacy MM: if [fieldRef] is a reference for a non-value represented field, [IllegalArgumentException] would be thrown.
  */
@@ -409,16 +409,16 @@ internal external fun <T, S> T.compareAndSetField(filedRef: KMutableProperty1<T,
 
 /**
  * Compares the value of the field referenced by [fieldRef] from [this] object to [expectedValue], and if they are equal,
- * atomically replace it with [newValue].
+ * atomically replaces it with [newValue].
  *
  * Comparison is done by reference or value depending on field representation.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
- * If property referenced by [fieldRef] has untrivial setter it will not be called.
+ * If property referenced by [fieldRef] has nontrivial setter it will not be called.
  *
- * Returns if the actual field value before operation.
+ * Returns true if the actual field value before operation.
  *
  * Legacy MM: if [fieldRef] is a reference for a non-value represented field, [IllegalArgumentException] would be thrown.
  */
@@ -432,7 +432,7 @@ internal external fun <T, S> T.compareAndSwapField(filedRef: KMutableProperty1<T
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
- * If property referenced by [fieldRef] has untrivial setter it will not be called.
+ * If property referenced by [fieldRef] has nontrivial setter it will not be called.
  *
  * Legacy MM: if [fieldRef] is a reference for a non-value represented field, [IllegalArgumentException] would be thrown.
  */
@@ -442,12 +442,12 @@ internal external fun <T, S> T.getAndSetField(filedRef: KMutableProperty1<T, S>,
 
 
 /**
- * Atomically increment value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
+ * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
- * If property referenced by [fieldRef] has untrivial setter it will not be called.
+ * If property referenced by [fieldRef] has nontrivial setter it will not be called.
  *
  * Legacy MM: if [fieldRef] is a reference for a non-value represented field, [IllegalArgumentException] would be thrown.
  */
@@ -456,12 +456,12 @@ internal external fun <T, S> T.getAndSetField(filedRef: KMutableProperty1<T, S>,
 internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Short>, delta: Short): Short
 
 /**
- * Atomically increment value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
+ * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
- * If property referenced by [fieldRef] has untrivial setter it will not be called.
+ * If property referenced by [fieldRef] has nontrivial setter it will not be called.
  *
  * Legacy MM: if [fieldRef] is a reference for a non-value represented field, [IllegalArgumentException] would be thrown.
  */
@@ -470,12 +470,12 @@ internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Short>
 internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Int>, newValue: Int): Int
 
 /**
- * Atomically increment value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
+ * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
- * If property referenced by [fieldRef] has untrivial setter it will not be called.
+ * If property referenced by [fieldRef] has nontrivial setter it will not be called.
  *
  * Legacy MM: if [fieldRef] is a reference for a non-value represented field, [IllegalArgumentException] would be thrown.
  */
@@ -484,12 +484,12 @@ internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Int>, 
 internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Long>, newValue: Long): Long
 
 /**
- * Atomically increment value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
+ * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
- * If property referenced by [fieldRef] has untrivial setter it will not be called.
+ * If property referenced by [fieldRef] has nontrivial setter it will not be called.
  *
  * Legacy MM: if [fieldRef] is a reference for a non-value represented field, [IllegalArgumentException] would be thrown.
  */
