@@ -776,18 +776,17 @@ internal abstract class FunctionGenerationContext(
         }
     }
 
-    fun allocInstance(typeInfo: LLVMValueRef, lifetime: Lifetime, resultSlot: LLVMValueRef?) =
+    fun allocInstance(typeInfo: LLVMValueRef, lifetime: Lifetime, resultSlot: LLVMValueRef?) : LLVMValueRef =
             call(llvm.allocInstanceFunction, listOf(typeInfo), lifetime, resultSlot = resultSlot)
 
-    fun allocInstance(irClass: IrClass, lifetime: Lifetime, stackLocalsManager: StackLocalsManager, resultSlot: LLVMValueRef?) : LLVMValueRef {
-        return if (lifetime == Lifetime.STACK)
+    fun allocInstance(irClass: IrClass, lifetime: Lifetime, stackLocalsManager: StackLocalsManager, resultSlot: LLVMValueRef?) =
+        if (lifetime == Lifetime.STACK)
             stackLocalsManager.alloc(irClass,
                     // In case the allocation is not from the root scope, fields must be cleaned up explicitly,
                     // as the object might be being reused.
                     cleanFieldsExplicitly = stackLocalsManager != this.stackLocalsManager)
         else
             allocInstance(codegen.typeInfoForAllocation(irClass), lifetime, resultSlot)
-    }
 
     fun allocArray(
         irClass: IrClass,
