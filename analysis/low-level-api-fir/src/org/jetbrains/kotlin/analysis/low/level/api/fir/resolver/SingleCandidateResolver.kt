@@ -12,12 +12,13 @@ import org.jetbrains.kotlin.fir.expressions.FirEmptyArgumentList
 import org.jetbrains.kotlin.fir.expressions.FirExpression
 import org.jetbrains.kotlin.fir.expressions.FirFunctionCall
 import org.jetbrains.kotlin.fir.expressions.builder.buildFunctionCall
-import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.calls.*
+import org.jetbrains.kotlin.fir.resolve.createConeDiagnosticForCandidateWithError
 import org.jetbrains.kotlin.fir.resolve.inference.FirCallCompleter
 import org.jetbrains.kotlin.fir.symbols.impl.FirCallableSymbol
 import org.jetbrains.kotlin.fir.types.FirTypeProjection
 import org.jetbrains.kotlin.fir.types.FirTypeRef
+import org.jetbrains.kotlin.resolve.calls.tower.CandidateApplicability
 import org.jetbrains.kotlin.resolve.calls.tower.isSuccess
 
 class SingleCandidateResolver(
@@ -61,10 +62,20 @@ class SingleCandidateResolver(
         )
 
         val applicability = resolutionStageRunner.processCandidate(candidate, resolutionContext, stopOnFirstError = true)
-        if (applicability.isSuccess) {
-            return completeResolvedCandidate(candidate, resolutionParameters)
-        }
-        return null
+
+        val fakeCall = if (applicability.isSuccess) {
+            buildCallForResolvedCandidate(candidate, resolutionParameters)
+        } else if (
+            resolutionParameters.allowUnsafeCall && applicability == CandidateApplicability.UNSAFE_CALL ||
+            resolutionParameters.allowUnstableSmartCast && applicability == CandidateApplicability.UNSTABLE_SMARTCAST
+        ) {
+            buildCallForCandidateWithError(candidate, applicability, resolutionParameters)
+        } else return null
+
+        val expectedType = resolutionParameters.expectedType ?: bodyResolveComponents.noExpectedType
+        val completionResult = firCallCompleter.completeCall(fakeCall, expectedType)
+
+        return completionResult.result.takeIf { completionResult.callCompleted }
     }
 
     private fun createCandidateInfoProvider(resolutionParameters: ResolutionParameters): CandidateInfoProvider {
@@ -77,19 +88,25 @@ class SingleCandidateResolver(
         }
     }
 
-    private fun completeResolvedCandidate(candidate: Candidate, resolutionParameters: ResolutionParameters): FirFunctionCall? {
-        val fakeCall = buildFunctionCall {
+    private fun buildCallForResolvedCandidate(candidate: Candidate, resolutionParameters: ResolutionParameters): FirFunctionCall =
+        buildFunctionCall {
             calleeReference = FirNamedReferenceWithCandidate(
                 source = null,
                 name = resolutionParameters.callableSymbol.callableId.callableName,
                 candidate = candidate
             )
         }
-        val expectedType = resolutionParameters.expectedType ?: bodyResolveComponents.noExpectedType
-        val completionResult = firCallCompleter.completeCall(fakeCall, expectedType)
-        return if (completionResult.callCompleted) {
-            completionResult.result
-        } else null
+
+    private fun buildCallForCandidateWithError(
+        candidate: Candidate,
+        applicability: CandidateApplicability,
+        resolutionParameters: ResolutionParameters
+    ): FirFunctionCall {
+        val diagnostic = createConeDiagnosticForCandidateWithError(applicability, candidate)
+        val name = resolutionParameters.callableSymbol.callableId.callableName
+        return buildFunctionCall {
+            calleeReference = FirErrorReferenceWithCandidate(source = null, name, candidate, diagnostic)
+        }
     }
 }
 
@@ -101,6 +118,8 @@ class ResolutionParameters(
     val explicitReceiver: FirExpression? = null,
     val argumentList: FirArgumentList = FirEmptyArgumentList,
     val typeArgumentList: List<FirTypeProjection> = emptyList(),
+    val allowUnsafeCall: Boolean = false,
+    val allowUnstableSmartCast: Boolean = false,
 )
 
 enum class SingleCandidateResolutionMode {
