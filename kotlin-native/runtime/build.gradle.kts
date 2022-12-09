@@ -210,7 +210,8 @@ bitcode {
             onlyIf { targetSupportsThreads(target.name) }
         }
 
-        module("concurrent_ms_gc_custom", file("src/gc/cms")) {
+        module("concurrent_ms_gc_custom") {
+            srcRoot.set(layout.projectDirectory.dir("src/gc/cms"))
             headersDirs.from(files("src/gc/cms/cpp", "src/gc/common/cpp", "src/mm/cpp", "src/main/cpp", "src/custom_alloc/cpp"))
             compilerArgs.add("-DCUSTOM_ALLOCATOR")
 
