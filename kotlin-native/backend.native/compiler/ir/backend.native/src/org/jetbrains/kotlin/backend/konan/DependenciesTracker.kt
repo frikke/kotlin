@@ -48,7 +48,10 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
     private val stdlibRuntime by lazy { findStdlibFile(KonanFqNames.internalPackageName, "Runtime.kt") }
     private val stdlibKFunctionImpl by lazy { findStdlibFile(KonanFqNames.internalPackageName, "KFunctionImpl.kt") }
 
+    private var sealed = false
+
     fun add(origin: CompiledKlibFileOrigin, onlyBitcode: Boolean = false) {
+        require(!sealed) { "The dependencies have been sealed off" }
         val libraryFile = when (origin) {
             CompiledKlibFileOrigin.CurrentFile -> return
             is CompiledKlibFileOrigin.EntireModule -> null
@@ -75,9 +78,6 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
     private val topSortedLibraries by lazy {
         context.config.resolvedLibraries.getFullList(TopologicalLibraryOrder).map { it as KonanLibrary }
     }
-
-    val nativeDependenciesToLink: List<KonanLibrary>
-        get() = topSortedLibraries.filter { (!it.isDefault && !context.config.purgeUserLibs) || it in usedNativeDependencies }
 
     private inner class CachedBitcodeDependenciesComputer {
         private val allLibraries = topSortedLibraries.associateBy { it.uniqueName }
@@ -164,40 +164,54 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
         }
     }
 
-    val allCachedBitcodeDependencies: List<CachedBitcodeDependency> by lazy {
-        CachedBitcodeDependenciesComputer().allDependencies
-    }
+    private inner class Dependencies {
+        val allCachedBitcodeDependencies = CachedBitcodeDependenciesComputer().allDependencies
 
-    val allNativeDependencies: List<KonanLibrary> by lazy {
-        (nativeDependenciesToLink + allCachedBitcodeDependencies.map { it.library } /* Native dependencies are per library */).distinct()
-    }
+        val nativeDependenciesToLink = topSortedLibraries.filter { (!it.isDefault && !context.config.purgeUserLibs) || it in usedNativeDependencies }
 
-    val allBitcodeDependencies: List<CachedBitcodeDependency> by lazy {
-        val allBitcodeDependencies = mutableMapOf<KonanLibrary, CachedBitcodeDependency>()
-        for (library in context.librariesWithDependencies) {
-            if (context.config.cachedLibraries.getLibraryCache(library) == null || library == context.config.libraryToCache?.klib)
-                allBitcodeDependencies[library] = CachedBitcodeDependency.WholeModule(library)
-        }
-        for (dependency in allCachedBitcodeDependencies)
-            allBitcodeDependencies[dependency.library] = dependency
-        // This list is used in particular to build the libraries' initializers chain.
-        // The initializers must be called in the topological order, so make sure that the
-        // libraries list being returned is also toposorted.
-        topSortedLibraries.mapNotNull { allBitcodeDependencies[it] }
-    }
+        val allNativeDependencies = (nativeDependenciesToLink +
+                allCachedBitcodeDependencies.map { it.library } // Native dependencies are per library
+                ).distinct()
 
-    val bitcodeToLink: List<KonanLibrary> get() = topSortedLibraries.filter { shouldContainBitcode(it) }
-
-    private fun shouldContainBitcode(library: KonanLibrary): Boolean {
-        if (!generationState.llvmModuleSpecification.containsLibrary(library)) {
-            return false
+        val allBitcodeDependencies: List<CachedBitcodeDependency> = run {
+            val allBitcodeDependencies = mutableMapOf<KonanLibrary, CachedBitcodeDependency>()
+            for (library in context.librariesWithDependencies) {
+                if (context.config.cachedLibraries.getLibraryCache(library) == null || library == context.config.libraryToCache?.klib)
+                    allBitcodeDependencies[library] = CachedBitcodeDependency.WholeModule(library)
+            }
+            for (dependency in allCachedBitcodeDependencies)
+                allBitcodeDependencies[dependency.library] = dependency
+            // This list is used in particular to build the libraries' initializers chain.
+            // The initializers must be called in the topological order, so make sure that the
+            // libraries list being returned is also toposorted.
+            topSortedLibraries.mapNotNull { allBitcodeDependencies[it] }
         }
 
-        if (!generationState.llvmModuleSpecification.isFinal) {
-            return true
-        }
+        val bitcodeToLink = topSortedLibraries.filter { shouldContainBitcode(it) }
 
-        // Apply some DCE:
-        return (!library.isDefault && !context.config.purgeUserLibs) || bitcodeIsUsed(library)
+        private fun shouldContainBitcode(library: KonanLibrary): Boolean {
+            if (!generationState.llvmModuleSpecification.containsLibrary(library)) {
+                return false
+            }
+
+            if (!generationState.llvmModuleSpecification.isFinal) {
+                return true
+            }
+
+            // Apply some DCE:
+            return (!library.isDefault && !context.config.purgeUserLibs) || bitcodeIsUsed(library)
+        }
     }
+
+    private val dependencies by lazy {
+        sealed = true
+
+        Dependencies()
+    }
+
+    val allCachedBitcodeDependencies get() = dependencies.allCachedBitcodeDependencies
+    val nativeDependenciesToLink get() = dependencies.nativeDependenciesToLink
+    val allNativeDependencies get() = dependencies.allNativeDependencies
+    val allBitcodeDependencies get() = dependencies.allBitcodeDependencies
+    val bitcodeToLink get() = dependencies.bitcodeToLink
 }
