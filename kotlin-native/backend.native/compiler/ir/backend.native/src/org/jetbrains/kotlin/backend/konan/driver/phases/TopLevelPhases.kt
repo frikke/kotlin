@@ -104,7 +104,7 @@ internal fun PhaseEngine<out Context>.processModuleFragments(
         if (generationState.shouldLinkRuntimeNativeLibraries) {
             val stdlib = (context.standardLlvmSymbolsOrigin as DeserializedKlibModuleOrigin).library
             filesReferencedByNativeRuntime.forEach {
-                generationState.llvmImports.add(
+                generationState.dependenciesTracker.add(
                         CompiledKlibFileOrigin.CertainFile(stdlib, it.fqName.asString(), it.path))
             }
         }

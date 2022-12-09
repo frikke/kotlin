@@ -182,7 +182,7 @@ private fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef): LLVMValu
 }
 
 internal fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef, origin: CompiledKlibFileOrigin) =
-        importGlobal(name, type).also { llvm.imports.add(origin) }
+        importGlobal(name, type).also { llvm.dependenciesTracker.add(origin) }
 
 internal fun ContextUtils.importObjCGlobal(name: String, type: LLVMTypeRef) = importGlobal(name, type)
 

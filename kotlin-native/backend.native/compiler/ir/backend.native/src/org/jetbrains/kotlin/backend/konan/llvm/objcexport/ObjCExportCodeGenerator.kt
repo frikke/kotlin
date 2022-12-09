@@ -700,7 +700,7 @@ private fun ObjCExportCodeGenerator.replaceExternalWeakOrCommonGlobal(
         val global = codegen.importGlobal(name, value.llvmType, origin)
         externalGlobalInitializers[global] = value
     } else {
-        generationState.llvmImports.add(origin)
+        generationState.dependenciesTracker.add(origin)
         val global = staticData.placeGlobal(name, value, isExported = true)
 
         if (generationState.llvmModuleSpecification.importsKotlinDeclarationsFromOtherObjectFiles()) {

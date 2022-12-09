@@ -1303,7 +1303,7 @@ internal abstract class FunctionGenerationContext(
     }
 
     fun getObjCClass(binaryName: String, origin: CompiledKlibFileOrigin): LLVMValueRef {
-        llvm.imports.add(origin)
+        llvm.dependenciesTracker.add(origin)
         return load(codegen.objCDataGenerator!!.genClassRef(binaryName).llvm)
     }
 

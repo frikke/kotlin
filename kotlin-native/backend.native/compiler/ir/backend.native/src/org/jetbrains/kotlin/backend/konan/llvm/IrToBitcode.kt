@@ -2682,7 +2682,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
 
             llvm.otherStaticInitializers += initializer
         } else {
-            generationState.llvmImports.add(CompiledKlibFileOrigin.StdlibRuntime)
+            generationState.dependenciesTracker.add(CompiledKlibFileOrigin.StdlibRuntime)
             // Define a strong runtime global. It'll overrule a weak global defined in a statically linked runtime.
             val global = llvm.staticData.placeGlobal(name, value, true)
 
@@ -2752,7 +2752,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
     //-------------------------------------------------------------------------//
     fun appendStaticInitializers() {
         // Note: the list of libraries is topologically sorted (in order for initializers to be called correctly).
-        val dependencies = (llvm.allBitcodeDependencies + listOf(null)/* Null for "current" non-library module */)
+        val dependencies = (generationState.dependenciesTracker.allBitcodeDependencies + listOf(null)/* Null for "current" non-library module */)
 
         val libraryToInitializers = dependencies.associate { it?.library to mutableListOf<LLVMValueRef>() }
 
@@ -2807,9 +2807,9 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
                     is CachedLibraries.Cache.Monolithic -> listOf(addCtorFunction(ctorName))
                     is CachedLibraries.Cache.PerFile -> {
                         val files = when (dependency) {
-                            is Llvm.CachedBitcodeDependency.WholeModule ->
+                            is DependenciesTracker.CachedBitcodeDependency.WholeModule ->
                                 context.irLinker.klibToModuleDeserializerMap[library]!!.sortedFileIds
-                            is Llvm.CachedBitcodeDependency.CertainFiles ->
+                            is DependenciesTracker.CachedBitcodeDependency.CertainFiles ->
                                 dependency.files
                         }
                         files.map { addCtorFunction(fileCtorName(library.uniqueName, it)) }
