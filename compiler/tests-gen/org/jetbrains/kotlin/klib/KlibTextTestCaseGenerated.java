@@ -804,11 +804,6 @@ public class KlibTextTestCaseGenerated extends AbstractKlibTextTestCase {
             public void testTypeParameterBoundedBySubclass() throws Exception {
                 runTest("compiler/testData/ir/irText/declarations/parameters/typeParameterBoundedBySubclass.kt");
             }
-
-            @TestMetadata("useNextParamInLambda.kt")
-            public void testUseNextParamInLambda() throws Exception {
-                runTest("compiler/testData/ir/irText/declarations/parameters/useNextParamInLambda.kt");
-            }
         }
 
         @TestMetadata("compiler/testData/ir/irText/declarations/provideDelegate")

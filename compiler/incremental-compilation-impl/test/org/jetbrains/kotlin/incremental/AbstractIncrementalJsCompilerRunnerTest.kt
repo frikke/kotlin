@@ -43,6 +43,8 @@ abstract class AbstractIncrementalJsCompilerRunnerTest : AbstractIncrementalComp
             sourceMap = true
             metaInfo = true
             useDeprecatedLegacyCompiler = true
+            // TODO: It will be deleted after all of our internal vendors will use the new Kotlin/JS compiler
+            System.setProperty("old.js.compiler.isRequired", "true")
         }
 
     protected open val scopeExpansionMode = CompileScopeExpansionMode.NEVER

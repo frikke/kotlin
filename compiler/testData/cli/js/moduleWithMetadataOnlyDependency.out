@@ -1,1 +1,5 @@
+warning: '-Xlegacy-deprecated-no-warn' is deprecated and ignored, it will be removed in a future release
+warning: '-Xuse-deprecated-legacy-compiler' is deprecated and ignored, it will be removed in a future release
+warning: '-Xlegacy-deprecated-no-warn' is deprecated and ignored, it will be removed in a future release
+warning: '-Xuse-deprecated-legacy-compiler' is deprecated and ignored, it will be removed in a future release
 OK

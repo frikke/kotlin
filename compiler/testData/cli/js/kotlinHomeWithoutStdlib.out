@@ -1,2 +1,4 @@
+warning: '-Xlegacy-deprecated-no-warn' is deprecated and ignored, it will be removed in a future release
+warning: '-Xuse-deprecated-legacy-compiler' is deprecated and ignored, it will be removed in a future release
 warning: unable to find kotlin-stdlib-js.jar in the Kotlin home directory. Pass either '-no-stdlib' to prevent adding it to the classpath, or the correct '-kotlin-home'
 OK

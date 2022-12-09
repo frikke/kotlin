@@ -8,4 +8,4 @@ export KOTLIN_COMPILER=org.jetbrains.kotlin.cli.js.K2JSCompiler
 DIR="${BASH_SOURCE[0]%/*}"
 : ${DIR:="."}
 
-"${DIR}"/kotlinc "$@"
+JAVA_OPTS=-Xmx256m "${DIR}"/kotlinc "$@"

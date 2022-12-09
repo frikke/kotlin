@@ -167,6 +167,8 @@ abstract class AbstractKotlinCompilerIntegrationTest : TestCaseWithTmpdir() {
             args.add("-output")
             args.add(output.path)
             args.add("-meta-info")
+            // TODO: It will be deleted after all of our internal vendors will use the new Kotlin/JS compiler
+            System.setProperty("old.js.compiler.isRequired", "true")
         } else if (compiler is K2JVMCompiler || compiler is K2MetadataCompiler) {
             if (classpath.isNotEmpty()) {
                 args.add("-classpath")

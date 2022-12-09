@@ -51,6 +51,8 @@ abstract class AbstractJsProtoComparisonTest : AbstractProtoComparisonTest<Proto
             main = K2JsArgumentConstants.NO_CALL
             freeArgs = ktFiles
             useDeprecatedLegacyCompiler = true
+            // TODO: It will be deleted after all of our internal vendors will use the new Kotlin/JS compiler
+            System.setProperty("old.js.compiler.isRequired", "true")
         }
 
         val env = createTestingCompilerEnvironment(messageCollector, outputItemsCollector, services)

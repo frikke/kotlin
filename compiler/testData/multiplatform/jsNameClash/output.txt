@@ -5,6 +5,7 @@ Output:
 -- JS --
 Exit code: OK
 Output:
+warning: '-Xuse-deprecated-legacy-compiler' is deprecated and ignored, it will be removed in a future release
 warning: ==========
 This project currently uses the Kotlin/JS Legacy compiler backend, which has been deprecated and will be removed in a future release.
 

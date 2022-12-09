@@ -70,6 +70,12 @@ class AnalysisHandlerExtensionTest : TestCaseWithTmpdir() {
             listOf("-Xuse-deprecated-legacy-compiler", "-output", tmpdir.resolve("out.js").absolutePath)
         else
             listOf("-d", tmpdir.resolve("out").absolutePath)
+
+        if (compiler is K2JSCompiler) {
+            // TODO: It will be deleted after all of our internal vendors will use the new Kotlin/JS compiler
+            System.setProperty("old.js.compiler.isRequired", "true")
+        }
+
         val (output, exitCode) = CompilerTestUtil.executeCompiler(compiler, args + outputPath + extras)
         assertEquals(expectedExitCode, exitCode, output)
     }

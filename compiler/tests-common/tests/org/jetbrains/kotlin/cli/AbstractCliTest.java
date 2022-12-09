@@ -286,11 +286,22 @@ public abstract class AbstractCliTest extends TestCaseWithTmpdir {
     }
 
     protected void doJsTest(@NotNull String fileName) {
+        setupOldJsCompiler(fileName);
         doTest(fileName, new K2JSCompiler());
     }
 
     protected void doJsDceTest(@NotNull String fileName) {
+        setupOldJsCompiler(fileName);
         doTest(fileName, new K2JSDce());
+    }
+
+    private void setupOldJsCompiler(String fileName) {
+        if (fileName == null) return;
+        if (!fileName.contains("_strict")) {
+            System.setProperty("old.js.compiler.isRequired", "true");
+        } else {
+            System.setProperty("old.js.compiler.isRequired", "false");
+        }
     }
 
     protected void doMetadataTest(@NotNull String fileName) {

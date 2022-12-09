@@ -348,6 +348,9 @@ class K2JSCompilerArguments : CommonCompilerArguments() {
     )
     var legacyDeprecatedNoWarn: Boolean by FreezableVar(false)
 
+    val isUsageOfOldCompilerForced: Boolean
+        get() = System.getProperty("old.js.compiler.isRequired") == "true"
+
     private fun MessageCollector.deprecationWarn(value: Boolean, defaultValue: Boolean, name: String) {
         if (value != defaultValue) {
             report(CompilerMessageSeverity.WARNING, "'$name' is deprecated and ignored, it will be removed in a future release")

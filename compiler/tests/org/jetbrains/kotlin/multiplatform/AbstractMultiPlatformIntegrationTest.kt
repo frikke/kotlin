@@ -65,6 +65,8 @@ abstract class AbstractMultiPlatformIntegrationTest : KtUsefulTestCase() {
             if (jsSrc != null) {
                 appendLine()
                 appendLine("-- JS --")
+                // TODO: It will be deleted after all of our internal vendors will use the new Kotlin/JS compiler
+                System.setProperty("old.js.compiler.isRequired", "true")
                 appendLine(K2JSCompiler().compile(jsSrc, commonSrc, "-Xuse-deprecated-legacy-compiler", "-output", jsDest!!))
             }
 

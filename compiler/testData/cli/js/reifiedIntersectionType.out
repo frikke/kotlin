@@ -1,3 +1,5 @@
+warning: '-Xlegacy-deprecated-no-warn' is deprecated and ignored, it will be removed in a future release
+warning: '-Xuse-deprecated-legacy-compiler' is deprecated and ignored, it will be removed in a future release
 compiler/testData/cli/js/reifiedIntersectionType.kt:2:9: warning: variable 'flow' is never used
     val flow = combine(
         ^
