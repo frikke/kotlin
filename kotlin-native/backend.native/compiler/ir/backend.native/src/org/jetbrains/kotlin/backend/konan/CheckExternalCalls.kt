@@ -8,7 +8,6 @@ package org.jetbrains.kotlin.backend.konan
 import kotlinx.cinterop.toCValues
 import llvm.*
 import org.jetbrains.kotlin.backend.konan.llvm.*
-import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
 
 private fun LLVMValueRef.isFunctionCall() = LLVMIsACallInst(this) != null || LLVMIsAInvokeInst(this) != null
 
@@ -38,19 +37,19 @@ private class CallsChecker(generationState: NativeGenerationState, goodFunctions
     private fun moduleFunction(name: String) =
             LLVMGetNamedFunction(llvm.module, name) ?: throw IllegalStateException("$name function is not available")
 
-    val getMethodImpl = llvm.externalStdlibFunction(
+    val getMethodImpl = llvm.externalNativeRuntimeFunction(
             "class_getMethodImplementation",
             LlvmRetType(pointerType(functionType(llvm.voidType, false))),
             listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType))
     )
 
-    val getClass = llvm.externalStdlibFunction(
+    val getClass = llvm.externalNativeRuntimeFunction(
             "object_getClass",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType))
     )
 
-    val getSuperClass = llvm.externalStdlibFunction(
+    val getSuperClass = llvm.externalNativeRuntimeFunction(
             "class_getSuperclass",
             LlvmRetType(llvm.int8PtrType),
             listOf(LlvmParamType(llvm.int8PtrType))

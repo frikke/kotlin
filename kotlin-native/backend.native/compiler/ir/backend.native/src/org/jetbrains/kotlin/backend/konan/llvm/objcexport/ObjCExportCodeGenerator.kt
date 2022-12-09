@@ -16,7 +16,6 @@ import org.jetbrains.kotlin.backend.konan.descriptors.allOverriddenFunctions
 import org.jetbrains.kotlin.backend.konan.descriptors.isAbstract
 import org.jetbrains.kotlin.backend.konan.ir.KonanSymbols
 import org.jetbrains.kotlin.backend.konan.ir.isUnit
-import org.jetbrains.kotlin.backend.konan.ir.llvmSymbolOrigin
 import org.jetbrains.kotlin.backend.konan.ir.superClasses
 import org.jetbrains.kotlin.backend.konan.llvm.*
 import org.jetbrains.kotlin.backend.konan.llvm.objc.ObjCCodeGenerator
@@ -27,7 +26,6 @@ import org.jetbrains.kotlin.backend.konan.serialization.resolveFakeOverrideMaybe
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
-import org.jetbrains.kotlin.library.metadata.CompiledKlibModuleOrigin
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrClassReference
@@ -916,7 +914,7 @@ private fun ObjCExportCodeGenerator.emitSpecialClassesConvertions() {
 private fun ObjCExportCodeGenerator.emitCollectionConverters() {
 
     fun importConverter(name: String): ConstPointer =
-            constPointer(llvm.externalStdlibFunction(name, kotlinToObjCFunctionType).llvmValue)
+            constPointer(llvm.externalNativeRuntimeFunction(name, kotlinToObjCFunctionType).llvmValue)
 
     setObjCExportTypeInfo(
             symbols.list.owner,

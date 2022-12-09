@@ -7,9 +7,7 @@ package org.jetbrains.kotlin.backend.konan.llvm
 
 import kotlinx.cinterop.*
 import llvm.*
-import org.jetbrains.kotlin.backend.konan.Context
 import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
-import org.jetbrains.kotlin.library.metadata.CompiledKlibModuleOrigin
 
 internal val LLVMValueRef.type: LLVMTypeRef
     get() = LLVMTypeOf(this)!!
@@ -188,7 +186,7 @@ internal fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef, origin: 
 
 internal fun ContextUtils.importObjCGlobal(name: String, type: LLVMTypeRef) = importGlobal(name, type)
 
-internal fun ContextUtils.importStdlibGlobal(name: String, type: LLVMTypeRef) =
+internal fun ContextUtils.importNativeRuntimeGlobal(name: String, type: LLVMTypeRef) =
         importGlobal(name, type, CompiledKlibFileOrigin.StdlibRuntime)
 
 internal abstract class AddressAccess {
