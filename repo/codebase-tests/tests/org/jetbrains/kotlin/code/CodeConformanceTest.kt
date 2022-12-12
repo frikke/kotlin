@@ -18,59 +18,41 @@ class CodeConformanceTest : TestCase() {
         private val JAVA_FILE_PATTERN = Pattern.compile(".+\\.java")
         private val SOURCES_FILE_PATTERN = Pattern.compile(".+\\.(java|kt|js)")
         private const val MAX_STEPS_COUNT = 100
+
+        private val commonBuildDirsExcludes = setOf(
+            ".gradle",
+            "build",
+            "out",
+            "target",
+            "node_modules",
+        )
+
         private val nonSourcesMatcher = FileMatcher(
             File("."),
             listOf(
                 ".git",
                 ".idea",
-                "build/js",
-                "build/tmp",
                 "buildSrc",
-                "compiler/build",
                 "compiler/fir/lightTree/testData",
                 "compiler/testData/psi/kdoc",
                 "compiler/util/src/org/jetbrains/kotlin/config/MavenComparableVersion.java",
                 "dependencies",
-                "dependencies/protobuf/protobuf-relocated/build",
                 "dist",
                 "idea/testData/codeInsight/renderingKDoc",
                 "intellij",
-                "js/js.tests/.gradle",
-                "js/js.tests/build",
                 "js/js.translator/qunit/qunit.js",
-                "js/js.translator/testData/node_modules",
                 "local",
-                "libraries/kotlin.test/js/it/.gradle",
-                "libraries/kotlin.test/js/it/node_modules",
                 "libraries/reflect/api/src/java9/java/kotlin/reflect/jvm/internal/impl",
-                "libraries/reflect/build",
                 "libraries/stdlib/jdk8/moduleTest/NonExportedPackagesTest.kt",
-                "libraries/stdlib/js-ir/.gradle",
-                "libraries/stdlib/js-ir/build",
-                "libraries/stdlib/js-ir-minimal-for-test/.gradle",
-                "libraries/stdlib/js-ir-minimal-for-test/build",
-                "libraries/stdlib/js-v1/.gradle",
-                "libraries/stdlib/js-v1/build",
                 "libraries/tools/binary-compatibility-validator/src/main/kotlin/org.jetbrains.kotlin.tools",
-                "libraries/tools/kotlin-gradle-plugin-core/gradle_api_jar/build/tmp",
-                "libraries/tools/kotlin-gradle-plugin-integration-tests/build",
-                "libraries/tools/kotlin-gradle-plugin-integration-tests/out",
                 "libraries/tools/kotlin-js-tests/src/test/web/qunit.js",
-                "libraries/tools/kotlin-maven-plugin/target",
-                "libraries/tools/kotlin-source-map-loader/.gradle",
-                "libraries/tools/kotlin-test-js-runner/.gradle",
                 "libraries/tools/kotlin-test-js-runner/lib",
-                "libraries/tools/kotlin-test-js-runner/node_modules",
-                "libraries/tools/kotlin-test-nodejs-runner/.gradle",
-                "libraries/tools/kotlin-test-nodejs-runner/node_modules",
                 "libraries/tools/kotlinp/src",
-                "libraries/tools/new-project-wizard/new-project-wizard-cli/build",
-                "out",
                 "repo/codebase-tests/tests/org/jetbrains/kotlin/code/CodeConformanceTest.kt",
-                "kotlin-native/build",
                 "kotlin-native/performance",
                 "kotlin-native/samples"
-            )
+            ),
+            commonBuildDirs = commonBuildDirsExcludes
         )
 
         private val COPYRIGHT_EXCLUDED_FILES_AND_DIRS_MATCHER = FileMatcher(
@@ -290,13 +272,21 @@ class CodeConformanceTest : TestCase() {
         }
     }
 
-    private class FileMatcher(val root: File, paths: Collection<String>) {
+    private class FileMatcher(
+        val root: File,
+        paths: Collection<String>,
+        val commonBuildDirs: Collection<String> = emptyList(),
+    ) {
         private val files = paths.map { File(it) }
         private val paths = files.mapTo(HashSet()) { it.invariantSeparatorsPath }
         private val relativePaths = files.filterTo(ArrayList()) { it.isDirectory }.mapTo(HashSet()) { it.invariantSeparatorsPath + "/" }
 
         fun matchExact(file: File): Boolean {
             return file.relativeTo(root).invariantSeparatorsPath in paths
+        }
+
+        fun matchCommonBuildDir(file: File): Boolean {
+            return file.isDirectory && file.name in commonBuildDirs
         }
 
         fun matchWithContains(file: File): Boolean {
@@ -309,7 +299,7 @@ class CodeConformanceTest : TestCase() {
     private fun FileMatcher.excludeWalkTopDown(filePattern: Pattern): Sequence<File> {
         return root.walkTopDown()
             .onEnter { dir ->
-                !matchExact(dir) // Don't enter to ignored dirs
+                !matchExact(dir) && !matchCommonBuildDir(dir) // Don't enter to ignored dirs
             }
             .filter { file -> !matchExact(file) } // filter ignored files
             .filter { file -> filePattern.matcher(file.name).matches() }
