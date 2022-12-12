@@ -432,8 +432,11 @@ class ClassCodegen private constructor(
         val mv = with(node) { visitor.newMethod(method.descriptorOrigin, access, name, desc, signature, exceptions.toTypedArray()) }
         val smapCopier = SourceMapCopier(classSMAP, smap)
         val smapCopyingVisitor = object : MethodVisitor(Opcodes.API_VERSION, mv) {
-            override fun visitLineNumber(line: Int, start: Label) =
-                super.visitLineNumber(smapCopier.mapLineNumber(line), start)
+            override fun visitLineNumber(line: Int, start: Label) {
+                val mapLineNumber = smapCopier.mapLineNumber(line)
+//                if (mapLineNumber < 0) error("-1")
+                super.visitLineNumber(mapLineNumber, start)
+            }
         }
         if (method.hasContinuation()) {
             // Generate a state machine within this method. The continuation class for it should be generated
