@@ -15,7 +15,6 @@ import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.konan.target.KonanTarget
 import org.jetbrains.kotlin.library.KotlinLibrary
-import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 

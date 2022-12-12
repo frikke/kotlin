@@ -6,7 +6,6 @@
 package org.jetbrains.kotlin.backend.konan
 
 import llvm.*
-import org.jetbrains.kotlin.backend.konan.descriptors.isFromInteropLibrary
 import org.jetbrains.kotlin.backend.konan.driver.BasicPhaseContext
 import org.jetbrains.kotlin.backend.konan.llvm.*
 import org.jetbrains.kotlin.backend.konan.llvm.coverage.CoverageManager
@@ -15,12 +14,8 @@ import org.jetbrains.kotlin.backend.konan.serialization.SerializedClassFields
 import org.jetbrains.kotlin.backend.konan.serialization.SerializedEagerInitializedFile
 import org.jetbrains.kotlin.backend.konan.serialization.SerializedInlineFunctionReference
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.util.getPackageFragment
 import org.jetbrains.kotlin.konan.TempFiles
 import org.jetbrains.kotlin.konan.file.File
-import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
-import org.jetbrains.kotlin.library.metadata.CurrentKlibModuleOrigin
-import org.jetbrains.kotlin.library.metadata.DeserializedKlibModuleOrigin
 
 internal class InlineFunctionOriginInfo(val irFunction: IrFunction, val irFile: IrFile, val startOffset: Int, val endOffset: Int)
 
@@ -109,30 +104,6 @@ internal class NativeGenerationState(
     val coverage by lazy { CoverageManager(this) }
 
     lateinit var objCExport: ObjCExport
-
-    fun computeOrigin(irFile: IrFile) = computeOrigin(irFile) { irFile.path }
-
-    fun computeOrigin(declaration: IrDeclaration) =
-            computeOrigin(declaration.getPackageFragment()) {
-                context.irLinker.getExternalDeclarationFileName(declaration)
-            }
-
-    private fun computeOrigin(packageFragment: IrPackageFragment, filePathGetter: () -> String): CompiledKlibFileOrigin {
-        return if (packageFragment.isFunctionInterfaceFile)
-            CompiledKlibFileOrigin.StdlibKFunctionImpl
-        else {
-            val library = when (val origin = packageFragment.packageFragmentDescriptor.llvmSymbolOrigin) {
-                CurrentKlibModuleOrigin -> config.libraryToCache?.klib?.takeIf { config.producePerFileCache }
-                else -> (origin as DeserializedKlibModuleOrigin).library
-            }
-            when {
-                library == null -> CompiledKlibFileOrigin.CurrentFile
-                packageFragment.packageFragmentDescriptor.containingDeclaration.isFromInteropLibrary() ->
-                    CompiledKlibFileOrigin.EntireModule(library)
-                else -> CompiledKlibFileOrigin.CertainFile(library, packageFragment.fqName.asString(), filePathGetter())
-            }
-        }
-    }
 
     fun hasDebugInfo() = debugInfoDelegate.isInitialized()
 

@@ -6,17 +6,32 @@
 package org.jetbrains.kotlin.backend.konan
 
 import org.jetbrains.kotlin.backend.common.atMostOne
+import org.jetbrains.kotlin.backend.konan.descriptors.isFromInteropLibrary
 import org.jetbrains.kotlin.backend.konan.descriptors.isInteropLibrary
 import org.jetbrains.kotlin.backend.konan.llvm.FunctionOrigin
+import org.jetbrains.kotlin.backend.konan.llvm.llvmSymbolOrigin
 import org.jetbrains.kotlin.backend.konan.llvm.standardLlvmSymbolsOrigin
 import org.jetbrains.kotlin.ir.declarations.*
+import org.jetbrains.kotlin.ir.util.getPackageFragment
 import org.jetbrains.kotlin.konan.library.KonanLibrary
 import org.jetbrains.kotlin.library.KotlinLibrary
 import org.jetbrains.kotlin.library.uniqueName
-import org.jetbrains.kotlin.library.metadata.CompiledKlibFileOrigin
+import org.jetbrains.kotlin.library.metadata.CurrentKlibModuleOrigin
 import org.jetbrains.kotlin.library.metadata.DeserializedKlibModuleOrigin
 import org.jetbrains.kotlin.library.metadata.resolver.TopologicalLibraryOrder
 import org.jetbrains.kotlin.name.FqName
+
+private sealed class FileOrigin {
+    object CurrentFile : FileOrigin() // No dependency should be added.
+
+    object StdlibRuntime : FileOrigin()
+
+    object StdlibKFunctionImpl : FileOrigin()
+
+    class EntireModule(val library: KotlinLibrary) : FileOrigin()
+
+    class CertainFile(val library: KotlinLibrary, val fqName: String, val filePath: String) : FileOrigin()
+}
 
 internal class DependenciesTracker(private val generationState: NativeGenerationState) {
     data class LibraryFile(val library: KotlinLibrary, val fqName: String, val filePath: String)
@@ -27,6 +42,7 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
         class CertainFiles(library: KonanLibrary, val files: List<String>) : CachedBitcodeDependency(library)
     }
 
+    private val config = generationState.config
     private val context = generationState.context
     private val usedBitcode = mutableSetOf<KotlinLibrary>()
     private val usedNativeDependencies = mutableSetOf<KotlinLibrary>()
@@ -50,33 +66,49 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
 
     private var sealed = false
 
-    fun add(functionOrigin: FunctionOrigin, onlyBitcode: Boolean = false) = when(functionOrigin) {
+    fun add(functionOrigin: FunctionOrigin, onlyBitcode: Boolean = false) = when (functionOrigin) {
         FunctionOrigin.FromNativeRuntime -> addNativeRuntime(onlyBitcode)
         is FunctionOrigin.OwnedBy -> add(functionOrigin.declaration, onlyBitcode)
     }
 
-    fun add(irFile: IrFile, onlyBitcode: Boolean = false) {
-        add(generationState.computeOrigin(irFile), onlyBitcode)
+    fun add(irFile: IrFile, onlyBitcode: Boolean = false): Unit =
+            add(computeFileOrigin(irFile) { irFile.path }, onlyBitcode)
+
+    fun add(declaration: IrDeclaration, onlyBitcode: Boolean = false): Unit =
+            add(computeFileOrigin(declaration.getPackageFragment()) {
+                context.irLinker.getExternalDeclarationFileName(declaration)
+            }, onlyBitcode)
+
+    fun addNativeRuntime(onlyBitcode: Boolean = false) =
+            add(FileOrigin.StdlibRuntime, onlyBitcode)
+
+    private fun computeFileOrigin(packageFragment: IrPackageFragment, filePathGetter: () -> String): FileOrigin {
+        return if (packageFragment.isFunctionInterfaceFile)
+            FileOrigin.StdlibKFunctionImpl
+        else {
+            val library = when (val origin = packageFragment.packageFragmentDescriptor.llvmSymbolOrigin) {
+                CurrentKlibModuleOrigin -> config.libraryToCache?.klib?.takeIf { config.producePerFileCache }
+                else -> (origin as DeserializedKlibModuleOrigin).library
+            }
+            when {
+                library == null -> FileOrigin.CurrentFile
+                packageFragment.packageFragmentDescriptor.containingDeclaration.isFromInteropLibrary() ->
+                    FileOrigin.EntireModule(library)
+                else -> FileOrigin.CertainFile(library, packageFragment.fqName.asString(), filePathGetter())
+            }
+        }
     }
 
-    fun add(declaration: IrDeclaration, onlyBitcode: Boolean = false) {
-        add(generationState.computeOrigin(declaration), onlyBitcode)
-    }
-
-    fun addNativeRuntime(onlyBitcode: Boolean = false) {
-        add(CompiledKlibFileOrigin.StdlibRuntime, onlyBitcode)
-    }
-
-    private fun add(origin: CompiledKlibFileOrigin, onlyBitcode: Boolean = false) {
+    private fun add(origin: FileOrigin, onlyBitcode: Boolean = false) {
         require(!sealed) { "The dependencies have been sealed off" }
         val libraryFile = when (origin) {
-            CompiledKlibFileOrigin.CurrentFile -> return
-            is CompiledKlibFileOrigin.EntireModule -> null
-            is CompiledKlibFileOrigin.CertainFile -> LibraryFile(origin.library, origin.fqName, origin.filePath)
-            CompiledKlibFileOrigin.StdlibRuntime -> stdlibRuntime
-            CompiledKlibFileOrigin.StdlibKFunctionImpl -> stdlibKFunctionImpl
+            FileOrigin.CurrentFile -> return
+            is FileOrigin.EntireModule -> null
+            is FileOrigin.CertainFile -> LibraryFile(origin.library, origin.fqName, origin.filePath)
+            FileOrigin.StdlibRuntime -> stdlibRuntime
+            FileOrigin.StdlibKFunctionImpl -> stdlibKFunctionImpl
         }
-        val library = libraryFile?.library ?: (origin as CompiledKlibFileOrigin.EntireModule).library
+        val library = libraryFile?.library ?: (origin as FileOrigin.EntireModule).library
         if (library !in allLibraries)
             error("Library (${library.libraryName}) is used but not requested.\nRequested libraries: ${allLibraries.joinToString { it.libraryName }}")
 
