@@ -127,7 +127,7 @@ class JvmClassFileBasedSymbolProvider(
         return ClassMetadataFindResult.Metadata(
             nameResolver,
             classProto,
-            JvmBinaryAnnotationDeserializer(session, kotlinClass, kotlinClassFinder, result.byteContent),
+            JvmBinaryAnnotationDeserializer(session, kotlinClass, kotlinClassFinder, result.content),
             moduleDataProvider.getModuleData(kotlinClass.containingLibrary?.toPath()),
             KotlinJvmBinarySourceElement(kotlinClass),
             classPostProcessor = { loadAnnotationsFromClassFile(result, it) }
@@ -154,7 +154,7 @@ class JvmClassFileBasedSymbolProvider(
                 override fun visitEnd() {
                 }
             },
-            kotlinClass.byteContent,
+            kotlinClass.content,
         )
         symbol.fir.replaceDeprecationsProvider(symbol.fir.getDeprecationsProvider(session.firCachesFactory))
     }

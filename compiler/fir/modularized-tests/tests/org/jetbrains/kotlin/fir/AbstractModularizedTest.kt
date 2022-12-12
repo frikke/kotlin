@@ -112,6 +112,8 @@ abstract class AbstractModularizedTest : KtUsefulTestCase() {
         // in case of modular jdk only
         configuration.putIfNotNull(JVMConfigurationKeys.JDK_HOME, moduleData.modularJdkRoot)
 
+        configuration.put(CommonConfigurationKeys.USE_FIR, true)
+
         configuration.addAll(
             CLIConfigurationKeys.CONTENT_ROOTS,
             moduleData.sources.filter { it.extension == "kt" || it.isDirectory }.map { KotlinSourceRoot(it.absolutePath, false) })

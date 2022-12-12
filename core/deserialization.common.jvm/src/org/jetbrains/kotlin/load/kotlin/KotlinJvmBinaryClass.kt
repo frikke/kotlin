@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.constants.ClassLiteralValue
+import org.jetbrains.kotlin.utils.ReusableByteArray
 
 interface KotlinJvmBinaryClass {
     val classId: ClassId
@@ -22,9 +23,9 @@ interface KotlinJvmBinaryClass {
     val containingLibrary: String?
         get() = null
 
-    fun loadClassAnnotations(visitor: AnnotationVisitor, cachedContents: ByteArray?)
+    fun loadClassAnnotations(visitor: AnnotationVisitor, cachedContents: ReusableByteArray?)
 
-    fun visitMembers(visitor: MemberVisitor, cachedContents: ByteArray?)
+    fun visitMembers(visitor: MemberVisitor, cachedContents: ReusableByteArray?)
 
     val classHeader: KotlinClassHeader
 

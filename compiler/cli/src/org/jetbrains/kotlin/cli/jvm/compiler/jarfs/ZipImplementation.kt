@@ -5,10 +5,16 @@
 
 package org.jetbrains.kotlin.cli.jvm.compiler.jarfs
 
+import org.jetbrains.kotlin.utils.ReusableByteArray
+import org.jetbrains.kotlin.utils.ReusableByteArrayInputStream
+import org.jetbrains.kotlin.utils.takeReusableByteArray
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
+import java.util.concurrent.locks.ReentrantLock
 import java.util.zip.Inflater
+import kotlin.concurrent.withLock
 
 
 class ZipEntryDescription(
@@ -32,32 +38,58 @@ private const val END_OF_CENTRAL_DIR_ZIP64_SIZE = 56
 private const val LOCAL_FILE_HEADER_EXTRA_OFFSET = 28
 private const val LOCAL_FILE_HEADER_SIZE = LOCAL_FILE_HEADER_EXTRA_OFFSET + 2
 
-fun MappedByteBuffer.contentsToByteArray(
-    zipEntryDescription: ZipEntryDescription
-): ByteArray {
+class ZipByteBuffer(private val buf: MappedByteBuffer) {
+    internal fun <T> withBuf(action: MappedByteBuffer.() -> T): T = synchronized(this) {
+        action(buf)
+    }
+
+    fun contentsToByteArraySync(zipEntryDescription: ZipEntryDescription): ByteArray = withBuf {
+        contentsToByteArray(zipEntryDescription)
+    }
+
+    fun contentsToInputStreamSync(zipEntryDescription: ZipEntryDescription): InputStream = withBuf {
+        contentsToInputStream(zipEntryDescription)
+    }
+}
+
+private fun MappedByteBuffer.getCompressed(zipEntryDescription: ZipEntryDescription): ReusableByteArray {
     order(ByteOrder.LITTLE_ENDIAN)
-    val extraSize =
-        getUnsignedShort(zipEntryDescription.offsetInFile + LOCAL_FILE_HEADER_EXTRA_OFFSET)
+    val extraSize = getUnsignedShort(zipEntryDescription.offsetInFile + LOCAL_FILE_HEADER_EXTRA_OFFSET)
+    position(zipEntryDescription.offsetInFile + LOCAL_FILE_HEADER_SIZE + zipEntryDescription.fileNameSize + extraSize)
+    val compressed = takeReusableByteArray(zipEntryDescription.compressedSize)
+    get(compressed.bytes, 0, zipEntryDescription.compressedSize)
+    return compressed
+}
 
-    position(
-        zipEntryDescription.offsetInFile + LOCAL_FILE_HEADER_SIZE + zipEntryDescription.fileNameSize + extraSize
-    )
-    val compressed = ByteArray(zipEntryDescription.compressedSize + 1)
-    get(compressed, 0, zipEntryDescription.compressedSize)
-
+fun MappedByteBuffer.contentsToByteArray(zipEntryDescription: ZipEntryDescription): ByteArray {
+    val compressed = getCompressed(zipEntryDescription)
     return when (zipEntryDescription.compressionKind) {
         ZipEntryDescription.CompressionKind.DEFLATE -> {
             val inflater = Inflater(true)
-            inflater.setInput(compressed, 0, zipEntryDescription.compressedSize)
-
+            inflater.setInput(compressed.bytes, 0, zipEntryDescription.compressedSize)
             val result = ByteArray(zipEntryDescription.uncompressedSize)
-
             inflater.inflate(result)
-
             result
         }
 
-        ZipEntryDescription.CompressionKind.PLAIN -> compressed.copyOf(zipEntryDescription.compressedSize)
+        ZipEntryDescription.CompressionKind.PLAIN -> compressed.bytes.copyOf(zipEntryDescription.compressedSize)
+    }
+}
+
+private fun MappedByteBuffer.contentsToInputStream(
+    zipEntryDescription: ZipEntryDescription
+): InputStream {
+    val compressed = getCompressed(zipEntryDescription)
+    return when (zipEntryDescription.compressionKind) {
+        ZipEntryDescription.CompressionKind.DEFLATE -> {
+            val inflater = Inflater(true)
+            inflater.setInput(compressed.bytes, 0, zipEntryDescription.compressedSize)
+            val result = takeReusableByteArray(zipEntryDescription.uncompressedSize)
+            inflater.inflate(result.bytes, 0, zipEntryDescription.uncompressedSize)
+            ReusableByteArrayInputStream(result)
+        }
+
+        ZipEntryDescription.CompressionKind.PLAIN -> ReusableByteArrayInputStream(compressed)
     }
 }
 

@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.load.kotlin
 import org.jetbrains.kotlin.load.java.structure.JavaClass
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.serialization.deserialization.KotlinMetadataFinder
+import org.jetbrains.kotlin.utils.ReusableByteArray
 
 interface KotlinClassFinder : KotlinMetadataFinder {
     fun findKotlinClassOrContent(classId: ClassId): Result?
@@ -28,15 +29,14 @@ interface KotlinClassFinder : KotlinMetadataFinder {
     sealed class Result {
         fun toKotlinJvmBinaryClass(): KotlinJvmBinaryClass? = (this as? KotlinClass)?.kotlinJvmBinaryClass
 
-        class KotlinClass(val kotlinJvmBinaryClass: KotlinJvmBinaryClass, val byteContent: ByteArray? = null) : Result() {
+        abstract val content: ReusableByteArray?
+
+        class KotlinClass(val kotlinJvmBinaryClass: KotlinJvmBinaryClass, override val content: ReusableByteArray? = null) : Result() {
             operator fun component1(): KotlinJvmBinaryClass = kotlinJvmBinaryClass
-            operator fun component2(): ByteArray? = byteContent
+            operator fun component2(): ReusableByteArray? = content
         }
 
-        class ClassFileContent(
-            @Suppress("ArrayInDataClass")
-            val content: ByteArray
-        ) : Result()
+        class ClassFileContent(override val content: ReusableByteArray) : Result()
     }
 }
 

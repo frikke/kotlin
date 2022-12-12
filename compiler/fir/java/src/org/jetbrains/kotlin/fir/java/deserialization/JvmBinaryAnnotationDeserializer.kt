@@ -24,6 +24,7 @@ import org.jetbrains.kotlin.protobuf.MessageLite
 import org.jetbrains.kotlin.resolve.constants.ClassLiteralValue
 import org.jetbrains.kotlin.serialization.deserialization.builtins.BuiltInSerializerProtocol
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
+import org.jetbrains.kotlin.utils.ReusableByteArray
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
 
 
@@ -31,7 +32,7 @@ fun JvmBinaryAnnotationDeserializer(
     session: FirSession,
     kotlinBinaryClass: KotlinJvmBinaryClass,
     kotlinClassFinder: KotlinClassFinder,
-    byteContent: ByteArray?
+    byteContent: ReusableByteArray?
 ) = JvmBinaryAnnotationDeserializer(
     session,
     kotlinBinaryClass,
@@ -299,7 +300,7 @@ private fun FirSession.loadMemberAnnotations(
 
 private fun readMemberAnnotationNodes(
     kotlinBinaryClass: KotlinJvmBinaryClass,
-    byteContent: ByteArray?,
+    byteContent: ReusableByteArray?,
 ): Map<MemberSignature, List<JvmAnnotationNode>> {
     val memberAnnotations = HashMap<MemberSignature, MutableList<JvmAnnotationNode>>()
 

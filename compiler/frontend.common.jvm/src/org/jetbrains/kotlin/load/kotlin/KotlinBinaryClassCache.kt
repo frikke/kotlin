@@ -12,7 +12,7 @@ import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiJavaModule
-import org.jetbrains.kotlin.load.kotlin.KotlinClassFinder
+import org.jetbrains.kotlin.utils.ReusableByteArray
 import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -28,11 +28,20 @@ class KotlinBinaryClassCache : Disposable {
             file: VirtualFile,
             result: KotlinClassFinder.Result?
         ): KotlinClassFinder.Result? {
+            check(virtualFile == null)
             virtualFile = file
-            this.result = result
             modificationStamp = file.modificationStamp
-
+            this.result = result
+            result?.content?.markRetained(true)
             return result
+        }
+
+        fun clear() {
+            if (virtualFile == null) return
+            virtualFile = null
+            modificationStamp = 0
+            result?.content?.markRetained(false)
+            result = null
         }
     }
 
@@ -46,10 +55,7 @@ class KotlinBinaryClassCache : Disposable {
 
     override fun dispose() {
         for (cache in requestCaches) {
-            cache.get()?.run {
-                result = null
-                virtualFile = null
-            }
+            cache.get()?.clear()
         }
         requestCaches.clear()
         // This is only relevant for tests. We create a new instance of Application for each test, and so a new instance of this service is
@@ -60,7 +66,7 @@ class KotlinBinaryClassCache : Disposable {
 
     companion object {
         fun getKotlinBinaryClassOrClassFileContent(
-            file: VirtualFile, fileContent: ByteArray? = null
+            file: VirtualFile, fileContent: ReusableByteArray? = null
         ): KotlinClassFinder.Result? {
             if (file.extension != JavaClassFileType.INSTANCE.defaultExtension &&
                 file.fileType !== JavaClassFileType.INSTANCE
@@ -74,6 +80,9 @@ class KotlinBinaryClassCache : Disposable {
             if (file.modificationStamp == requestCache.modificationStamp && file == requestCache.virtualFile) {
                 return requestCache.result
             }
+
+            // Clear cache first, so that the previous byte array can be reused
+            requestCache.clear()
 
             val aClass = ApplicationManager.getApplication().runReadAction(Computable {
                 VirtualFileKotlinClass.create(file, fileContent)

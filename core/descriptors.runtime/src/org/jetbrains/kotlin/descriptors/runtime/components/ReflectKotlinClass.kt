@@ -29,6 +29,7 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.SpecialNames
 import org.jetbrains.kotlin.resolve.constants.ClassLiteralValue
 import org.jetbrains.kotlin.resolve.jvm.JvmPrimitiveType
+import org.jetbrains.kotlin.utils.ReusableByteArray
 import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
@@ -64,11 +65,11 @@ class ReflectKotlinClass private constructor(
     override val classId: ClassId
         get() = klass.classId
 
-    override fun loadClassAnnotations(visitor: KotlinJvmBinaryClass.AnnotationVisitor, cachedContents: ByteArray?) {
+    override fun loadClassAnnotations(visitor: KotlinJvmBinaryClass.AnnotationVisitor, cachedContents: ReusableByteArray?) {
         ReflectClassStructure.loadClassAnnotations(klass, visitor)
     }
 
-    override fun visitMembers(visitor: KotlinJvmBinaryClass.MemberVisitor, cachedContents: ByteArray?) {
+    override fun visitMembers(visitor: KotlinJvmBinaryClass.MemberVisitor, cachedContents: ReusableByteArray?) {
         ReflectClassStructure.visitMembers(klass, visitor)
     }
 

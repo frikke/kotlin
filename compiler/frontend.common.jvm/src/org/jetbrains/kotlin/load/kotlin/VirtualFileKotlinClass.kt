@@ -13,6 +13,8 @@ import org.jetbrains.kotlin.load.kotlin.KotlinClassFinder.Result.KotlinClass
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.util.PerformanceCounter
+import org.jetbrains.kotlin.utils.ReusableByteArray
+import org.jetbrains.kotlin.utils.readToReusableByteArray
 import java.io.FileNotFoundException
 import java.io.IOException
 
@@ -30,9 +32,9 @@ class VirtualFileKotlinClass private constructor(
     override val containingLibrary: String?
         get() = file.path.split("!/").firstOrNull()
 
-    override fun getFileContents(): ByteArray {
+    override fun getFileContents(): ReusableByteArray {
         try {
-            return file.contentsToByteArray()
+            return file.inputStream.readToReusableByteArray()
         } catch (e: IOException) {
             throw logFileReadingErrorMessage(e, file)
         }
@@ -46,12 +48,12 @@ class VirtualFileKotlinClass private constructor(
         private val LOG = Logger.getInstance(VirtualFileKotlinClass::class.java)
         private val perfCounter = PerformanceCounter.create("Binary class from Kotlin file")
 
-        internal fun create(file: VirtualFile, fileContent: ByteArray?): KotlinClassFinder.Result? {
+        internal fun create(file: VirtualFile, fileContent: ReusableByteArray?): KotlinClassFinder.Result? {
             return perfCounter.time {
                 assert(file.extension == JavaClassFileType.INSTANCE.defaultExtension || file.fileType == JavaClassFileType.INSTANCE) { "Trying to read binary data from a non-class file $file" }
 
                 try {
-                    val byteContent = fileContent ?: file.contentsToByteArray(false)
+                    val byteContent = fileContent ?: file.inputStream.readToReusableByteArray()
                     if (byteContent.isNotEmpty()) {
                         val kotlinJvmBinaryClass = create(byteContent) { name, classVersion, header, innerClasses ->
                             VirtualFileKotlinClass(file, name, classVersion, header, innerClasses)

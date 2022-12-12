@@ -4,10 +4,12 @@
  */
 package org.jetbrains.kotlin.cli.jvm.compiler.jarfs
 
+import com.intellij.openapi.util.io.BufferExposingByteArrayInputStream
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.InputStream
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 
@@ -99,11 +101,22 @@ class FastJarHandler(val fileSystem: FastJarFileSystem, path: String) {
 
     fun contentsToByteArray(zipEntryDescription: ZipEntryDescription): ByteArray {
         val relativePath = zipEntryDescription.relativePath
-        if (StringUtil.equals(relativePath, MANIFEST_PATH)) return cachedManifest ?: throw FileNotFoundException("$file!/$relativePath")
+        if (StringUtil.equals(relativePath, MANIFEST_PATH)) {
+            return cachedManifest ?: throw FileNotFoundException("$file!/$relativePath")
+        }
         return fileSystem.cachedOpenFileHandles[file].use {
-            synchronized(it) {
-                it.get().second.contentsToByteArray(zipEntryDescription)
-            }
+            it.get().second.contentsToByteArraySync(zipEntryDescription)
+        }
+    }
+
+    fun contentsToInputStream(zipEntryDescription: ZipEntryDescription): InputStream {
+        val relativePath = zipEntryDescription.relativePath
+        if (StringUtil.equals(relativePath, MANIFEST_PATH)) {
+            return cachedManifest?.let { BufferExposingByteArrayInputStream(it) }
+                ?: throw FileNotFoundException("$file!/$relativePath")
+        }
+        return fileSystem.cachedOpenFileHandles[file].use {
+            it.get().second.contentsToInputStreamSync(zipEntryDescription)
         }
     }
 }
