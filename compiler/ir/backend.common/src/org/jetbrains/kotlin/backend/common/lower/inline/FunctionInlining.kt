@@ -163,7 +163,7 @@ class FunctionInlining(
         fun inline() = inlineFunction(callSite, callee, true)
 
         private fun IrElement.copy(): IrElement {
-            return copyIrElement.copy(this).apply {
+            return copyIrElement.copy(this)/*.apply {
                 accept(object : IrElementVisitorVoid {
                     override fun visitElement(element: IrElement) {
                         if (element is IrAttributeContainer) {
@@ -172,7 +172,7 @@ class FunctionInlining(
                         element.acceptChildrenVoid(this)
                     }
                 }, null)
-            }
+            }*/
         }
 
         private fun IrFunction.isInlineOnly(): Boolean {
