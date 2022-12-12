@@ -7,7 +7,9 @@ package org.jetbrains.kotlin.backend.konan
 
 import org.jetbrains.kotlin.backend.common.atMostOne
 import org.jetbrains.kotlin.backend.konan.descriptors.isInteropLibrary
+import org.jetbrains.kotlin.backend.konan.llvm.FunctionOrigin
 import org.jetbrains.kotlin.backend.konan.llvm.standardLlvmSymbolsOrigin
+import org.jetbrains.kotlin.ir.declarations.IrDeclaration
 import org.jetbrains.kotlin.ir.declarations.name
 import org.jetbrains.kotlin.ir.declarations.path
 import org.jetbrains.kotlin.konan.library.KonanLibrary
@@ -49,6 +51,19 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
     private val stdlibKFunctionImpl by lazy { findStdlibFile(KonanFqNames.internalPackageName, "KFunctionImpl.kt") }
 
     private var sealed = false
+
+    fun add(functionOrigin: FunctionOrigin, onlyBitcode: Boolean = false) = when(functionOrigin) {
+        FunctionOrigin.FromNativeRuntime -> addNativeRuntime(onlyBitcode)
+        is FunctionOrigin.OwnedBy -> add(functionOrigin.declaration, onlyBitcode)
+    }
+
+    fun add(declaration: IrDeclaration, onlyBitcode: Boolean = false) {
+        add(generationState.computeOrigin(declaration), onlyBitcode)
+    }
+
+    fun addNativeRuntime(onlyBitcode: Boolean = false) {
+        add(CompiledKlibFileOrigin.StdlibRuntime, onlyBitcode)
+    }
 
     fun add(origin: CompiledKlibFileOrigin, onlyBitcode: Boolean = false) {
         require(!sealed) { "The dependencies have been sealed off" }

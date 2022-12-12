@@ -1265,11 +1265,10 @@ internal abstract class FunctionGenerationContext(
         assert(!irClass.isInterface)
 
         return if (irClass.isExternalObjCClass()) {
-            val origin = generationState.computeOrigin(irClass)
-
+            llvm.dependenciesTracker.add(irClass)
             if (irClass.isObjCMetaClass()) {
                 val name = irClass.descriptor.getExternalObjCMetaClassBinaryName()
-                val objCClass = getObjCClass(name, origin)
+                val objCClass = getObjCClass(name)
 
                 val getClass = llvm.externalNativeRuntimeFunction(
                         "object_getClass",
@@ -1278,7 +1277,7 @@ internal abstract class FunctionGenerationContext(
                 )
                 call(getClass, listOf(objCClass), exceptionHandler = exceptionHandler)
             } else {
-                getObjCClass(irClass.descriptor.getExternalObjCClassBinaryName(), origin)
+                getObjCClass(irClass.descriptor.getExternalObjCClassBinaryName())
             }
         } else {
             if (irClass.isObjCMetaClass()) {
@@ -1302,9 +1301,11 @@ internal abstract class FunctionGenerationContext(
         }
     }
 
-    fun getObjCClass(binaryName: String, origin: CompiledKlibFileOrigin): LLVMValueRef {
-        llvm.dependenciesTracker.add(origin)
-        return load(codegen.objCDataGenerator!!.genClassRef(binaryName).llvm)
+    private fun getObjCClass(binaryName: String) = load(codegen.objCDataGenerator!!.genClassRef(binaryName).llvm)
+
+    fun getObjCClassFromNativeRuntime(binaryName: String): LLVMValueRef {
+        llvm.dependenciesTracker.addNativeRuntime()
+        return getObjCClass(binaryName)
     }
 
     fun resetDebugLocation() {

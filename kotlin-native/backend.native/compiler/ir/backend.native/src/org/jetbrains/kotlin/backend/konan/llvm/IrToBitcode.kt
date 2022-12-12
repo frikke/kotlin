@@ -1634,7 +1634,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
             } else if (dstClass.isObjCProtocolClass()) {
                 // Note: it is not clear whether this class should be looked up this way.
                 // clang does the same, however swiftc uses dynamic lookup.
-                val protocolClass = functionGenerationContext.getObjCClass("Protocol", CompiledKlibFileOrigin.StdlibRuntime)
+                val protocolClass = functionGenerationContext.getObjCClassFromNativeRuntime("Protocol")
                 call(
                         llvm.Kotlin_Interop_IsObjectKindOfClass,
                         listOf(objCObject, protocolClass)
@@ -2489,7 +2489,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
         val protocolGetterProto = LlvmFunctionProto(
                 protocolGetterName,
                 LlvmRetType(llvm.int8PtrType),
-                origin = generationState.computeOrigin(irClass),
+                origin = FunctionOrigin.OwnedBy(irClass),
                 independent = true // Protocol is header-only declaration.
         )
         val protocolGetter = llvm.externalFunction(protocolGetterProto)
@@ -2682,7 +2682,7 @@ internal class CodeGeneratorVisitor(val generationState: NativeGenerationState, 
 
             llvm.otherStaticInitializers += initializer
         } else {
-            generationState.dependenciesTracker.add(CompiledKlibFileOrigin.StdlibRuntime)
+            generationState.dependenciesTracker.addNativeRuntime()
             // Define a strong runtime global. It'll overrule a weak global defined in a statically linked runtime.
             val global = llvm.staticData.placeGlobal(name, value, true)
 

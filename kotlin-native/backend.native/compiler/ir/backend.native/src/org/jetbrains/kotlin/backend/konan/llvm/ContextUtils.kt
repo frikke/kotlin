@@ -211,7 +211,7 @@ internal interface ContextUtils : RuntimeAware {
                     this.computePrivateTypeInfoSymbolName(context.irLinker.getExternalDeclarationFileName(this))
                 }
 
-                constPointer(importGlobal(typeInfoSymbolName, runtime.typeInfoType, generationState.computeOrigin(this)))
+                constPointer(importGlobal(typeInfoSymbolName, runtime.typeInfoType, this))
             } else {
                 generationState.llvmDeclarations.forClass(this).typeInfo
             }
@@ -362,7 +362,7 @@ internal class Llvm(private val generationState: NativeGenerationState, val modu
             isVararg: Boolean = false
     ) = externalFunction(
             LlvmFunctionProto(name, returnType, parameterTypes, functionAttributes,
-                    origin = CompiledKlibFileOrigin.StdlibRuntime,
+                    origin = FunctionOrigin.FromNativeRuntime,
                     isVararg, independent = false)
     )
 
