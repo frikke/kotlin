@@ -189,6 +189,32 @@ internal fun ContextUtils.importObjCGlobal(name: String, type: LLVMTypeRef) = im
 internal fun ContextUtils.importNativeRuntimeGlobal(name: String, type: LLVMTypeRef) =
         importGlobal(name, type).also { llvm.dependenciesTracker.addNativeRuntime() }
 
+internal fun CodeGenerator.replaceExternalWeakOrCommonGlobal(name: String, value: ConstValue) {
+    if (generationState.llvmModuleSpecification.importsKotlinDeclarationsFromOtherSharedLibraries()) {
+        // When some dynamic caches are used, we consider that stdlib is in the dynamic cache as well.
+        // Runtime is linked into stdlib module only, so import runtime global from it.
+        val global = importGlobal(name, value.llvmType)
+        val initializer = generateFunctionNoRuntime(this, functionType(llvm.voidType, false), "") {
+            store(value.llvm, global)
+            ret(null)
+        }
+        LLVMSetLinkage(initializer, LLVMLinkage.LLVMPrivateLinkage)
+
+        llvm.otherStaticInitializers += initializer
+    } else {
+        val global = staticData.placeGlobal(name, value, isExported = true)
+
+        if (generationState.llvmModuleSpecification.importsKotlinDeclarationsFromOtherObjectFiles()) {
+            // Note: actually this is required only if global's weak/common definition is in another object file,
+            // but it is simpler to do this for all globals, considering that all usages can't be removed by DCE anyway.
+            llvm.usedGlobals += global.llvmGlobal
+            LLVMSetVisibility(global.llvmGlobal, LLVMVisibility.LLVMHiddenVisibility)
+
+            // See also [emitKt42254Hint].
+        }
+    }
+}
+
 internal abstract class AddressAccess {
     abstract fun getAddress(generationContext: FunctionGenerationContext?): LLVMValueRef
 }
