@@ -44,9 +44,9 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
 
     private val config = generationState.config
     private val context = generationState.context
+
     private val usedBitcode = mutableSetOf<KotlinLibrary>()
     private val usedNativeDependencies = mutableSetOf<KotlinLibrary>()
-
     private val usedBitcodeOfFile = mutableSetOf<LibraryFile>()
 
     private val allLibraries by lazy { context.librariesWithDependencies.toSet() }
