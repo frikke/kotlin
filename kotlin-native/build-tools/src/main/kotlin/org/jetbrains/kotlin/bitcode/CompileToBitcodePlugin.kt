@@ -6,11 +6,7 @@
 package org.jetbrains.kotlin.bitcode
 
 import kotlinBuildProperties
-import org.gradle.api.Action
-import org.gradle.api.Named
-import org.gradle.api.Plugin
-import org.gradle.api.PolymorphicDomainObjectContainer
-import org.gradle.api.Project
+import org.gradle.api.*
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.attributes.Usage
 import org.gradle.api.file.ConfigurableFileCollection
@@ -28,10 +24,12 @@ import org.gradle.kotlin.dsl.*
 import org.gradle.language.base.plugins.LifecycleBasePlugin
 import org.jetbrains.kotlin.ExecClang
 import org.jetbrains.kotlin.cpp.*
-import org.jetbrains.kotlin.konan.target.*
+import org.jetbrains.kotlin.konan.target.PlatformManager
+import org.jetbrains.kotlin.konan.target.SanitizerKind
+import org.jetbrains.kotlin.konan.target.TargetDomainObjectContainer
+import org.jetbrains.kotlin.konan.target.TargetWithSanitizer
 import org.jetbrains.kotlin.testing.native.GoogleTestExtension
 import org.jetbrains.kotlin.utils.capitalized
-import java.io.File
 import javax.inject.Inject
 
 private fun String.snakeCaseToUpperCamelCase() = split('_').joinToString(separator = "") { it.capitalized }
@@ -104,18 +102,6 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
         })
     }
 
-    abstract class TestsGroup @Inject constructor(
-            private val _target: TargetWithSanitizer,
-    ) {
-        val target by _target::target
-        val sanitizer by _target::sanitizer
-        abstract val testedModules: ListProperty<String>
-        abstract val testSupportModules: ListProperty<String>
-        abstract val dependentModules: ListProperty<String>
-        abstract val testFrameworkModules: ListProperty<String>
-        abstract val testLauncherModule: Property<String>
-    }
-
     abstract class Module @Inject constructor(
             private val owner: CompileToBitcodeExtension,
             private val name: String,
@@ -128,6 +114,7 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
 
         private val project by owner::project
 
+        // TODO: Modules should not have a single outputGroup. Each module should have several source sets: main, test support, tests, ...
         abstract val outputGroup: Property<String>
         abstract val srcRoot: DirectoryProperty
         abstract val outputFile: RegularFileProperty
@@ -149,7 +136,6 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             configure {
                 outputGroup.finalizeValue()
 
-                this.moduleName.set(this@Module.name)
                 this.outputFile.set(this@Module.outputFile)
                 this.outputDirectory.set(this@Module.outputDirectory)
                 this.compiler.set(this@Module.compiler)
@@ -176,6 +162,18 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                 }
             }
         }
+    }
+
+    abstract class TestsGroup @Inject constructor(
+            private val _target: TargetWithSanitizer,
+    ) {
+        val target by _target::target
+        val sanitizer by _target::sanitizer
+        abstract val testedModules: ListProperty<String>
+        abstract val testSupportModules: ListProperty<String>
+        abstract val dependentModules: ListProperty<String>
+        abstract val testFrameworkModules: ListProperty<String>
+        abstract val testLauncherModule: Property<String>
     }
 
     abstract class Target @Inject constructor(
@@ -304,7 +302,6 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                 val name = "${fullTaskName(module.name, target.name, sanitizer)}TestBitcode"
                 val task = project.tasks.findByName(name) as? CompileToBitcode
                         ?: project.tasks.create(name, CompileToBitcode::class.java, _target).apply {
-                            this.moduleName.set(module.name)
                             this.outputFile.convention(project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}Tests.bc"))
                             this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}Tests"))
                             this.compiler.convention("clang++")
@@ -330,7 +327,6 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                 val name = "${fullTaskName(module.name, target.name, sanitizer)}TestSupportBitcode"
                 val task = project.tasks.findByName(name) as? CompileToBitcode
                         ?: project.tasks.create(name, CompileToBitcode::class.java, _target).apply {
-                            this.moduleName.set(module.name)
                             this.outputFile.convention(project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}TestSupport.bc"))
                             this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}TestSupport"))
                             this.compiler.convention("clang++")
