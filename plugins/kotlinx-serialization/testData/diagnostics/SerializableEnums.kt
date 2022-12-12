@@ -6,7 +6,8 @@ import kotlinx.serialization.encoding.*
 
 enum class SimpleEnum { A, B }
 
-<!EXPLICIT_SERIALIZABLE_IS_REQUIRED!>enum<!> class MarkedNameEnum { @SerialName("a") A, B}
+// Annotated enums do not require @Serializable if runtime has proper factory funciton (runtime ver. >= 1.4.1)
+enum class MarkedNameEnum { @SerialName("a") A, B}
 
 @Serializable
 enum class ExplicitlyMarkedEnum { @SerialName("a") A, B}
