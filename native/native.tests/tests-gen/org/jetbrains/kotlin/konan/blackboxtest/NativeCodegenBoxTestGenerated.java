@@ -39629,6 +39629,12 @@ public class NativeCodegenBoxTestGenerated extends AbstractNativeCodegenBoxTest 
             }
 
             @Test
+            @TestMetadata("crossModuleIntrinsic.kt")
+            public void testCrossModuleIntrinsic() throws Exception {
+                runTest("compiler/testData/codegen/box/volatile/crossModuleIntrinsic.kt");
+            }
+
+            @Test
             @TestMetadata("intrinsics.kt")
             public void testIntrinsics() throws Exception {
                 runTest("compiler/testData/codegen/box/volatile/intrinsics.kt");
