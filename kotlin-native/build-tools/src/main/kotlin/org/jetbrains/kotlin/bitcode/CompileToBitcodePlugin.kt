@@ -102,8 +102,9 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
         })
     }
 
-    abstract class Module @Inject constructor(
+    abstract class SourceSet @Inject constructor(
             private val owner: CompileToBitcodeExtension,
+            private val module: Module,
             private val name: String,
             private val _target: TargetWithSanitizer,
     ) : Named {
@@ -114,9 +115,7 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
 
         private val project by owner::project
 
-        // TODO: Modules should not have a single outputGroup. Each module should have several source sets: main, test support, tests, ...
-        abstract val outputGroup: Property<String>
-        abstract val srcRoot: DirectoryProperty
+        abstract val group: Property<String>
         abstract val outputFile: RegularFileProperty
         abstract val outputDirectory: DirectoryProperty
         abstract val compiler: Property<String>
@@ -126,10 +125,113 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
         abstract val inputFiles: ConfigurableFileTree
         abstract val compilerWorkingDirectory: DirectoryProperty
         abstract val dependencies: ListProperty<TaskProvider<*>>
+        protected abstract val onlyIf: ListProperty<Spec<in SourceSet>>
+
+        fun onlyIf(spec: Spec<in SourceSet>) {
+            this.onlyIf.add(spec)
+        }
+
+        private fun computeOnlyIf() = onlyIf.get().all { spec ->
+            spec.isSatisfiedBy(this)
+        }
+
+        val task = project.tasks.register<CompileToBitcode>(fullTaskName(module.name, target.name, sanitizer), _target).apply {
+            configure {
+                this.outputFile.set(this@SourceSet.outputFile)
+                this.outputDirectory.set(this@SourceSet.outputDirectory)
+                this.compiler.set(this@SourceSet.compiler)
+                this.linkerArgs.set(this@SourceSet.linkerArgs)
+                this.compilerArgs.set(this@SourceSet.compilerArgs)
+                this.headersDirs.from(this@SourceSet.headersDirs)
+                this.inputFiles.from(this@SourceSet.inputFiles.dir)
+                this.inputFiles.setIncludes(this@SourceSet.inputFiles.includes)
+                this.inputFiles.setExcludes(this@SourceSet.inputFiles.excludes)
+                this.compilerWorkingDirectory.set(this@SourceSet.compilerWorkingDirectory)
+                // TODO: Should depend only on the toolchain needed to build for the _target
+                dependsOn(":kotlin-native:dependencies:update")
+                dependsOn(this@SourceSet.dependencies)
+
+                onlyIf {
+                    computeOnlyIf()
+                }
+            }
+        }
+    }
+
+    abstract class Module @Inject constructor(
+            private val owner: CompileToBitcodeExtension,
+            private val name: String,
+            private val _target: TargetWithSanitizer,
+    ) : Named {
+        abstract class SourceSets @Inject constructor(
+                private val module: Module,
+                private val _target: TargetWithSanitizer,
+        ) : ExtensiblePolymorphicDomainObjectContainer<SourceSet> {
+            val main
+                get() = named("main")
+
+            fun main(action: Action<in SourceSet>) = create("main") {
+                task.configure {
+                    this.group = BUILD_TASK_GROUP
+                    this.description = "Compiles '${module.name}' to bitcode for $_target"
+                }
+                action.execute(this)
+            }
+
+            val testSupport
+                get() = named("testSupport")
+
+            fun testSupport(action: Action<in SourceSet>) = create("testSupport") {
+                task.configure {
+                    this.group = VERIFICATION_BUILD_TASK_GROUP
+                    this.description = "Compiles '${module.name}' test support to bitcode for $_target"
+                }
+                action.execute(this)
+            }
+
+            val tests
+                get() = named("tests")
+
+            fun tests(action: Action<in SourceSet>) = create("tests") {
+                task.configure {
+                    this.group = VERIFICATION_BUILD_TASK_GROUP
+                    this.description = "Compiles '${module.name}' tests to bitcode for $_target"
+                }
+                action.execute(this)
+            }
+        }
+
+        val target by _target::target
+        val sanitizer by _target::sanitizer
+
+        override fun getName() = name
+
+        private val project by owner::project
+
+        // TODO: Modules should not have a single outputGroup. Each module should have several source sets: main, test support, tests, ...
+        abstract val outputGroup: Property<String>
+        abstract val srcRoot: DirectoryProperty
+        abstract val dependencies: ListProperty<TaskProvider<*>>
         protected abstract val onlyIf: ListProperty<Spec<in Module>>
 
         fun onlyIf(spec: Spec<in Module>) {
             this.onlyIf.add(spec)
+        }
+
+        private fun computeOnlyIf() = onlyIf.get().all { spec ->
+            spec.isSatisfiedBy(this)
+        }
+
+        val sourceSets = project.objects.newInstance<SourceSets>(this, _target)
+
+        fun sourceSets(action: Action<in SourceSets>) = sourceSets.apply {
+            action.execute(this)
+        }
+
+        init {
+            sourceSets.registerFactory(SourceSet::class.java) { name ->
+                project.objects.newInstance<SourceSet>(owner, this, name, _target)
+            }
         }
 
         val task = project.tasks.register<CompileToBitcode>(fullTaskName(name, target.name, sanitizer), _target).apply {
@@ -146,19 +248,12 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                 this.inputFiles.setIncludes(this@Module.inputFiles.includes)
                 this.inputFiles.setExcludes(this@Module.inputFiles.excludes)
                 this.compilerWorkingDirectory.set(this@Module.compilerWorkingDirectory)
-                when (outputGroup.get()) {
-                    "test" -> this.group = VERIFICATION_BUILD_TASK_GROUP
-                    "main" -> this.group = BUILD_TASK_GROUP
-                }
-                this.description = "Compiles '${this@Module.name}' to bitcode for $_target"
                 // TODO: Should depend only on the toolchain needed to build for the _target
                 dependsOn(":kotlin-native:dependencies:update")
                 dependsOn(this@Module.dependencies)
 
                 onlyIf {
-                    this@Module.onlyIf.get().all { spec ->
-                        spec.isSatisfiedBy(this@Module)
-                    }
+                    computeOnlyIf()
                 }
             }
         }
