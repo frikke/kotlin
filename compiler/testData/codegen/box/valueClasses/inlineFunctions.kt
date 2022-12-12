@@ -29,46 +29,50 @@ import kotlin.coroutines.resume
 
 fun supply(x: Any?) = Unit
 
+public inline fun <T, R> T.let(block: (T) -> R): R {
+    return block(this)
+}
+
 fun box(): String {
     val point = DPoint(1.0, 2.0)
     val pointX2 = DPoint(2.0, 4.0)
     val segment = DSegment(point, pointX2)
 
-    supply("a")
-    point.let { it.x }
-    supply("b")
-    point.let { it }
-    supply("c")
-    run { DPoint (1.0, 2.0) }
-    supply("d")
-    val x = run { DPoint(100.0, 200.0) }
-    supply("e")
-    require(x == DPoint(100.0, 200.0))
-    supply("f")
-    point.let { DPoint(2 * it.x, 2 * it.y) }
-    supply("g")
-    require(point == point.let { it })
-    supply("h")
-    require(pointX2 == point.let { DPoint(2 * it.x, 2 * it.y) })
+//    supply("a")
+//    point.let { it.x }
+//    supply("b")
+//    point.let { it }
+//    supply("c")
+//    run { DPoint (1.0, 2.0) }
+//    supply("d")
+//    val x = run { DPoint(100.0, 200.0) }
+//    supply("e")
+//    require(x == DPoint(100.0, 200.0))
+//    supply("f")
+//    point.let { DPoint(2 * it.x, 2 * it.y) }
+//    supply("g")
+//    require(point == point.let { it })
+//    supply("h")
+//    require(pointX2 == point.let { DPoint(2 * it.x, 2 * it.y) })
     supply("i")
     segment.myLet { it.p1 }
-    supply("j")
-    segment.myLet { it.p2 }
-    supply("k")
-    require(segment.myLet { it.p1 } == point)
-    supply("l")
-    require(segment.myLet { it.p2 } == pointX2)
-    supply("m")
-    require(segment.let { it.let { it } } == segment)
-    supply("n")
-    var a = 1
-    segment.let { a++ }
-    val b = segment.let { ++a }
-    require(a == 3)
-    supply("o")
-    runSuspend { require(suspendFun() == DPoint(1.0, 2.0).toString()) }
-    supply("p")
-    
+//    supply("j")
+//    segment.myLet { it.p2 }
+//    supply("k")
+//    require(segment.myLet { it.p1 } == point)
+//    supply("l")
+//    require(segment.myLet { it.p2 } == pointX2)
+//    supply("m")
+//    require(segment.let { it.let { it } } == segment)
+//    supply("n")
+//    var a = 1
+//    segment.let { a++ }
+//    val b = segment.let { ++a }
+//    require(a == 3)
+//    supply("o")
+//    runSuspend { require(suspendFun() == DPoint(1.0, 2.0).toString()) }
+//    supply("p")
+//
     return "OK"
 }
 
