@@ -29,9 +29,7 @@ import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
-import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
+import org.jetbrains.kotlin.ir.visitors.*
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
 fun IrValueParameter.isInlineParameter(type: IrType = this.type) =
@@ -162,7 +160,16 @@ class FunctionInlining(
         fun inline() = inlineFunction(callSite, callee, true)
 
         private fun IrElement.copy(): IrElement {
-            return copyIrElement.copy(this)
+            return copyIrElement.copy(this).apply {
+                accept(object : IrElementVisitorVoid {
+                    override fun visitElement(element: IrElement) {
+                        if (element is IrAttributeContainer) {
+                            element.attributeOwnerId = element
+                        }
+                        element.acceptChildrenVoid(this)
+                    }
+                }, null)
+            }
         }
 
         private fun inlineFunction(
