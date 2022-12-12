@@ -7,12 +7,10 @@ package org.jetbrains.kotlin.bitcode
 
 import kotlinBuildProperties
 import org.gradle.api.*
+import org.gradle.api.artifacts.ConfigurationVariant
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.attributes.Usage
-import org.gradle.api.file.ConfigurableFileCollection
-import org.gradle.api.file.ConfigurableFileTree
-import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.file.*
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
@@ -115,15 +113,10 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
 
         private val project by owner::project
 
-        abstract val group: Property<String>
         abstract val outputFile: RegularFileProperty
         abstract val outputDirectory: DirectoryProperty
-        abstract val compiler: Property<String>
-        abstract val linkerArgs: ListProperty<String>
-        abstract val compilerArgs: ListProperty<String>
         abstract val headersDirs: ConfigurableFileCollection
         abstract val inputFiles: ConfigurableFileTree
-        abstract val compilerWorkingDirectory: DirectoryProperty
         abstract val dependencies: ListProperty<TaskProvider<*>>
         protected abstract val onlyIf: ListProperty<Spec<in SourceSet>>
 
@@ -135,22 +128,28 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             spec.isSatisfiedBy(this)
         }
 
-        val task = project.tasks.register<CompileToBitcode>(fullTaskName(module.name, target.name, sanitizer), _target).apply {
+        private val taskName = when(name) {
+            "main" -> fullTaskName(module.name, target.name, sanitizer)
+            "testSupport" -> fullTaskName(module.name, target.name, sanitizer) + "TestSupportBitcode"
+            "test" -> fullTaskName(module.name, target.name, sanitizer) + "TestBitcode"
+            else -> TODO()
+        }
+
+        val task = project.tasks.register<CompileToBitcode>(taskName, _target).apply {
             configure {
                 this.outputFile.set(this@SourceSet.outputFile)
                 this.outputDirectory.set(this@SourceSet.outputDirectory)
-                this.compiler.set(this@SourceSet.compiler)
-                this.linkerArgs.set(this@SourceSet.linkerArgs)
-                this.compilerArgs.set(this@SourceSet.compilerArgs)
+                this.compiler.set(module.compiler)
+                this.linkerArgs.set(module.linkerArgs)
+                this.compilerArgs.set(module.compilerArgs)
                 this.headersDirs.from(this@SourceSet.headersDirs)
                 this.inputFiles.from(this@SourceSet.inputFiles.dir)
                 this.inputFiles.setIncludes(this@SourceSet.inputFiles.includes)
                 this.inputFiles.setExcludes(this@SourceSet.inputFiles.excludes)
-                this.compilerWorkingDirectory.set(this@SourceSet.compilerWorkingDirectory)
+                this.compilerWorkingDirectory.set(module.compilerWorkingDirectory)
                 // TODO: Should depend only on the toolchain needed to build for the _target
                 dependsOn(":kotlin-native:dependencies:update")
                 dependsOn(this@SourceSet.dependencies)
-
                 onlyIf {
                     computeOnlyIf()
                 }
@@ -162,42 +161,131 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             private val owner: CompileToBitcodeExtension,
             private val name: String,
             private val _target: TargetWithSanitizer,
+            private val compileElementsBitcode: ConfigurationVariant,
     ) : Named {
         abstract class SourceSets @Inject constructor(
                 private val module: Module,
-                private val _target: TargetWithSanitizer,
-        ) : ExtensiblePolymorphicDomainObjectContainer<SourceSet> {
+                private val container: ExtensiblePolymorphicDomainObjectContainer<SourceSet>
+        ) : ExtensiblePolymorphicDomainObjectContainer<SourceSet> by container {
+            private val project by module::project
+
+            private val compilationDatabase = project.extensions.getByType<CompilationDatabaseExtension>()
+            private val execClang = project.extensions.getByType<ExecClang>()
+
+            // googleTestExtension is only used if testSupport or tests are used.
+            private val googleTestExtension by lazy { project.extensions.getByType<GoogleTestExtension>() }
+
+            private fun addToCompdb(compileTask: CompileToBitcode) {
+                compilationDatabase.target(module._target) {
+                    entry {
+                        val args = listOf(execClang.resolveExecutable(compileTask.compiler.get())) + compileTask.compilerFlags.get() + execClang.clangArgsForCppRuntime(target.name)
+                        directory.set(compileTask.compilerWorkingDirectory)
+                        files.setFrom(compileTask.inputFiles)
+                        arguments.set(args)
+                        // Only the location of output file matters, compdb does not depend on the compilation result.
+                        output.set(compileTask.outputFile.locationOnly.map { it.asFile.absolutePath })
+                    }
+                    // Compile task depends on the toolchain (including headers) and on the source code (e.g. googletest).
+                    // compdb task should also have these dependencies. This way the generated database will point to the
+                    // code that actually exists.
+                    // TODO: Probably module should know dependencies on its own.
+                    task.configure {
+                        dependsOn(compileTask.dependsOn)
+                    }
+                }
+            }
+
             val main
                 get() = named("main")
 
             fun main(action: Action<in SourceSet>) = create("main") {
+                this.outputFile.convention(project.layout.buildDirectory.file("bitcode/$name/$target${sanitizer.dirSuffix}/${module.name}.bc"))
+                this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/$name/$target${sanitizer.dirSuffix}/${module.name}"))
+                this.inputFiles.from(module.srcRoot.dir("cpp"))
+                this.inputFiles.include("**/*.cpp", "**/*.mm")
+                this.inputFiles.exclude("**/*Test.cpp", "**/*TestSupport.cpp", "**/*Test.mm", "**/*TestSupport.mm")
+                this.headersDirs.setFrom(module.headersDirs)
+                dependencies.set(module.dependencies)
+                onlyIf {
+                    module.computeOnlyIf()
+                }
                 task.configure {
                     this.group = BUILD_TASK_GROUP
-                    this.description = "Compiles '${module.name}' to bitcode for $_target"
+                    this.description = "Compiles '${module.name}' to bitcode for ${module._target}"
                 }
                 action.execute(this)
+                addToCompdb(task.get()) // TODO: Do not force task configuration.
+                module.compileElementsBitcode.artifact(task)
+                // TODO: This seems to go against gradle conventions. So, each module should probably be in
+                //       a gradle project of its own. Current project should be used for grouping (i.e. reexporting all
+                //       compileElementsBitcode from subprojects under a single umbrella configuration) and integration testing.
+                project.configurations.maybeCreate("${module.name}CompileElementsBitcode").apply {
+                    description = "LLVM bitcode of ${module.name} module"
+                    isCanBeConsumed = true
+                    isCanBeResolved = false
+                    attributes {
+                        attribute(Usage.USAGE_ATTRIBUTE, project.objects.named(USAGE))
+                        attribute(MODULE_ATTRIBUTE, module.name)
+                    }
+                    outgoing {
+                        variants {
+                            create("${module._target}") {
+                                attributes {
+                                    attribute(TargetWithSanitizer.TARGET_ATTRIBUTE, module._target)
+                                }
+                                artifact(task)
+                            }
+                        }
+                    }
+                }
             }
 
             val testSupport
                 get() = named("testSupport")
 
             fun testSupport(action: Action<in SourceSet>) = create("testSupport") {
+                this.outputFile.convention(project.layout.buildDirectory.file("bitcode/$name/$target${sanitizer.dirSuffix}/${module.name}TestSupport.bc"))
+                this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/$name/$target${sanitizer.dirSuffix}/${module.name}TestSupport"))
+                this.inputFiles.from(module.srcRoot.dir("cpp"))
+                this.inputFiles.include("**/*TestSupport.cpp", "**/*TestSupport.mm")
+                this.headersDirs.setFrom(module.headersDirs)
+                this.headersDirs.from(googleTestExtension.headersDirs)
+                dependencies.set(module.dependencies)
+                // TODO: Must generally depend on googletest module headers which must itself depend on sources being present.
+                dependencies.add(project.tasks.named("downloadGoogleTest"))
+                onlyIf {
+                    module.computeOnlyIf()
+                }
                 task.configure {
                     this.group = VERIFICATION_BUILD_TASK_GROUP
-                    this.description = "Compiles '${module.name}' test support to bitcode for $_target"
+                    this.description = "Compiles '${module.name}' test support to bitcode for ${module._target}"
                 }
                 action.execute(this)
+                addToCompdb(task.get()) // TODO: Do not force task configuration.
             }
 
-            val tests
-                get() = named("tests")
+            val test
+                get() = named("test")
 
-            fun tests(action: Action<in SourceSet>) = create("tests") {
+            fun test(action: Action<in SourceSet>) = create("test") {
+                this.outputFile.convention(project.layout.buildDirectory.file("bitcode/$name/$target${sanitizer.dirSuffix}/${module.name}Tests.bc"))
+                this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/$name/$target${sanitizer.dirSuffix}/${module.name}Tests"))
+                this.inputFiles.from(module.srcRoot.dir("cpp"))
+                this.inputFiles.include("**/*Test.cpp", "**/*Test.mm")
+                this.headersDirs.setFrom(module.headersDirs)
+                this.headersDirs.from(googleTestExtension.headersDirs)
+                dependencies.set(module.dependencies)
+                // TODO: Must generally depend on googletest module headers which must itself depend on sources being present.
+                dependencies.add(project.tasks.named("downloadGoogleTest"))
+                onlyIf {
+                    module.computeOnlyIf()
+                }
                 task.configure {
                     this.group = VERIFICATION_BUILD_TASK_GROUP
-                    this.description = "Compiles '${module.name}' tests to bitcode for $_target"
+                    this.description = "Compiles '${module.name}' tests to bitcode for ${module._target}"
                 }
                 action.execute(this)
+                addToCompdb(task.get()) // TODO: Do not force task configuration.
             }
         }
 
@@ -208,9 +296,13 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
 
         private val project by owner::project
 
-        // TODO: Modules should not have a single outputGroup. Each module should have several source sets: main, test support, tests, ...
-        abstract val outputGroup: Property<String>
         abstract val srcRoot: DirectoryProperty
+        // TODO: This is actually API dependency. Make it so.
+        abstract val headersDirs: ConfigurableFileCollection
+        abstract val compiler: Property<String>
+        abstract val linkerArgs: ListProperty<String>
+        abstract val compilerArgs: ListProperty<String>
+        abstract val compilerWorkingDirectory: DirectoryProperty
         abstract val dependencies: ListProperty<TaskProvider<*>>
         protected abstract val onlyIf: ListProperty<Spec<in Module>>
 
@@ -222,7 +314,9 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             spec.isSatisfiedBy(this)
         }
 
-        val sourceSets = project.objects.newInstance<SourceSets>(this, _target)
+        val sourceSets by lazy {
+            project.objects.newInstance<SourceSets>(this, project.objects.polymorphicDomainObjectContainer(SourceSet::class.java))
+        }
 
         fun sourceSets(action: Action<in SourceSets>) = sourceSets.apply {
             action.execute(this)
@@ -231,30 +325,6 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
         init {
             sourceSets.registerFactory(SourceSet::class.java) { name ->
                 project.objects.newInstance<SourceSet>(owner, this, name, _target)
-            }
-        }
-
-        val task = project.tasks.register<CompileToBitcode>(fullTaskName(name, target.name, sanitizer), _target).apply {
-            configure {
-                outputGroup.finalizeValue()
-
-                this.outputFile.set(this@Module.outputFile)
-                this.outputDirectory.set(this@Module.outputDirectory)
-                this.compiler.set(this@Module.compiler)
-                this.linkerArgs.set(this@Module.linkerArgs)
-                this.compilerArgs.set(this@Module.compilerArgs)
-                this.headersDirs.from(this@Module.headersDirs)
-                this.inputFiles.from(this@Module.inputFiles.dir)
-                this.inputFiles.setIncludes(this@Module.inputFiles.includes)
-                this.inputFiles.setExcludes(this@Module.inputFiles.excludes)
-                this.compilerWorkingDirectory.set(this@Module.compilerWorkingDirectory)
-                // TODO: Should depend only on the toolchain needed to build for the _target
-                dependsOn(":kotlin-native:dependencies:update")
-                dependsOn(this@Module.dependencies)
-
-                onlyIf {
-                    computeOnlyIf()
-                }
             }
         }
     }
@@ -280,12 +350,8 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
 
         private val project by owner::project
 
-        private val compilationDatabase = project.extensions.getByType<CompilationDatabaseExtension>()
-        private val execClang = project.extensions.getByType<ExecClang>()
-        private val platformManager = project.extensions.getByType<PlatformManager>()
 
-        // googleTestExtension is only used if testsGroup is used.
-        private val googleTestExtension by lazy { project.extensions.getByType<GoogleTestExtension>() }
+        private val platformManager = project.extensions.getByType<PlatformManager>()
 
         // A shared service used to limit parallel execution of test binaries.
         private val runGTestSemaphore = project.gradle.sharedServices.registerIfAbsent("runGTestSemaphore", RunGTestSemaphore::class.java) {
@@ -304,78 +370,22 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             }
         }
 
-        private fun addToCompdb(compileTask: CompileToBitcode) {
-            compilationDatabase.target(_target) {
-                entry {
-                    val args = listOf(execClang.resolveExecutable(compileTask.compiler.get())) + compileTask.compilerFlags.get() + execClang.clangArgsForCppRuntime(target.name)
-                    directory.set(compileTask.compilerWorkingDirectory)
-                    files.setFrom(compileTask.inputFiles)
-                    arguments.set(args)
-                    // Only the location of output file matters, compdb does not depend on the compilation result.
-                    output.set(compileTask.outputFile.locationOnly.map { it.asFile.absolutePath })
-                }
-                // Compile task depends on the toolchain (including headers) and on the source code (e.g. googletest).
-                // compdb task should also have these dependencies. This way the generated database will point to the
-                // code that actually exists.
-                // TODO: Probably module should know dependencies on its own.
-                task.configure {
-                    dependsOn(compileTask.dependsOn)
-                }
-            }
-        }
-
         private val modules: PolymorphicDomainObjectContainer<Module> = project.objects.polymorphicDomainObjectContainer(Module::class.java).apply {
             registerFactory(Module::class.java) { name ->
-                project.objects.newInstance<Module>(owner, name, _target)
+                project.objects.newInstance<Module>(owner, name, _target, compileElementsBitcode)
             }
         }
 
         fun module(
                 name: String,
                 action: Action<in Module>,
-        ): Module {
-            val module = modules.create<Module>(name) {
-                this.srcRoot.convention(project.layout.projectDirectory.dir("src/$name"))
-                this.outputGroup.convention("main")
-                this.outputFile.convention(this.outputGroup.flatMap { project.layout.buildDirectory.file("bitcode/$it/$target${sanitizer.dirSuffix}/$name.bc") })
-                this.outputDirectory.convention(this.outputGroup.flatMap { project.layout.buildDirectory.dir("bitcode/$it/$target${sanitizer.dirSuffix}/$name") })
-                this.compiler.convention("clang++")
-                this.compilerArgs.set(owner.DEFAULT_CPP_FLAGS)
-                this.inputFiles.from(this.srcRoot.dir("cpp"))
-                this.inputFiles.include("**/*.cpp", "**/*.mm")
-                this.inputFiles.exclude("**/*Test.cpp", "**/*TestSupport.cpp", "**/*Test.mm", "**/*TestSupport.mm")
-                this.headersDirs.from(this.srcRoot.dir("cpp"))
-                this.compilerWorkingDirectory.set(project.layout.projectDirectory.dir("src"))
-                action.execute(this)
-                outputGroup.finalizeValue()
-            }
-            addToCompdb(module.task.get()) // TODO: Do not force task configuration.
-            if (module.outputGroup.get() == "main") {
-                compileElementsBitcode.artifact(module.task)
-                // TODO: This seems to go against gradle conventions. So, each module should probably be in
-                //       a gradle project of its own. Current project should be used for grouping (i.e. reexporting all
-                //       compileElementsBitcode from subprojects under a single umbrella configuration) and integration testing.
-                project.configurations.maybeCreate("${name}CompileElementsBitcode").apply {
-                    description = "LLVM bitcode of $name module"
-                    isCanBeConsumed = true
-                    isCanBeResolved = false
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, project.objects.named(USAGE))
-                        attribute(MODULE_ATTRIBUTE, name)
-                    }
-                    outgoing {
-                        variants {
-                            create("$_target") {
-                                attributes {
-                                    attribute(TargetWithSanitizer.TARGET_ATTRIBUTE, _target)
-                                }
-                                artifact(module.task)
-                            }
-                        }
-                    }
-                }
-            }
-            return module
+        ) = modules.create<Module>(name) {
+            this.srcRoot.convention(project.layout.projectDirectory.dir("src/$name"))
+            this.headersDirs.from(this.srcRoot.dir("cpp"))
+            this.compiler.convention("clang++")
+            this.compilerArgs.set(owner.DEFAULT_CPP_FLAGS)
+            this.compilerWorkingDirectory.set(project.layout.projectDirectory.dir("src"))
+            action.execute(this)
         }
 
         fun module(name: String): Provider<Module> = modules.named(name)
@@ -392,56 +402,6 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
             val target = testsGroup.target
             val sanitizer = testsGroup.sanitizer
             val testName = fullTaskName(testTaskName, target.name, sanitizer)
-            val testedModules = testsGroup.testedModules.get().map { this.module(it).get() }
-            val testedModulesTestTasks = testedModules.mapNotNull { module ->
-                val name = "${fullTaskName(module.name, target.name, sanitizer)}TestBitcode"
-                val task = project.tasks.findByName(name) as? CompileToBitcode
-                        ?: project.tasks.create(name, CompileToBitcode::class.java, _target).apply {
-                            this.outputFile.convention(project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}Tests.bc"))
-                            this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}Tests"))
-                            this.compiler.convention("clang++")
-                            this.compilerArgs.set(module.compilerArgs)
-                            this.inputFiles.from(module.inputFiles.dir)
-                            this.inputFiles.include("**/*Test.cpp", "**/*Test.mm")
-                            this.headersDirs.setFrom(module.headersDirs)
-                            this.headersDirs.from(googleTestExtension.headersDirs)
-                            this.compilerWorkingDirectory.set(module.compilerWorkingDirectory)
-                            this.group = VERIFICATION_BUILD_TASK_GROUP
-                            this.description = "Compiles '${module.name}' tests to bitcode for $_target"
-
-                            // TODO: Should depend only on the toolchain needed to build for the _target
-                            dependsOn(":kotlin-native:dependencies:update")
-                            dependsOn("downloadGoogleTest")
-
-                            addToCompdb(this)
-                        }
-                task.takeUnless { t -> t.inputFiles.isEmpty }
-            }
-            val testSupportModules = testsGroup.testSupportModules.get().map { this.module(it).get() }
-            val testedAndTestSupportModulesTestSupportTasks = (testedModules + testSupportModules).mapNotNull { module ->
-                val name = "${fullTaskName(module.name, target.name, sanitizer)}TestSupportBitcode"
-                val task = project.tasks.findByName(name) as? CompileToBitcode
-                        ?: project.tasks.create(name, CompileToBitcode::class.java, _target).apply {
-                            this.outputFile.convention(project.layout.buildDirectory.file("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}TestSupport.bc"))
-                            this.outputDirectory.convention(project.layout.buildDirectory.dir("bitcode/test/$target${sanitizer.dirSuffix}/${module.name}TestSupport"))
-                            this.compiler.convention("clang++")
-                            this.compilerArgs.set(module.compilerArgs)
-                            this.inputFiles.from(module.inputFiles.dir)
-                            this.inputFiles.include("**/*TestSupport.cpp", "**/*TestSupport.mm")
-                            this.headersDirs.setFrom(module.headersDirs)
-                            this.headersDirs.from(googleTestExtension.headersDirs)
-                            this.compilerWorkingDirectory.set(module.compilerWorkingDirectory)
-                            this.group = VERIFICATION_BUILD_TASK_GROUP
-                            this.description = "Compiles '${module.name}' test support to bitcode for $_target"
-
-                            // TODO: Should depend only on the toolchain needed to build for the _target
-                            dependsOn(":kotlin-native:dependencies:update")
-                            dependsOn("downloadGoogleTest")
-
-                            addToCompdb(this)
-                        }
-                task.takeUnless { t -> t.inputFiles.isEmpty }
-            }
 
             val compileTask = project.tasks.register<CompileToExecutable>("${testName}Compile") {
                 description = "Compile tests group '$testTaskName' for $target${sanitizer.description}"
@@ -453,16 +413,24 @@ open class CompileToBitcodeExtension @Inject constructor(val project: Project) :
                 this.llvmLinkOutputFile.set(project.layout.buildDirectory.file("bitcode/test/$target/$testName.bc"))
                 this.compilerOutputFile.set(project.layout.buildDirectory.file("obj/$target/$testName.o"))
                 this.mimallocEnabled.set(testsGroup.dependentModules.get().any { it.contains("mimalloc") })
-                this.mainFile.set(testsGroup.testLauncherModule.get().let { module(it).flatMap { it.task.flatMap { it.outputFile } } })
+
+                // TODO: This should be solved by depending on configurations.
+                fun outputOrNull(moduleName: String, sourceSet: String): RegularFile? {
+                    return module(moduleName).get().sourceSets.findByName(sourceSet)?.task?.get()?.outputFile?.get()
+                }
+
+                // testLauncherModule must provide testSupport source set with the test launcher.
+                this.mainFile.set(testsGroup.testLauncherModule.get().let { outputOrNull(it, "testSupport")!! })
                 // Include main sources from every dependency.
-                this.inputFiles.from(testedModules.map { it.task })
-                this.inputFiles.from(testSupportModules.map { it.task })
-                this.inputFiles.from(testsGroup.dependentModules.get().map { module(it).flatMap { it.task } })
-                this.inputFiles.from(testsGroup.testFrameworkModules.get().map { module(it).flatMap { it.task } })
+                this.inputFiles.from(testsGroup.testedModules.get().mapNotNull { outputOrNull(it, "main") })
+                this.inputFiles.from(testsGroup.testSupportModules.get().mapNotNull { outputOrNull(it, "main") })
+                this.inputFiles.from(testsGroup.dependentModules.get().mapNotNull { outputOrNull(it, "main") })
+                this.inputFiles.from(testsGroup.testFrameworkModules.get().mapNotNull { outputOrNull(it, "main") })
                 // Include test support sources from tested and test support dependencies.
-                this.inputFiles.from(testedAndTestSupportModulesTestSupportTasks)
+                this.inputFiles.from(testsGroup.testedModules.get().mapNotNull { outputOrNull(it, "testSupport") })
+                this.inputFiles.from(testsGroup.testSupportModules.get().mapNotNull { outputOrNull(it, "testSupport") })
                 // Include test sources from tested dependencies.
-                this.inputFiles.from(testedModulesTestTasks)
+                this.inputFiles.from(testsGroup.testedModules.get().mapNotNull { outputOrNull(it, "tests") })
                 // Limit parallelism.
                 usesService(compileTestsSemaphore)
             }

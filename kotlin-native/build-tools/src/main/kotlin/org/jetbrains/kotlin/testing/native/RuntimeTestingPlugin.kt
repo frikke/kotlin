@@ -56,28 +56,34 @@ open class RuntimeTestingPlugin : Plugin<Project> {
 
             bitcodeExtension.allTargets {
                 module("googletest") {
-                    outputGroup.set("test")
-                    inputFiles.from(googleTestRoot.resolve("googletest/src"))
-                    inputFiles.include("*.cc")
-                    inputFiles.exclude("gtest-all.cc", "gtest_main.cc")
-                    headersDirs.from(
-                            googleTestRoot.resolve("googletest/include"),
-                            googleTestRoot.resolve("googletest")
-                    )
+                    sourceSets {
+                        testSupport {
+                            inputFiles.from(googleTestRoot.resolve("googletest/src"))
+                            inputFiles.include("*.cc")
+                            inputFiles.exclude("gtest-all.cc", "gtest_main.cc")
+                            headersDirs.from(
+                                    googleTestRoot.resolve("googletest/include"),
+                                    googleTestRoot.resolve("googletest")
+                            )
+                        }
+                    }
                     compilerArgs.set(listOf("-std=c++17", "-O2"))
                     this.dependencies.addAll(dependencies)
                 }
 
                 module("googlemock") {
-                    outputGroup.set("test")
-                    inputFiles.from(googleTestRoot.resolve("googlemock/src"))
-                    inputFiles.include("*.cc")
-                    inputFiles.exclude("gmock-all.cc", "gmock_main.cc")
-                    headersDirs.from(
-                            googleTestRoot.resolve("googlemock"),
-                            googleTestRoot.resolve("googlemock/include"),
-                            googleTestRoot.resolve("googletest/include"),
-                    )
+                    sourceSets {
+                        testSupport {
+                            inputFiles.from(googleTestRoot.resolve("googlemock/src"))
+                            inputFiles.include("*.cc")
+                            inputFiles.exclude("gmock-all.cc", "gmock_main.cc")
+                            headersDirs.from(
+                                    googleTestRoot.resolve("googlemock"),
+                                    googleTestRoot.resolve("googlemock/include"),
+                                    googleTestRoot.resolve("googletest/include"),
+                            )
+                        }
+                    }
                     compilerArgs.set(listOf("-std=c++17", "-O2"))
                     this.dependencies.addAll(dependencies)
                 }
