@@ -8,7 +8,6 @@ package org.jetbrains.kotlin.backend.konan
 import llvm.*
 import org.jetbrains.kotlin.backend.konan.descriptors.isFromInteropLibrary
 import org.jetbrains.kotlin.backend.konan.driver.BasicPhaseContext
-import org.jetbrains.kotlin.backend.konan.ir.llvmSymbolOrigin
 import org.jetbrains.kotlin.backend.konan.llvm.*
 import org.jetbrains.kotlin.backend.konan.llvm.coverage.CoverageManager
 import org.jetbrains.kotlin.backend.konan.objcexport.ObjCExport
@@ -111,12 +110,18 @@ internal class NativeGenerationState(
 
     lateinit var objCExport: ObjCExport
 
-    fun computeOrigin(declaration: IrDeclaration): CompiledKlibFileOrigin {
-        val packageFragment = declaration.getPackageFragment()
+    fun computeOrigin(irFile: IrFile) = computeOrigin(irFile) { irFile.path }
+
+    fun computeOrigin(declaration: IrDeclaration) =
+            computeOrigin(declaration.getPackageFragment()) {
+                context.irLinker.getExternalDeclarationFileName(declaration)
+            }
+
+    private fun computeOrigin(packageFragment: IrPackageFragment, filePathGetter: () -> String): CompiledKlibFileOrigin {
         return if (packageFragment.isFunctionInterfaceFile)
             CompiledKlibFileOrigin.StdlibKFunctionImpl
         else {
-            val library = when (val origin = declaration.llvmSymbolOrigin) {
+            val library = when (val origin = packageFragment.packageFragmentDescriptor.llvmSymbolOrigin) {
                 CurrentKlibModuleOrigin -> config.libraryToCache?.klib?.takeIf { config.producePerFileCache }
                 else -> (origin as DeserializedKlibModuleOrigin).library
             }
@@ -124,8 +129,7 @@ internal class NativeGenerationState(
                 library == null -> CompiledKlibFileOrigin.CurrentFile
                 packageFragment.packageFragmentDescriptor.containingDeclaration.isFromInteropLibrary() ->
                     CompiledKlibFileOrigin.EntireModule(library)
-                else -> CompiledKlibFileOrigin.CertainFile(library, packageFragment.fqName.asString(),
-                        context.irLinker.getExternalDeclarationFileName(declaration))
+                else -> CompiledKlibFileOrigin.CertainFile(library, packageFragment.fqName.asString(), filePathGetter())
             }
         }
     }

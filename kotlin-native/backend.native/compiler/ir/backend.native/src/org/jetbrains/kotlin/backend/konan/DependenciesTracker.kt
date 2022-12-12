@@ -9,9 +9,7 @@ import org.jetbrains.kotlin.backend.common.atMostOne
 import org.jetbrains.kotlin.backend.konan.descriptors.isInteropLibrary
 import org.jetbrains.kotlin.backend.konan.llvm.FunctionOrigin
 import org.jetbrains.kotlin.backend.konan.llvm.standardLlvmSymbolsOrigin
-import org.jetbrains.kotlin.ir.declarations.IrDeclaration
-import org.jetbrains.kotlin.ir.declarations.name
-import org.jetbrains.kotlin.ir.declarations.path
+import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.konan.library.KonanLibrary
 import org.jetbrains.kotlin.library.KotlinLibrary
 import org.jetbrains.kotlin.library.uniqueName
@@ -57,6 +55,10 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
         is FunctionOrigin.OwnedBy -> add(functionOrigin.declaration, onlyBitcode)
     }
 
+    fun add(irFile: IrFile, onlyBitcode: Boolean = false) {
+        add(generationState.computeOrigin(irFile), onlyBitcode)
+    }
+
     fun add(declaration: IrDeclaration, onlyBitcode: Boolean = false) {
         add(generationState.computeOrigin(declaration), onlyBitcode)
     }
@@ -65,7 +67,7 @@ internal class DependenciesTracker(private val generationState: NativeGeneration
         add(CompiledKlibFileOrigin.StdlibRuntime, onlyBitcode)
     }
 
-    fun add(origin: CompiledKlibFileOrigin, onlyBitcode: Boolean = false) {
+    private fun add(origin: CompiledKlibFileOrigin, onlyBitcode: Boolean = false) {
         require(!sealed) { "The dependencies have been sealed off" }
         val libraryFile = when (origin) {
             CompiledKlibFileOrigin.CurrentFile -> return
