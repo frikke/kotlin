@@ -392,6 +392,9 @@ public class FreezableAtomicReference<T>(private var value_: T) {
  * Compares the value of the field referenced by [fieldRef] from [this] object to [expectedValue], and if they are equal,
  * atomically replaces it with [newValue].
  *
+ * For now, it can be used only within the same file, where class [T] is defined.
+ * Check https://youtrack.jetbrains.com/issue/KT-55426 for details.
+ *
  * Comparison is done by reference or value depending on field representation.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
@@ -411,6 +414,9 @@ internal external fun <T, S> T.compareAndSetField(filedRef: KMutableProperty1<T,
  * Compares the value of the field referenced by [fieldRef] from [this] object to [expectedValue], and if they are equal,
  * atomically replaces it with [newValue].
  *
+ * For now, it can be used only within the same file, where class [T] is defined.
+ * Check https://youtrack.jetbrains.com/issue/KT-55426 for details.
+ *
  * Comparison is done by reference or value depending on field representation.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
@@ -429,6 +435,9 @@ internal external fun <T, S> T.compareAndSwapField(filedRef: KMutableProperty1<T
 /**
  * Atomically sets value of the field referenced by [fieldRef] from [this] object to [newValue] and returns old field value.
  *
+ * For now, it can be used only within the same file, where class [T] is defined.
+ * Check https://youtrack.jetbrains.com/issue/KT-55426 for details.
+ *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
@@ -444,6 +453,9 @@ internal external fun <T, S> T.getAndSetField(filedRef: KMutableProperty1<T, S>,
 /**
  * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
  *
+ * For now, it can be used only within the same file, where class [T] is defined.
+ * Check https://youtrack.jetbrains.com/issue/KT-55426 for details.
+ *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
@@ -457,6 +469,9 @@ internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Short>
 
 /**
  * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
+ *
+ * For now, it can be used only within the same file, where class [T] is defined.
+ * Check https://youtrack.jetbrains.com/issue/KT-55426 for details.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
@@ -472,6 +487,9 @@ internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Int>, 
 /**
  * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
  *
+ * For now, it can be used only within the same file, where class [T] is defined.
+ * Check https://youtrack.jetbrains.com/issue/KT-55426 for details.
+ *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
  *
@@ -485,6 +503,9 @@ internal external fun <T> T.getAndAddField(filedRef: KMutableProperty1<T, Long>,
 
 /**
  * Atomically increments value of the field referenced by [fieldRef] from [this] object by [delta] and returns old field value.
+ *
+ * For now, it can be used only within the same file, where class [T] is defined.
+ * Check https://youtrack.jetbrains.com/issue/KT-55426 for details.
  *
  * If [fieldRef] is not a compile-time known reference to the property with [Volatile] annotation [IllegalArgumentException]
  * would be thrown.
