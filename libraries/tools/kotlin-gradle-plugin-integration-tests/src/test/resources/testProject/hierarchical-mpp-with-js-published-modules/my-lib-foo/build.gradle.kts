@@ -3,12 +3,6 @@ plugins {
     `maven-publish`
 }
 
-repositories {
-    mavenLocal()
-    maven("<localRepo>")
-    mavenCentral()
-}
-
 group = "com.example.foo"
 version = "1.0"
 
@@ -35,8 +29,4 @@ publishing {
     repositories {
         maven("<localRepo>")
     }
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile> {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
 }

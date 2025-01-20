@@ -1,29 +1,28 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.analysis.api.impl.base.test.cases.components.scopeProvider
 
-import org.jetbrains.kotlin.analysis.api.KtAnalysisSession
-import org.jetbrains.kotlin.analysis.api.components.KtScopeContext
-import org.jetbrains.kotlin.analysis.api.components.KtScopeKind
+import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.components.KaScopeContext
+import org.jetbrains.kotlin.analysis.api.components.KaScopeKind
 import org.jetbrains.kotlin.analysis.api.impl.base.test.cases.components.scopeProvider.TestScopeRenderer.renderForTests
-import org.jetbrains.kotlin.analysis.test.framework.base.AbstractAnalysisApiBasedSingleModuleTest
+import org.jetbrains.kotlin.analysis.test.framework.base.AbstractAnalysisApiBasedTest
+import org.jetbrains.kotlin.analysis.test.framework.projectStructure.KtTestModule
 import org.jetbrains.kotlin.analysis.utils.printer.prettyPrint
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.test.directives.model.SimpleDirectivesContainer
-import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.assertions
 
-abstract class AbstractFileImportingScopeContextTest : AbstractAnalysisApiBasedSingleModuleTest() {
-    override fun doTestByFileStructure(ktFiles: List<KtFile>, module: TestModule, testServices: TestServices) {
-        val ktFile = ktFiles.first()
-        val renderDefaultImportingScope = Directives.RENDER_DEFAULT_IMPORTING_SCOPE in module.directives
+abstract class AbstractFileImportingScopeContextTest : AbstractAnalysisApiBasedTest() {
+    override fun doTestByMainFile(mainFile: KtFile, mainModule: KtTestModule, testServices: TestServices) {
+        val renderDefaultImportingScope = Directives.RENDER_DEFAULT_IMPORTING_SCOPE in mainModule.testModule.directives
 
-        analyseForTest(ktFile) {
-            val ktScopeContext = ktFile.getImportingScopeContext()
+        analyseForTest(mainFile) {
+            val ktScopeContext = mainFile.importingScopeContext
 
             val scopeContextStringRepresentation = render(ktScopeContext, renderDefaultImportingScope)
             val scopeContextStringRepresentationPretty = render(ktScopeContext, renderDefaultImportingScope, printPretty = true)
@@ -33,17 +32,16 @@ abstract class AbstractFileImportingScopeContextTest : AbstractAnalysisApiBasedS
         }
     }
 
-    context(KtAnalysisSession)
-    private fun render(
-        importingScope: KtScopeContext,
+    private fun KaSession.render(
+        importingScope: KaScopeContext,
         renderDefaultImportingScope: Boolean,
-        printPretty: Boolean = false
+        printPretty: Boolean = false,
     ): String = prettyPrint {
-        renderForTests(importingScope, printPretty) { ktScopeKind ->
+        renderForTests(useSiteSession, importingScope, this@prettyPrint, printPretty) { ktScopeKind ->
             when (ktScopeKind) {
-                is KtScopeKind.PackageMemberScope -> false
-                is KtScopeKind.DefaultSimpleImportingScope -> renderDefaultImportingScope
-                is KtScopeKind.DefaultStarImportingScope -> renderDefaultImportingScope
+                is KaScopeKind.PackageMemberScope -> false
+                is KaScopeKind.DefaultSimpleImportingScope -> renderDefaultImportingScope
+                is KaScopeKind.DefaultStarImportingScope -> renderDefaultImportingScope
                 else -> true
             }
         }

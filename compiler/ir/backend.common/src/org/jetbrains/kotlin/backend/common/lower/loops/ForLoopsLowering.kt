@@ -9,7 +9,7 @@ import org.jetbrains.kotlin.backend.common.BodyLoweringPass
 import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrDeclaration
@@ -17,31 +17,23 @@ import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrSymbolOwner
 import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
 import org.jetbrains.kotlin.ir.types.getClass
 import org.jetbrains.kotlin.ir.types.isNothing
-import org.jetbrains.kotlin.ir.types.isStrictSubtypeOfClass
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.*
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
-val forLoopsPhase = makeIrFilePhase(
-    ::ForLoopsLowering,
-    name = "ForLoopsLowering",
-    description = "For loops lowering"
-)
-
 /**
  * This lowering pass optimizes for-loops.
  *
- * Replace iteration over progressions (e.g., X.indices, a..b) and arrays with
+ * Replace iteration over progressions (e.g., `X.indices`, `a..b`) and arrays with
  * a simple while loop over primitive induction variable.
  *
  * For example, this loop:
  * ```
- *   for (loopVar in A..B) { // Loop body }
+ *   for (loopVar in A..B) { /* Loop body */ }
  * ```
  * is represented in IR in such a manner:
  * ```
@@ -102,10 +94,10 @@ val forLoopsPhase = makeIrFilePhase(
  *   }
  * ```
  */
-class ForLoopsLowering(
-    val context: CommonBackendContext,
-    private val loopBodyTransformer: ForLoopBodyTransformer? = null
-) : BodyLoweringPass {
+@PhaseDescription(name = "ForLoopsLowering")
+open class ForLoopsLowering(val context: CommonBackendContext) : BodyLoweringPass {
+    open val loopBodyTransformer: ForLoopBodyTransformer?
+        get() = null
 
     override fun lower(irBody: IrBody, container: IrDeclaration) {
         val oldLoopToNewLoop = mutableMapOf<IrLoop, IrLoop>()
@@ -322,20 +314,18 @@ private class RangeLoopTransformer(
         val initializer = iterator.initializer as? IrCall ?: return
         if (!initializer.symbol.owner.hasEqualFqName(STDLIB_ITERATOR_FUNCTION_FQ_NAME)) return
 
-        val receiverType = initializer.extensionReceiver?.type ?: return
+        val receiverType = initializer.arguments[0]?.type ?: return
         if (!receiverType.isStrictSubtypeOfClass(context.irBuiltIns.iteratorClass)) return
 
         val receiverClass = receiverType.getClass() ?: return
         val next = receiverClass.functions.singleOrNull {
             it.name == OperatorNameConventions.NEXT &&
-                    it.dispatchReceiverParameter != null &&
-                    it.extensionReceiverParameter == null &&
-                    it.valueParameters.isEmpty()
+                    it.hasShape(dispatchReceiver = true)
         } ?: return
 
         iterator.apply {
             this.type = receiverType
-            this.initializer = initializer.extensionReceiver
+            this.initializer = initializer.arguments[0]
         }
 
         val loop = statements[1] as IrWhileLoop
@@ -343,14 +333,10 @@ private class RangeLoopTransformer(
         val loopCondition = loop.condition as? IrCall ?: return
         loopCondition.dispatchReceiver?.type = receiverType
 
-        val nextCall = loopVariable.initializer as? IrCall ?: return
-        loopVariable.initializer = with(nextCall) {
-            IrCallImpl(
-                startOffset, endOffset, type, next.symbol, typeArgumentsCount, valueArgumentsCount, origin, superQualifierSymbol
-            ).apply {
-                copyTypeAndValueArgumentsFrom(nextCall)
-                dispatchReceiver?.type = receiverType
-            }
+        val nextCall = loopVariable.initializer
+        if (nextCall is IrCall) {
+            nextCall.symbol = next.symbol
+            nextCall.dispatchReceiver?.type = receiverType
         }
     }
 
@@ -361,7 +347,7 @@ private class RangeLoopTransformer(
         val loopVariableComponentIndices: List<Int>
     )
 
-    private class FindInitializerCallVisitor(private val mainLoopVariable: IrVariable?) : IrElementVisitorVoid {
+    private class FindInitializerCallVisitor(private val mainLoopVariable: IrVariable?) : IrVisitorVoid() {
         var initializerCall: IrCall? = null
 
         override fun visitElement(element: IrElement) {

@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 fun <T> getT(): T = null!!
 
 class Test<in I, out O> {
@@ -14,7 +15,7 @@ class Test<in I, out O> {
         apply(i)
         apply(this.i)
         with(Test<I, O>()) {
-            apply(i) // resolved to this@Test.i
+            apply(<!INVISIBLE_REFERENCE!>i<!>) // K1: this@Test.i, K2: this@with.i, see KT-55446
             apply(this.<!INVISIBLE_REFERENCE!>i<!>)
             apply(this@with.<!INVISIBLE_REFERENCE!>i<!>)
             apply(this@Test.i)

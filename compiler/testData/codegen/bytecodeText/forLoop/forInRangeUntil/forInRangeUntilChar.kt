@@ -1,4 +1,4 @@
-// !OPT_IN: kotlin.ExperimentalStdlibApi
+// OPT_IN: kotlin.ExperimentalStdlibApi
 // IGNORE_BACKEND: JVM
 
 // IMPORTANT!
@@ -29,7 +29,6 @@ fun test(a: Char, b: Char): String {
 // 0 IF_ICMPLT
 // 1 IF
 
-// JVM_IR_TEMPLATES
 // 5 ILOAD
 // 2 ISTORE
 // 1 IADD

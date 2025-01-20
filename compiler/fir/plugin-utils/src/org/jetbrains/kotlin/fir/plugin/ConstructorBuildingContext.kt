@@ -8,28 +8,29 @@ package org.jetbrains.kotlin.fir.plugin
 import org.jetbrains.kotlin.GeneratedDeclarationKey
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.Visibilities
-import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.containingClassForStaticMemberAttr
+import org.jetbrains.kotlin.fir.*
 import org.jetbrains.kotlin.fir.declarations.FirConstructor
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase
 import org.jetbrains.kotlin.fir.declarations.FirTypeParameterRef
 import org.jetbrains.kotlin.fir.declarations.builder.*
 import org.jetbrains.kotlin.fir.declarations.origin
+import org.jetbrains.kotlin.fir.declarations.utils.isExpect
 import org.jetbrains.kotlin.fir.declarations.utils.isInner
-import org.jetbrains.kotlin.fir.expressions.buildResolvedArgumentList
+import org.jetbrains.kotlin.fir.expressions.FirEmptyArgumentList
 import org.jetbrains.kotlin.fir.expressions.builder.buildDelegatedConstructorCall
 import org.jetbrains.kotlin.fir.extensions.FirExtension
-import org.jetbrains.kotlin.fir.getContainingClassLookupTag
-import org.jetbrains.kotlin.fir.moduleData
 import org.jetbrains.kotlin.fir.references.builder.buildResolvedNamedReference
 import org.jetbrains.kotlin.fir.resolve.defaultType
-import org.jetbrains.kotlin.fir.resolve.toSymbol
+import org.jetbrains.kotlin.fir.resolve.toClassSymbol
+import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 import org.jetbrains.kotlin.fir.scopes.getDeclaredConstructors
 import org.jetbrains.kotlin.fir.scopes.impl.declaredMemberScope
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirConstructorSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
-import org.jetbrains.kotlin.fir.types.*
+import org.jetbrains.kotlin.fir.symbols.impl.FirValueParameterSymbol
+import org.jetbrains.kotlin.fir.types.ConeKotlinType
+import org.jetbrains.kotlin.fir.types.coneType
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.callableIdForConstructor
 import org.jetbrains.kotlin.types.Variance
@@ -54,14 +55,17 @@ public class ConstructorBuildingContext(
             returnTypeRef = owner.defaultType().toFirResolvedTypeRef()
             status = generateStatus()
             if (owner.isInner) {
-                val parentSymbol = owner.getContainingClassLookupTag()?.toSymbol(session) as? FirClassSymbol<*>
+                val parentSymbol = owner.getContainingClassLookupTag()?.toClassSymbol(session)
                     ?: error("Symbol for parent of $owner not found")
                 dispatchReceiverType = parentSymbol.defaultType()
             }
             this@ConstructorBuildingContext.valueParameters.mapTo(valueParameters) { generateValueParameter(it, symbol, typeParameters) }
             if (owner is FirRegularClassSymbol) {
-                owner.resolvedContextReceivers.mapTo(contextReceivers) {
-                    buildContextReceiver { typeRef = it.typeRef.coneType.toFirResolvedTypeRef() }
+                owner.resolvedContextParameters.mapTo(contextParameters) {
+                    buildValueParameterCopy(it) {
+                        symbol = FirValueParameterSymbol(name)
+                        containingDeclarationSymbol = owner
+                    }
                 }
             }
         }
@@ -122,9 +126,13 @@ public fun FirExtension.createConstructor(
     generateDelegatedNoArgConstructorCall: Boolean = false,
     config: ConstructorBuildingContext.() -> Unit = {}
 ): FirConstructor {
-    return ConstructorBuildingContext(session, key, owner, isPrimary).apply(config).build().also {
+    return ConstructorBuildingContext(session, key, owner, isPrimary).apply(config).apply {
+        status {
+            isExpect = owner.isExpect
+        }
+    }.build().also {
         if (generateDelegatedNoArgConstructorCall) {
-            it.generateNoArgDelegatingConstructorCall()
+            it.generateNoArgDelegatingConstructorCall(session)
         }
     }
 }
@@ -148,14 +156,13 @@ public fun FirExtension.createDefaultPrivateConstructor(
     }
 }
 
-context(FirExtension)
-private fun FirConstructor.generateNoArgDelegatingConstructorCall() {
-    val owner = returnTypeRef.coneType.toSymbol(session) as? FirClassSymbol<*>
+private fun FirConstructor.generateNoArgDelegatingConstructorCall(session: FirSession) {
+    val owner = returnTypeRef.coneType.toClassSymbol(session)
     requireNotNull(owner)
     val delegatingConstructorCall = buildDelegatedConstructorCall {
         val superClasses = owner.resolvedSuperTypes.filter { it.toRegularClassSymbol(session)?.classKind == ClassKind.CLASS }
         val singleSupertype = when (superClasses.size) {
-            0 -> session.builtinTypes.anyType.type
+            0 -> session.builtinTypes.anyType.coneType
             1 -> superClasses.first()
             else -> error("Object $owner has more than one class supertypes: $superClasses")
         }
@@ -169,7 +176,7 @@ private fun FirConstructor.generateNoArgDelegatingConstructorCall() {
             name = superConstructorSymbol.name
             resolvedSymbol = superConstructorSymbol
         }
-        argumentList = buildResolvedArgumentList(LinkedHashMap())
+        argumentList = FirEmptyArgumentList
         isThis = false
     }
     replaceDelegatedConstructor(delegatingConstructorCall)

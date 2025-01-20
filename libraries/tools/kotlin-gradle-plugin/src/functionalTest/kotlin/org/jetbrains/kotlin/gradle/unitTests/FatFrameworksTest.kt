@@ -6,9 +6,13 @@
 package org.jetbrains.kotlin.gradle.unitTests
 
 import org.gradle.api.Project
+import org.gradle.api.Task
 import org.gradle.api.artifacts.Configuration
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
+import org.jetbrains.kotlin.gradle.tasks.FatFrameworkTask
+import org.jetbrains.kotlin.gradle.util.assertConfigurationsHaveTaskDependencies
 import org.jetbrains.kotlin.gradle.util.buildProjectWithMPP
 import org.jetbrains.kotlin.gradle.util.kotlin
 import kotlin.test.*
@@ -96,8 +100,73 @@ class FatFrameworksTest {
         project.evaluate()
         val barFat = project.assertConfigurationExists("barDebugFrameworkIosFat")
         val fooFat = project.assertConfigurationExists("fooDebugFrameworkIosFat")
-        assertEquals("f1", fooFat.attributes.getAttribute(KotlinNativeTarget.kotlinNativeFrameworkNameAttribute))
-        assertEquals("f2", barFat.attributes.getAttribute(KotlinNativeTarget.kotlinNativeFrameworkNameAttribute))
+        assertEquals("fooDebugFramework", fooFat.attributes.getAttribute(KotlinNativeTarget.kotlinNativeFrameworkNameAttribute))
+        assertEquals("barDebugFramework", barFat.attributes.getAttribute(KotlinNativeTarget.kotlinNativeFrameworkNameAttribute))
+    }
+
+    @Test
+    fun `consumable configurations of frameworks have correct dependencies on producing tasks`() {
+        val project = buildProjectWithMPP {
+            kotlin {
+                iosX64 { binaries.framework("foo", listOf(DEBUG)) }
+                iosArm64 { binaries.framework("foo", listOf(DEBUG)) }
+            }
+        }
+        project.evaluate()
+
+        project.assertConfigurationsHaveTaskDependencies(
+            "fooDebugFrameworkIosX64",
+            ":linkFooDebugFrameworkIosX64"
+        )
+
+        project.assertConfigurationsHaveTaskDependencies(
+            "fooDebugFrameworkIosArm64",
+            ":linkFooDebugFrameworkIosArm64"
+        )
+
+        project.assertConfigurationsHaveTaskDependencies(
+            "fooDebugFrameworkIosFat",
+            ":linkFooDebugFrameworkIosFat"
+        )
+    }
+
+    @Test
+    fun `universal framework task - correctly depends on link task frameworks - when framework's baseName is redefined`() {
+        val linkTasks = mutableSetOf<Task>()
+        var eagerlyCreatedTask: FatFrameworkTask? = null
+        val project = buildProjectWithMPP {
+            kotlin {
+                // 1. Eagerly configure universal framework task
+                eagerlyCreatedTask = tasks.create("testUniversalFrameworkTask", FatFrameworkTask::class.java)
+
+                listOf(
+                    iosX64(),
+                    iosSimulatorArm64(),
+                ).forEach {
+                    it.binaries.framework(listOf(NativeBuildType.DEBUG)) {
+                        linkTasks.add(linkTaskProvider.get())
+                        // 2. Depend on a framework
+                        eagerlyCreatedTask?.from(this)
+                        // 3. Redefine framework's baseName
+                        baseName = "foo"
+                    }
+                }
+            }
+        }.evaluate()
+
+        val task = assertNotNull(eagerlyCreatedTask)
+
+        assertEquals(
+            linkTasks,
+            task.taskDependencies.getDependencies(null),
+        )
+        assertEquals(
+            listOf(
+                project.layout.buildDirectory.file("bin/iosX64/debugFramework/foo.framework").get().asFile,
+                project.layout.buildDirectory.file("bin/iosSimulatorArm64/debugFramework/foo.framework").get().asFile,
+            ),
+            task.frameworks.map { it.file }
+        )
     }
 
     private fun testFatFrameworkGrouping(

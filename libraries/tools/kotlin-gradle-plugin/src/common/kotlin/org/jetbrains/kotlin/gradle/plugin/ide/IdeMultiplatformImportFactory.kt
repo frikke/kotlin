@@ -67,7 +67,7 @@ internal fun IdeMultiplatformImport(extension: KotlinProjectExtension): IdeMulti
 
         registerDependencyResolver(
             resolver = IdeTransformedMetadataDependencyResolver,
-            constraint = !SourceSetConstraint.isLeaf and !SourceSetConstraint.isJvmAndAndroid,
+            constraint = !SourceSetConstraint.isSingleKotlinTarget and !SourceSetConstraint.isJvmAndAndroid,
             phase = IdeMultiplatformImport.DependencyResolutionPhase.BinaryDependencyResolution,
             priority = IdeMultiplatformImport.Priority.normal
         )
@@ -125,23 +125,16 @@ internal fun IdeMultiplatformImport(extension: KotlinProjectExtension): IdeMulti
             priority = IdeMultiplatformImport.Priority.normal
         )
 
-        registerDependencyResolver(
-            resolver = IdePlatformSourcesResolver(),
-            constraint = SourceSetConstraint.isSinglePlatformType,
-            phase = IdeMultiplatformImport.DependencyResolutionPhase.SourcesAndDocumentationResolution,
-            priority = IdeMultiplatformImport.Priority.normal
-        )
-
         registerAdditionalArtifactResolver(
-            resolver = IdeMetadataSourcesResolver(),
-            constraint = !SourceSetConstraint.isSinglePlatformType,
+            resolver = IdeSourcesVariantsResolver,
+            constraint = SourceSetConstraint.unconstrained,
             phase = IdeMultiplatformImport.AdditionalArtifactResolutionPhase.SourcesAndDocumentationResolution,
             priority = IdeMultiplatformImport.Priority.normal
         )
 
         if (extension.project.kotlinPropertiesProvider.enableSlowIdeSourcesJarResolver) {
             registerAdditionalArtifactResolver(
-                resolver = IdeArtifactResolutionQuerySourcesAndDocumentationResolver,
+                resolver = IdeArtifactResolutionQuerySourcesResolver,
                 constraint = SourceSetConstraint.unconstrained,
                 phase = IdeMultiplatformImport.AdditionalArtifactResolutionPhase.SourcesAndDocumentationResolution,
                 priority = IdeMultiplatformImport.Priority.normal

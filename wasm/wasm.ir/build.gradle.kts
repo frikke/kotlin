@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 import java.net.URI
 
 plugins {
@@ -26,10 +27,10 @@ repositories {
     }
 }
 
-val wabtDir = File(buildDir, "wabt")
+val wabtDir = File(layout.buildDirectory.get().asFile, "wabt")
 val wabtVersion = "1.0.19"
 val testSuiteRevision = "18f8340"
-val testSuiteDir = File(buildDir, "testsuite")
+val testSuiteDir = File(layout.buildDirectory.get().asFile, "testsuite")
 
 val gradleOs = org.gradle.internal.os.OperatingSystem.current()
 val wabtOS = when {
@@ -54,14 +55,17 @@ dependencies {
 
     implementation(kotlinStdlib())
     implementation(kotlinxCollectionsImmutable())
-    testImplementation(commonDependency("junit:junit"))
-    testCompileOnly(project(":kotlin-test:kotlin-test-jvm"))
-    testCompileOnly(project(":kotlin-test:kotlin-test-junit"))
+    testImplementation(libs.junit4)
+    testCompileOnly(kotlinTest("junit"))
     testImplementation(projectTests(":compiler:tests-common"))
-    testImplementation(commonDependency("org.jetbrains.kotlinx", "kotlinx-serialization-json"))
+    testImplementation(libs.kotlinx.serialization.json)
 
     testSuite("webassembly:testsuite:$testSuiteRevision@zip")
     wabt("webassembly:wabt:$wabtVersion:$wabtOS@tar.gz")
+
+    implicitDependencies("webassembly:wabt:$wabtVersion:windows@tar.gz")
+    implicitDependencies("webassembly:wabt:$wabtVersion:ubuntu@tar.gz")
+    implicitDependencies("webassembly:wabt:$wabtVersion:macos@tar.gz")
 }
 
 val unzipTestSuite by task<Copy> {
@@ -89,11 +93,9 @@ sourceSets {
     "test" { projectDefault() }
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    kotlinOptions.freeCompilerArgs += listOf(
-        "-opt-in=kotlin.ExperimentalUnsignedTypes",
-        "-Xskip-prerelease-check"
-    )
+tasks.withType<KotlinJvmCompile>().configureEach {
+    compilerOptions.optIn.add("kotlin.ExperimentalUnsignedTypes")
+    compilerOptions.freeCompilerArgs.add("-Xskip-prerelease-check")
 }
 
 projectTest("test", true) {

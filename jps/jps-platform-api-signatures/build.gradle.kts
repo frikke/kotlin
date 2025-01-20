@@ -8,6 +8,8 @@ plugins {
 
 dependencies {
     implementation(kotlinStdlib())
+    compileOnly(libs.intellij.asm)
+    compileOnly(intellijPlatformUtil())
 }
 
 sourceSets {

@@ -5,10 +5,8 @@
 
 package org.jetbrains.kotlin.incremental.classpathDiff
 
-import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporter
-import org.jetbrains.kotlin.build.report.metrics.BuildTime
-import org.jetbrains.kotlin.build.report.metrics.DoNothingBuildMetricsReporter
-import org.jetbrains.kotlin.build.report.metrics.measure
+import org.jetbrains.kotlin.build.report.metrics.*
+import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity
 import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.snapshotClass
 import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.snapshotClassExcludingMembers
 import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.snapshotField
@@ -17,18 +15,18 @@ import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.sortClassMembers
 import org.jetbrains.kotlin.incremental.DifferenceCalculatorForPackageFacade.Companion.getNonPrivateMembers
 import org.jetbrains.kotlin.incremental.KotlinClassInfo
 import org.jetbrains.kotlin.incremental.PackagePartProtoData
-import org.jetbrains.kotlin.incremental.classpathDiff.ClassSnapshotGranularity.CLASS_MEMBER_LEVEL
+import org.jetbrains.kotlin.incremental.SelectiveClassVisitor
+import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity.CLASS_MEMBER_LEVEL
 import org.jetbrains.kotlin.incremental.hashToLong
 import org.jetbrains.kotlin.incremental.storage.toByteArray
 import org.jetbrains.kotlin.konan.file.use
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader.Kind.*
+import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMemberSignature
 import org.jetbrains.kotlin.resolve.jvm.JvmClassName
 import org.jetbrains.org.objectweb.asm.ClassReader
-import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.tree.ClassNode
 import java.io.Closeable
 import java.io.File
-import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 
 /** Computes a [ClasspathEntrySnapshot] of a classpath entry (directory or jar). */
@@ -44,10 +42,10 @@ object ClasspathEntrySnapshotter {
     fun snapshot(
         classpathEntry: File,
         granularity: ClassSnapshotGranularity,
-        metrics: BuildMetricsReporter = DoNothingBuildMetricsReporter
+        metrics: BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric> = DoNothingBuildMetricsReporter
     ): ClasspathEntrySnapshot {
         DirectoryOrJarReader.create(classpathEntry).use { directoryOrJarReader ->
-            val classes = metrics.measure(BuildTime.LOAD_CLASSES_PATHS_ONLY) {
+            val classes = metrics.measure(GradleBuildTime.LOAD_CLASSES_PATHS_ONLY) {
                 directoryOrJarReader.getUnixStyleRelativePaths(DEFAULT_CLASS_FILTER).map { unixStyleRelativePath ->
                     ClassFileWithContentsProvider(
                         classFile = ClassFile(classpathEntry, unixStyleRelativePath),
@@ -55,7 +53,7 @@ object ClasspathEntrySnapshotter {
                     )
                 }
             }
-            val snapshots = metrics.measure(BuildTime.SNAPSHOT_CLASSES) {
+            val snapshots = metrics.measure(GradleBuildTime.SNAPSHOT_CLASSES) {
                 ClassSnapshotter.snapshot(classes, granularity, metrics)
             }
             return ClasspathEntrySnapshot(
@@ -71,7 +69,7 @@ object ClassSnapshotter {
     fun snapshot(
         classes: List<ClassFileWithContentsProvider>,
         granularity: ClassSnapshotGranularity,
-        metrics: BuildMetricsReporter = DoNothingBuildMetricsReporter
+        metrics: BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric> = DoNothingBuildMetricsReporter
     ): List<ClassSnapshot> {
         fun ClassFile.getClassName(): JvmClassName {
             check(unixStyleRelativePath.endsWith(".class", ignoreCase = true))
@@ -83,7 +81,7 @@ object ClassSnapshotter {
 
         fun snapshotClass(classFile: ClassFileWithContentsProvider): ClassSnapshot {
             return classFileToSnapshotMap.getOrPut(classFile) {
-                val clazz = metrics.measure(BuildTime.LOAD_CONTENTS_OF_CLASSES) {
+                val clazz = metrics.measure(GradleBuildTime.LOAD_CONTENTS_OF_CLASSES) {
                     classFile.loadContents()
                 }
                 // Snapshot outer class first as we need this info to determine whether a class is transitively inaccessible (see below)
@@ -98,10 +96,10 @@ object ClassSnapshotter {
                     clazz.classInfo.isInaccessible() || outerClassSnapshot is InaccessibleClassSnapshot -> {
                         InaccessibleClassSnapshot
                     }
-                    clazz.classInfo.isKotlinClass -> metrics.measure(BuildTime.SNAPSHOT_KOTLIN_CLASSES) {
+                    clazz.classInfo.isKotlinClass -> metrics.measure(GradleBuildTime.SNAPSHOT_KOTLIN_CLASSES) {
                         snapshotKotlinClass(clazz, granularity)
                     }
-                    else -> metrics.measure(BuildTime.SNAPSHOT_JAVA_CLASSES) {
+                    else -> metrics.measure(GradleBuildTime.SNAPSHOT_JAVA_CLASSES) {
                         snapshotJavaClass(clazz, granularity)
                     }
                 }
@@ -163,23 +161,30 @@ object ClassSnapshotter {
         //   2. Remove non-ABI info from the full class
         // Note that for incremental compilation to be correct, all ABI info must be collected exhaustively (now and in the future when
         // there are updates to Java/ASM), whereas it is acceptable if non-ABI info is not removed completely.
-        // In the following, we will use the second approach as it is safer and easier.
+        // Therefore, we will use the second approach as it is safer and easier.
 
+        // 1. Create a ClassNode that will contain ABI info of the class
         val classNode = ClassNode()
-        val classReader = ClassReader(classFile.contents)
 
+        // 2. Load the class's contents into the ClassNode, removing non-ABI info:
+        //     - Remove private fields and methods
+        //     - Remove method bodies
+        //     - [Not yet implemented] Ignore fields' values except for constants
         // Note the `parsingOptions` passed to `classReader`:
-        //   - Pass SKIP_CODE as method bodies are not important
-        //   - Do not pass SKIP_DEBUG as debug info (e.g., method parameter names) may be important
-        classReader.accept(classNode, ClassReader.SKIP_CODE)
+        //     - Pass SKIP_CODE as we want to remove method bodies
+        //     - Do not pass SKIP_DEBUG as debug info (e.g., method parameter names) may be important
+        val classReader = ClassReader(classFile.contents)
+        val selectiveClassVisitor = SelectiveClassVisitor(
+            classNode,
+            shouldVisitField = { _: JvmMemberSignature.Field, isPrivate: Boolean, _: Boolean -> !isPrivate },
+            shouldVisitMethod = { _: JvmMemberSignature.Method, isPrivate: Boolean -> !isPrivate }
+        )
+        classReader.accept(selectiveClassVisitor, ClassReader.SKIP_CODE)
+
+        // 3. Sort fields and methods as their order is not important
         sortClassMembers(classNode)
 
-        // Remove private fields and methods
-        fun Int.isPrivate() = (this and Opcodes.ACC_PRIVATE) != 0
-        classNode.fields.removeIf { it.access.isPrivate() }
-        classNode.methods.removeIf { it.access.isPrivate() }
-
-        // Snapshot the class
+        // 4. Snapshot the class
         val classMemberLevelSnapshot = if (granularity == CLASS_MEMBER_LEVEL) {
             JavaClassMemberLevelSnapshot(
                 classAbiExcludingMembers = JavaElementSnapshot(classNode.name, snapshotClassExcludingMembers(classNode)),
@@ -190,6 +195,7 @@ object ClassSnapshotter {
             null
         }
         val classAbiHash = if (granularity == CLASS_MEMBER_LEVEL) {
+            // We already have the class-member-level snapshot, so we can just hash it instead of snapshotting the class again
             JavaClassMemberLevelSnapshotExternalizer.toByteArray(classMemberLevelSnapshot!!).hashToLong()
         } else {
             snapshotClass(classNode)

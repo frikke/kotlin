@@ -1,6 +1,8 @@
 @file:Suppress("HasPlatformType")
 
 import org.gradle.internal.jvm.Jvm
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.plugin.attributes.KlibPackaging
 import java.util.regex.Pattern.quote
 
 description = "Kotlin Compiler"
@@ -9,6 +11,8 @@ plugins {
     // HACK: java plugin makes idea import dependencies on this project as source (with empty sources however),
     // this prevents reindexing of kotlin-compiler.jar after build on every change in compiler modules
     `java-library`
+    // required to disambiguate attributes of non-jvm Kotlin libraries
+    kotlin("jvm")
 }
 
 
@@ -50,6 +54,9 @@ val libraries by configurations.creating {
 
 val librariesStripVersion by configurations.creating
 
+// for sbom only
+val librariesKotlinTest by configurations.creating
+
 // Compiler plugins should be copied without `kotlin-` prefix
 val compilerPlugins by configurations.creating {
     exclude("org.jetbrains.kotlin", "kotlin-stdlib-common")
@@ -77,23 +84,19 @@ val distMavenContents by configurations.creating {
 val distCommonContents by configurations.creating
 val distStdlibMinimalForTests by configurations.creating
 val buildNumber by configurations.creating
-val distJSContents by configurations.creating
 
 val compilerBaseName = name
-
-val outputJar = fileFrom(buildDir, "libs", "$compilerBaseName.jar")
 
 val compilerModules: Array<String> by rootProject.extra
 
 val distLibraryProjects = listOfNotNull(
-    ":kotlin-annotation-processing",
     ":kotlin-annotation-processing-cli",
     ":kotlin-annotation-processing-runtime",
+    ":kotlin-annotation-processing",
     ":kotlin-annotations-jvm",
     ":kotlin-ant",
     ":kotlin-daemon",
     ":kotlin-daemon-client",
-    // TODO: uncomment when new daemon will be put back into dist
     ":kotlin-imports-dumper-compiler-plugin",
     ":kotlin-main-kts",
     ":kotlin-preloader",
@@ -101,17 +104,13 @@ val distLibraryProjects = listOfNotNull(
     // SNAPSHOT reflect into the dist because we use reflect dist in user code compile classpath (see JvmArgumentsKt.configureStandardLibs).
     // We can use reflect of a bigger version in Kotlin compiler runtime, because kotlin-reflect follows backwards binary compatibility
     ":kotlin-reflect",
+    ":kotlin-metadata-jvm",
     ":kotlin-runner",
     ":kotlin-script-runtime",
     ":kotlin-scripting-common",
     ":kotlin-scripting-compiler",
     ":kotlin-scripting-compiler-impl",
     ":kotlin-scripting-jvm",
-    ":js:js.engines",
-    ":kotlin-test:kotlin-test-junit",
-    ":kotlin-test:kotlin-test-junit5",
-    ":kotlin-test:kotlin-test-jvm",
-    ":kotlin-test:kotlin-test-testng",
     ":libraries:tools:mutability-annotations-compat",
     ":plugins:android-extensions-compiler",
     ":plugins:jvm-abi-gen"
@@ -123,11 +122,13 @@ val distCompilerPluginProjects = listOf(
     ":plugins:parcelize:parcelize-compiler",
     ":plugins:parcelize:parcelize-runtime",
     ":kotlin-noarg-compiler-plugin",
+    ":kotlin-power-assert-compiler-plugin",
     ":kotlin-sam-with-receiver-compiler-plugin",
     ":kotlinx-serialization-compiler-plugin",
     ":kotlin-lombok-compiler-plugin",
     ":kotlin-assignment-compiler-plugin",
-    ":kotlin-scripting-compiler"
+    ":kotlin-scripting-compiler",
+    ":plugins:compose-compiler-plugin:compiler-hosted",
 )
 val distCompilerPluginProjectsCompat = listOf(
     ":kotlinx-serialization-compiler-plugin",
@@ -136,10 +137,7 @@ val distCompilerPluginProjectsCompat = listOf(
 val distSourcesProjects = listOfNotNull(
     ":kotlin-annotations-jvm",
     ":kotlin-script-runtime",
-    ":kotlin-test:kotlin-test-js".takeIf { !kotlinBuildProperties.isInJpsBuildIdeaSync },
-    ":kotlin-test:kotlin-test-junit",
-    ":kotlin-test:kotlin-test-junit5",
-    ":kotlin-test:kotlin-test-testng"
+    ":kotlin-metadata-jvm",
 )
 
 configurations.all {
@@ -153,7 +151,7 @@ dependencies {
     api(project(":kotlin-script-runtime"))
     api(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
     api(commonDependency("org.jetbrains.intellij.deps", "trove4j"))
-    api(commonDependency("org.jetbrains.kotlinx", "kotlinx-coroutines-core"))
+    api(libs.kotlinx.coroutines.core)
 
     proguardLibraries(project(":kotlin-annotations-jvm"))
 
@@ -166,20 +164,22 @@ dependencies {
         }
 
     libraries(kotlinStdlib("jdk8"))
+    librariesKotlinTest(kotlinTest("junit"))
     if (!kotlinBuildProperties.isInJpsBuildIdeaSync) {
-        libraries(kotlinStdlib("js", "distLibrary"))
-        libraries(project(":kotlin-test:kotlin-test-js", configuration = "distLibrary"))
+        libraries(kotlinStdlib(classifier = "distJsJar"))
+        libraries(kotlinStdlib(classifier = "distJsKlib"))
     }
 
-    librariesStripVersion(commonDependency("org.jetbrains.kotlinx", "kotlinx-coroutines-core")) { isTransitive = false }
+    librariesStripVersion(libs.kotlinx.coroutines.core) { isTransitive = false }
     librariesStripVersion(commonDependency("org.jetbrains.intellij.deps:trove4j")) { isTransitive = false }
 
     distLibraryProjects.forEach {
         libraries(project(it)) { isTransitive = false }
     }
-
-    distCompilerPluginProjects.forEach {
-        compilerPlugins(project(it)) { isTransitive = false }
+    if (!kotlinBuildProperties.isInJpsBuildIdeaSync) {
+        distCompilerPluginProjects.forEach {
+            compilerPlugins(project(it)) { isTransitive = false }
+        }
     }
     distCompilerPluginProjectsCompat.forEach {
         compilerPluginsCompat(
@@ -204,51 +204,60 @@ dependencies {
         sources("org.jetbrains.kotlin:kotlin-reflect:$bootstrapKotlinVersion:sources")
     } else {
         sources(project(":kotlin-stdlib", configuration = "distSources"))
-        sources(project(":kotlin-stdlib-js", configuration = "distSources"))
+        sources(project(":kotlin-stdlib", configuration = "distJsSourcesJar"))
         sources(project(":kotlin-reflect", configuration = "sources"))
-        sources(project(":kotlin-test", "combinedJvmSourcesJar"))
 
         distStdlibMinimalForTests(project(":kotlin-stdlib-jvm-minimal-for-test"))
 
-        distJSContents(project(":kotlin-stdlib-js", configuration = "distJs"))
-        distJSContents(project(":kotlin-test:kotlin-test-js", configuration = "distJs"))
+        distCommonContents(project(":kotlin-stdlib", configuration = "commonMainMetadataElements"))
+        distCommonContents(project(":kotlin-stdlib", configuration = "metadataSourcesElements"))
     }
-
-    distCommonContents(kotlinStdlib(suffix = "common"))
-    distCommonContents(kotlinStdlib(suffix = "common", classifier = "sources"))
 
     distMavenContents(kotlinStdlib(classifier = "sources"))
 
     buildNumber(project(":prepare:build.version", configuration = "buildVersion"))
 
-    fatJarContents(kotlinBuiltins())
+    if (!kotlinBuildProperties.isInJpsBuildIdeaSync) {
+        fatJarContents(kotlinBuiltins())
+    }
     fatJarContents(commonDependency("javax.inject"))
     fatJarContents(commonDependency("org.jline", "jline"))
     fatJarContents(commonDependency("org.fusesource.jansi", "jansi"))
     fatJarContents(protobufFull())
     fatJarContents(commonDependency("com.google.code.findbugs", "jsr305"))
-    fatJarContents(commonDependency("io.javaslang", "javaslang"))
+    fatJarContents(libs.vavr)
     fatJarContents(commonDependency("org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm")) { isTransitive = false }
 
     fatJarContents(intellijCore())
     fatJarContents(commonDependency("org.jetbrains.intellij.deps.jna:jna")) { isTransitive = false }
     fatJarContents(commonDependency("org.jetbrains.intellij.deps.jna:jna-platform")) { isTransitive = false }
-    fatJarContents(commonDependency("org.jetbrains.intellij.deps.fastutil:intellij-deps-fastutil")) { isTransitive = false }
+    fatJarContents(libs.intellij.fastutil)
     fatJarContents(commonDependency("org.lz4:lz4-java")) { isTransitive = false }
-    fatJarContents(commonDependency("org.jetbrains.intellij.deps:asm-all")) { isTransitive = false }
-    fatJarContents(commonDependency("com.google.guava:guava")) { isTransitive = false }
-    fatJarContents(commonDependency("com.google.code.gson:gson")) { isTransitive = false}
+    fatJarContents(libs.intellij.asm) { isTransitive = false }
+    fatJarContents(libs.guava) { isTransitive = false }
+    //Gson is needed for kotlin-build-statistics. Build statistics could be enabled for JPS and Gradle builds. Gson will come from inteliij or KGP.
+    proguardLibraries(commonDependency("com.google.code.gson:gson")) { isTransitive = false}
 
     fatJarContentsStripServices(commonDependency("com.fasterxml:aalto-xml")) { isTransitive = false }
     fatJarContents(commonDependency("org.codehaus.woodstox:stax2-api")) { isTransitive = false }
 
-    fatJarContentsStripServices(jpsModel()) { isTransitive = false }
-    fatJarContentsStripServices(jpsModelImpl()) { isTransitive = false }
     fatJarContentsStripMetadata(commonDependency("oro:oro")) { isTransitive = false }
-    fatJarContentsStripMetadata(commonDependency("org.jetbrains.intellij.deps:jdom")) { isTransitive = false }
+    fatJarContentsStripMetadata(intellijJDom()) { isTransitive = false }
     fatJarContentsStripMetadata(commonDependency("org.jetbrains.intellij.deps:log4j")) { isTransitive = false }
     fatJarContentsStripVersions(commonDependency("one.util:streamex")) { isTransitive = false }
 }
+
+val librariesKotlinTestFiles = files(
+    listOf(null, "junit", "junit5", "testng", "js").map { suffix ->
+        listOf(null, "sources").map { classifier ->
+            configurations.detachedConfiguration(dependencies.create(kotlinTest(suffix, classifier))).apply {
+                isTransitive = false
+                @OptIn(ExperimentalKotlinGradlePluginApi::class)
+                attributes.attribute(KlibPackaging.ATTRIBUTE, objects.named(KlibPackaging.PACKED))
+            }
+        }
+    }
+)
 
 publish()
 
@@ -256,12 +265,12 @@ publish()
 val distSbomTask = configureSbom(
     target = "Dist",
     documentName = "Kotlin Compiler Distribution",
-    setOf(configurations.runtimeClasspath.name, libraries.name, librariesStripVersion.name, compilerPlugins.name)
+    setOf(configurations.runtimeClasspath.name, libraries.name, librariesKotlinTest.name, librariesStripVersion.name, compilerPlugins.name)
 )
 
 val packCompiler by task<Jar> {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    destinationDirectory.set(File(buildDir, "libs"))
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
     archiveClassifier.set("before-proguard")
 
     dependsOn(fatJarContents)
@@ -310,12 +319,13 @@ val proguard by task<CacheableProguardTask> {
             !net/sf/cglib/**,
             !META-INF/maven**,
             **.class,**.properties,**.kt,**.kotlin_*,**.jnilib,**.so,**.dll,**.txt,**.caps,
+            custom-formatters.js,
             META-INF/services/**,META-INF/native/**,META-INF/extensions/**,META-INF/MANIFEST.MF,
             messages/**""".trimIndent()),
-        provider { packCompiler.get().outputs.files.singleFile }
+        packCompiler.map { it.outputs.files.singleFile }
     )
 
-    outjars(fileFrom(buildDir, "libs", "$compilerBaseName-after-proguard.jar"))
+    outjars(layout.buildDirectory.file("libs/$compilerBaseName-after-proguard.jar"))
 
     libraryjars(mapOf("filter" to "!META-INF/versions/**"), proguardLibraries)
     libraryjars(
@@ -325,25 +335,25 @@ val proguard by task<CacheableProguardTask> {
                     "jre/lib/rt.jar",
                     "../Classes/classes.jar",
                     jdkHome = it.metadata.installationPath.asFile
-                )
+                )!!
             },
             javaLauncher.map {
                 firstFromJavaHomeThatExists(
                     "jre/lib/jsse.jar",
                     "../Classes/jsse.jar",
                     jdkHome = it.metadata.installationPath.asFile
-                )
+                )!!
             },
             javaLauncher.map {
-                Jvm.forHome(it.metadata.installationPath.asFile).toolsJar
+                Jvm.forHome(it.metadata.installationPath.asFile).toolsJar!!
             }
         )
     )
 
-    printconfiguration("$buildDir/compiler.pro.dump")
+    printconfiguration(layout.buildDirectory.file("compiler.pro.dump"))
 }
 
-val pack = if (kotlinBuildProperties.proguard) proguard else packCompiler
+val pack: TaskProvider<out DefaultTask> = if (kotlinBuildProperties.proguard) proguard else packCompiler
 val distDir: String by rootProject.extra
 
 val jar = runtimeJar {
@@ -351,7 +361,7 @@ val jar = runtimeJar {
     dependsOn(compilerVersion)
 
     from {
-        zipTree(pack.get().singleOutputFile())
+        pack.map { zipTree(it.singleOutputFile(layout)) }
     }
 
     from {
@@ -399,6 +409,7 @@ val distKotlinc = distTask<Sync>("distKotlinc") {
     into("lib") {
         from(jarFiles) { rename { "$compilerBaseName.jar" } }
         from(librariesFiles)
+        from(librariesKotlinTestFiles)
         from(librariesStripVersionFiles) {
             rename {
                 it.replace(Regex("-\\d.*\\.jar\$"), ".jar")
@@ -419,22 +430,27 @@ val distKotlinc = distTask<Sync>("distKotlinc") {
         from(compilerPluginsCompatFiles) {
             rename { it.removePrefix("kotlin-") }
         }
+        filePermissions {
+            unix("rw-r--r--")
+        }
     }
 }
 
 val distCommon = distTask<Sync>("distCommon") {
     destinationDir = File("$distDir/common")
-    from(distCommonContents)
+    from(distCommonContents) {
+        rename { name ->
+            name
+                .replace("-metadata.jar", "-common.jar")
+                .replace("-metadata.klib", "-common.klib")
+                .replace("-metadata-sources.jar", "-common-sources.jar")
+        }
+    }
 }
 
 val distMaven = distTask<Sync>("distMaven") {
     destinationDir = File("$distDir/maven")
     from(distMavenContents)
-}
-
-val distJs = distTask<Sync>("distJs") {
-    destinationDir = File("$distDir/js")
-    from(distJSContents)
 }
 
 distTask<Copy>("dist") {
@@ -443,12 +459,11 @@ distTask<Copy>("dist") {
     dependsOn(distKotlinc)
     dependsOn(distCommon)
     dependsOn(distMaven)
-    dependsOn(distJs)
     dependsOn(distSbomTask)
 
     from(buildNumber)
     from(distStdlibMinimalForTests)
-    from(distSbomTask.map { it.outputDirectory.file("Dist.spdx.json") }) {
+    from(distSbomTask) {
         rename(".*", "${project.name}-${project.version}.spdx.json")
     }
 }

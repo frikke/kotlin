@@ -18,9 +18,11 @@ import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.types.isNullableString
 import org.jetbrains.kotlin.ir.types.makeNotNull
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
+import org.jetbrains.kotlin.ir.visitors.IrTransformer
 
-
+/**
+ * Links [kotlin.Throwable] and JavaScript `Error` together to provide proper interop between language and platform exceptions.
+ */
 class ThrowableLowering(val context: JsIrBackendContext, val extendThrowableFunction: IrSimpleFunctionSymbol) : BodyLoweringPass {
     private val throwableConstructors = context.throwableConstructors
     private val newThrowableFunction = context.newThrowableSymbol
@@ -39,15 +41,15 @@ class ThrowableLowering(val context: JsIrBackendContext, val extendThrowableFunc
     }
 
     private fun IrFunctionAccessExpression.extractThrowableArguments(): ThrowableArguments =
-        when (valueArgumentsCount) {
+        when (arguments.size) {
             0 -> ThrowableArguments(undefinedValue(), undefinedValue())
             2 -> ThrowableArguments(
-                message = getValueArgument(0)!!,
-                cause = getValueArgument(1)!!
+                message = arguments[0]!!,
+                cause = arguments[1]!!
             )
             else -> {
-                val arg = getValueArgument(0)!!
-                val parameter = symbol.owner.valueParameters[0]
+                val arg = arguments[0]!!
+                val parameter = symbol.owner.parameters[0]
                 when {
                     parameter.type.isNullableString() -> ThrowableArguments(message = arg, cause = undefinedValue())
                     else -> {
@@ -58,7 +60,7 @@ class ThrowableLowering(val context: JsIrBackendContext, val extendThrowableFunc
             }
         }
 
-    inner class Transformer : IrElementTransformer<IrDeclarationParent> {
+    inner class Transformer : IrTransformer<IrDeclarationParent>() {
         private val anyConstructor = context.irBuiltIns.anyClass.constructors.first()
 
         override fun visitClass(declaration: IrClass, data: IrDeclarationParent) = super.visitClass(declaration, declaration)
@@ -72,11 +74,10 @@ class ThrowableLowering(val context: JsIrBackendContext, val extendThrowableFunc
             return expression.run {
                 IrCallImpl(
                     startOffset, endOffset, type, newThrowableFunction,
-                    valueArgumentsCount = 2,
                     typeArgumentsCount = 0
                 ).also {
-                    it.putValueArgument(0, messageArg)
-                    it.putValueArgument(1, causeArg)
+                    it.arguments[0] = messageArg
+                    it.arguments[1] = causeArg
                 }
             }
         }
@@ -93,12 +94,11 @@ class ThrowableLowering(val context: JsIrBackendContext, val extendThrowableFunc
             val expressionReplacement = expression.run {
                 IrCallImpl(
                     startOffset, endOffset, type, extendThrowableFunction,
-                    valueArgumentsCount = 3,
                     typeArgumentsCount = 0
-                ).also {
-                    it.putValueArgument(0, thisReceiver)
-                    it.putValueArgument(1, messageArg)
-                    it.putValueArgument(2, causeArg)
+                ).apply {
+                    arguments[0] = thisReceiver
+                    arguments[1] = messageArg
+                    arguments[2] = causeArg
                 }
             }
 
@@ -114,7 +114,6 @@ class ThrowableLowering(val context: JsIrBackendContext, val extendThrowableFunc
                             context.irBuiltIns.anyType,
                             anyConstructor,
                             0,
-                            0
                         ),
                         expressionReplacement
                     )

@@ -5,136 +5,118 @@
 
 package org.jetbrains.kotlin.test.frontend.fir
 
+import org.jetbrains.kotlin.backend.common.IrSpecialAnnotationsProvider
+import org.jetbrains.kotlin.backend.common.actualizer.IrExtraActualDeclarationExtractor
 import org.jetbrains.kotlin.backend.jvm.JvmIrCodegenFactory
 import org.jetbrains.kotlin.backend.jvm.JvmIrDeserializerImpl
-import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
-import org.jetbrains.kotlin.cli.jvm.compiler.NoScopeRecordCliBindingTrace
-import org.jetbrains.kotlin.cli.jvm.compiler.TopDownAnalyzerFacadeForJVM
+import org.jetbrains.kotlin.backend.jvm.JvmIrSpecialAnnotationSymbolProvider
+import org.jetbrains.kotlin.backend.jvm.JvmIrTypeSystemContext
 import org.jetbrains.kotlin.codegen.ClassBuilderFactories
 import org.jetbrains.kotlin.codegen.state.GenerationState
-import org.jetbrains.kotlin.container.get
-import org.jetbrains.kotlin.fir.FirAnalyzerFacade
-import org.jetbrains.kotlin.fir.backend.Fir2IrCommonMemberStorage
+import org.jetbrains.kotlin.config.CompilerConfiguration
+import org.jetbrains.kotlin.diagnostics.impl.BaseDiagnosticsCollector
 import org.jetbrains.kotlin.fir.backend.Fir2IrComponents
-import org.jetbrains.kotlin.fir.backend.IrBuiltInsOverFir
-import org.jetbrains.kotlin.fir.backend.jvm.FirJvmBackendClassResolver
-import org.jetbrains.kotlin.fir.backend.jvm.FirJvmBackendExtension
-import org.jetbrains.kotlin.fir.backend.jvm.FirJvmKotlinMangler
-import org.jetbrains.kotlin.fir.backend.jvm.JvmFir2IrExtensions
-import org.jetbrains.kotlin.fir.pipeline.signatureComposerForJvmFir2Ir
-import org.jetbrains.kotlin.fir.psi
+import org.jetbrains.kotlin.fir.backend.Fir2IrConfiguration
+import org.jetbrains.kotlin.fir.backend.Fir2IrVisibilityConverter
+import org.jetbrains.kotlin.fir.backend.jvm.*
+import org.jetbrains.kotlin.fir.backend.utils.extractFirDeclarations
+import org.jetbrains.kotlin.fir.pipeline.Fir2IrActualizedResult
+import org.jetbrains.kotlin.fir.pipeline.Fir2KlibMetadataSerializer
+import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.backend.jvm.serialization.JvmIrMangler
-import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.resolve.CompilerEnvironment
-import org.jetbrains.kotlin.resolve.lazy.declarations.FileBasedDeclarationProviderFactory
+import org.jetbrains.kotlin.ir.types.IrTypeSystemContext
+import org.jetbrains.kotlin.ir.util.KotlinMangler
+import org.jetbrains.kotlin.library.KotlinLibrary
+import org.jetbrains.kotlin.library.metadata.KlibMetadataFactories
 import org.jetbrains.kotlin.test.backend.ir.IrBackendInput
-import org.jetbrains.kotlin.test.directives.CodegenTestDirectives
-import org.jetbrains.kotlin.test.model.BackendKinds
-import org.jetbrains.kotlin.test.model.Frontend2BackendConverter
-import org.jetbrains.kotlin.test.model.FrontendKinds
 import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.compilerConfigurationProvider
 
-class Fir2IrJvmResultsConverter(
-    testServices: TestServices
-) : Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>(
-    testServices,
-    FrontendKinds.FIR,
-    BackendKinds.IrBackend
-) {
-    override fun transform(
-        module: TestModule,
-        inputArtifact: FirOutputArtifact
-    ): IrBackendInput? {
-        return try {
-            transformInternal(module, inputArtifact)
-        } catch (e: Throwable) {
-            if (CodegenTestDirectives.IGNORE_FIR2IR_EXCEPTIONS_IF_FIR_CONTAINS_ERRORS in module.directives && inputArtifact.hasErrors) {
-                null
-            } else {
-                throw e
-            }
+@InternalFir2IrConverterAPI
+internal class Fir2IrJvmResultsConverter(testServices: TestServices) : AbstractFir2IrResultsConverter(testServices) {
+    override fun createIrMangler(): KotlinMangler.IrMangler = JvmIrMangler
+
+    override fun createFir2IrExtensions(compilerConfiguration: CompilerConfiguration): JvmFir2IrExtensions {
+        return JvmFir2IrExtensions(compilerConfiguration, JvmIrDeserializerImpl())
+    }
+
+    override fun createFir2IrVisibilityConverter(): Fir2IrVisibilityConverter {
+        return FirJvmVisibilityConverter
+    }
+
+    override fun createTypeSystemContextProvider(): (IrBuiltIns) -> IrTypeSystemContext {
+        return ::JvmIrTypeSystemContext
+    }
+
+    override fun createSpecialAnnotationsProvider(): IrSpecialAnnotationsProvider {
+        return JvmIrSpecialAnnotationSymbolProvider
+    }
+
+    override fun createExtraActualDeclarationExtractorInitializer(): (Fir2IrComponents) -> List<IrExtraActualDeclarationExtractor> {
+        return {
+            listOfNotNull(
+                FirJvmBuiltinProviderActualDeclarationExtractor.initializeIfNeeded(it),
+                FirDirectJavaActualDeclarationExtractor.initializeIfNeeded(it)
+            )
         }
     }
 
-    private fun transformInternal(
-        module: TestModule,
-        inputArtifact: FirOutputArtifact
-    ): IrBackendInput.JvmIrBackendInput {
+    override fun resolveLibraries(module: TestModule, compilerConfiguration: CompilerConfiguration): List<KotlinLibrary> {
         val compilerConfigurationProvider = testServices.compilerConfigurationProvider
-        val configuration = compilerConfigurationProvider.getCompilerConfiguration(module)
-
-        val irMangler = JvmIrMangler
-        val fir2IrExtensions = JvmFir2IrExtensions(configuration, JvmIrDeserializerImpl(), irMangler)
-
         // Create and initialize the module and its dependencies
-        val project = compilerConfigurationProvider.getProject(module)
+        compilerConfigurationProvider.getProject(module)
+        return emptyList()
+    }
+
+    override val klibFactories: KlibMetadataFactories
+        get() = error("Should not be called")
+
+    override fun createFir2IrConfiguration(
+        compilerConfiguration: CompilerConfiguration,
+        diagnosticReporter: BaseDiagnosticsCollector,
+    ): Fir2IrConfiguration {
+        return Fir2IrConfiguration.forJvmCompilation(compilerConfiguration, diagnosticReporter)
+    }
+
+    override fun createBackendInput(
+        module: TestModule,
+        compilerConfiguration: CompilerConfiguration,
+        diagnosticReporter: BaseDiagnosticsCollector,
+        inputArtifact: FirOutputArtifact,
+        fir2IrResult: Fir2IrActualizedResult,
+        fir2KlibMetadataSerializer: Fir2KlibMetadataSerializer,
+    ): IrBackendInput {
         // TODO: handle fir from light tree
-        val ktFiles = inputArtifact.mainFirFiles.mapNotNull { it.value.psi as KtFile? }
         val sourceFiles = inputArtifact.mainFirFiles.mapNotNull { it.value.sourceFile }
-        val container = TopDownAnalyzerFacadeForJVM.createContainer(
-            project, ktFiles, NoScopeRecordCliBindingTrace(), configuration,
-            compilerConfigurationProvider.getPackagePartProviderFactory(module),
-            ::FileBasedDeclarationProviderFactory, CompilerEnvironment,
-            TopDownAnalyzerFacadeForJVM.newModuleSearchScope(project, ktFiles), emptyList()
+
+        val backendInput = JvmIrCodegenFactory.BackendInput(
+            fir2IrResult.irModuleFragment,
+            fir2IrResult.irBuiltIns,
+            fir2IrResult.symbolTable,
+            fir2IrResult.components.irProviders,
+            createFir2IrExtensions(compilerConfiguration),
+            FirJvmBackendExtension(
+                fir2IrResult.components,
+                fir2IrResult.irActualizedResult?.actualizedExpectDeclarations?.extractFirDeclarations(),
+            ),
+            fir2IrResult.pluginContext,
         )
 
-        val phaseConfig = configuration.get(CLIConfigurationKeys.PHASE_CONFIG)
-
-        val dependentIrParts = mutableListOf<IrModuleFragment>()
-        lateinit var backendInput: JvmIrCodegenFactory.JvmIrBackendInput
-        lateinit var mainModuleComponents: Fir2IrComponents
-
-        val firAnalyzerFacade = inputArtifact.partsForDependsOnModules.last().firAnalyzerFacade as? FirAnalyzerFacade
-        val generateSignatures = firAnalyzerFacade?.fir2IrConfiguration?.linkViaSignatures == true
-
-        val commonMemberStorage = Fir2IrCommonMemberStorage(signatureComposerForJvmFir2Ir(generateSignatures), FirJvmKotlinMangler())
-        var irBuiltIns: IrBuiltInsOverFir? = null
-
-        for ((index, firOutputPart) in inputArtifact.partsForDependsOnModules.withIndex()) {
-            val (irModuleFragment, components, pluginContext) = firOutputPart.firAnalyzerFacade.convertToIr(
-                fir2IrExtensions, commonMemberStorage, irBuiltIns
-            )
-            irBuiltIns = components.irBuiltIns
-
-            if (index < inputArtifact.partsForDependsOnModules.size - 1) {
-                dependentIrParts.add(irModuleFragment)
-            } else {
-                mainModuleComponents = components
-                backendInput = JvmIrCodegenFactory.JvmIrBackendInput(
-                    irModuleFragment,
-                    components.symbolTable,
-                    phaseConfig,
-                    components.irProviders,
-                    fir2IrExtensions,
-                    FirJvmBackendExtension(components, irActualizedResult = null),
-                    pluginContext,
-                    notifyCodegenStart = {},
-                )
-            }
-        }
-
-        val codegenFactory = JvmIrCodegenFactory(configuration, phaseConfig)
-        val generationState = GenerationState.Builder(
-            project, ClassBuilderFactories.TEST,
-            container.get(), NoScopeRecordCliBindingTrace().bindingContext, configuration
-        ).isIrBackend(
-            true
-        ).jvmBackendClassResolver(
-            FirJvmBackendClassResolver(mainModuleComponents)
-        ).build()
+        val project = testServices.compilerConfigurationProvider.getProject(module)
+        val generationState = GenerationState(
+            project, fir2IrResult.irModuleFragment.descriptor, compilerConfiguration, ClassBuilderFactories.TEST,
+            jvmBackendClassResolver = FirJvmBackendClassResolver(fir2IrResult.components),
+            diagnosticReporter = diagnosticReporter,
+        )
 
         return IrBackendInput.JvmIrBackendInput(
             generationState,
-            codegenFactory,
+            JvmIrCodegenFactory(compilerConfiguration),
             backendInput,
-            dependentIrParts,
             sourceFiles,
-            descriptorMangler = commonMemberStorage.symbolTable.signaturer.mangler,
-            irMangler = irMangler,
-            firMangler = commonMemberStorage.firSignatureComposer.mangler,
+            descriptorMangler = null,
+            irMangler = fir2IrResult.components.irMangler,
         )
     }
 }

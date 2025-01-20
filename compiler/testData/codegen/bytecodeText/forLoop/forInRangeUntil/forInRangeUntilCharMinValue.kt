@@ -1,4 +1,4 @@
-// !OPT_IN: kotlin.ExperimentalStdlibApi
+// OPT_IN: kotlin.ExperimentalStdlibApi
 // IGNORE_BACKEND: JVM
 
 // IMPORTANT!
@@ -30,7 +30,6 @@ fun f(a: Char): Int {
 // 1 IFGE
 // 1 IF
 
-// JVM_IR_TEMPLATES
 // 4 ILOAD
 // 3 ISTORE
 // 1 IADD

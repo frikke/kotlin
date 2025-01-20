@@ -7,8 +7,7 @@ package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
-import org.jetbrains.kotlin.backend.common.lower.parents
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.ir.createJvmIrBuilder
 import org.jetbrains.kotlin.backend.jvm.ir.fileParentOrNull
@@ -21,29 +20,48 @@ import org.jetbrains.kotlin.ir.builders.declarations.buildVariable
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrPropertyReferenceImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrPropertyReferenceImplWithShape
 import org.jetbrains.kotlin.ir.symbols.impl.IrAnonymousInitializerSymbolImpl
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.name.Name
 
-internal val propertyReferenceDelegationPhase = makeIrFilePhase(
-    ::PropertyReferenceDelegationLowering,
-    name = "PropertyReferenceDelegation",
-    description = "Optimize `val x by ::y`: there is no need to construct a KProperty instance"
-)
-
-private class PropertyReferenceDelegationLowering(val context: JvmBackendContext) : FileLoweringPass {
+/**
+ * Optimizes `val x by ::y`: instead of constructing a `KProperty` instance and calling `getValue`/`setValue` operators, generates calls
+ * to the getter/setter of the referenced property directly. If the property reference has a bound receiver which is non-trivial
+ * (its computation might lead to side effects), we compute the receiver once and store it in a field.
+ *
+ * Also, generates a `$delegate` method that returns the delegate anyway. This method is supposed to only be used from kotlin-reflect
+ * ([kotlin.reflect.KProperty0.getDelegate]).
+ *
+ * For example:
+ *
+ *     var x by f()::y
+ *
+ * becomes
+ *
+ *     var x
+ *         field = f()
+ *         get() = field.y()
+ *         set(value) { field.y = value }
+ *     fun getX$delegate() = x$field::y
+ */
+@PhaseDescription(name = "PropertyReferenceDelegation")
+internal class PropertyReferenceDelegationLowering(val context: JvmBackendContext) : FileLoweringPass {
     override fun lower(irFile: IrFile) {
-        if (!context.state.generateOptimizedCallableReferenceSuperClasses) return
         irFile.transform(PropertyReferenceDelegationTransformer(context), null)
     }
 }
 
 private class PropertyReferenceDelegationTransformer(val context: JvmBackendContext) : IrElementTransformerVoid() {
-    private fun IrSimpleFunction.accessorBody(delegate: IrPropertyReference, receiverFieldOrExpression: IrStatement?) =
+    private fun IrSimpleFunction.accessorBody(delegate: IrPropertyReference, receiverFieldOrExpression: IrStatement?): IrBody =
         context.createIrBuilder(symbol, startOffset, endOffset).run {
             val value = valueParameters.singleOrNull()?.let(::irGet)
+            val isGetter = value == null
+            if (isGetter) {
+                delegate.constInitializer?.let { return@run irExprBody(it) }
+            }
+
             var boundReceiver = when (receiverFieldOrExpression) {
                 null -> null
                 is IrField -> irGetField(dispatchReceiverParameter?.let(::irGet), receiverFieldOrExpression)
@@ -54,7 +72,7 @@ private class PropertyReferenceDelegationTransformer(val context: JvmBackendCont
             val unboundReceiver = extensionReceiverParameter ?: dispatchReceiverParameter
             val field = delegate.field?.owner
             val access = if (field == null) {
-                val accessor = if (value == null) delegate.getter!! else delegate.setter!!
+                val accessor = if (isGetter) delegate.getter!! else delegate.setter!!
                 irCall(accessor).apply {
                     // This has the same assumptions about receivers as `PropertyReferenceLowering.propertyReferenceKindFor`:
                     // only one receiver can be bound, and if the property has both, the extension receiver cannot be bound.
@@ -72,7 +90,7 @@ private class PropertyReferenceDelegationTransformer(val context: JvmBackendCont
                 }
             } else {
                 val receiver = if (field.isStatic) null else boundReceiver ?: irGet(unboundReceiver!!)
-                if (value == null) irGetField(receiver, field) else irSetField(receiver, field, value)
+                if (isGetter) irGetField(receiver, field) else irSetField(receiver, field, value!!)
             }
             irExprBody(access)
         }
@@ -142,15 +160,15 @@ private class PropertyReferenceDelegationTransformer(val context: JvmBackendCont
             body = context.createJvmIrBuilder(symbol).run {
                 val boundReceiver = backingField?.let { irGetField(dispatchReceiverParameter?.let(::irGet), it) }
                     ?: receiver?.remapReceiver(originalThis, dispatchReceiverParameter)
-                irExprBody(with(delegate) {
-                    val origin = PropertyReferenceLowering.REFLECTED_PROPERTY_REFERENCE
-                    IrPropertyReferenceImpl(startOffset, endOffset, type, symbol, typeArgumentsCount, field, getter, setter, origin)
-                }.apply {
-                    when {
-                        delegate.dispatchReceiver != null -> dispatchReceiver = boundReceiver
-                        delegate.extensionReceiver != null -> extensionReceiver = boundReceiver
+                irExprBody(
+                    delegate.deepCopyWithSymbols().apply {
+                        origin = PropertyReferenceLowering.REFLECTED_PROPERTY_REFERENCE
+                        when {
+                            delegate.dispatchReceiver != null -> dispatchReceiver = boundReceiver
+                            delegate.extensionReceiver != null -> extensionReceiver = boundReceiver
+                        }
                     }
-                })
+                )
             }
         }
         // When the receiver is inlined, it can have side effects in form of class initialization, so it should be evaluated here.

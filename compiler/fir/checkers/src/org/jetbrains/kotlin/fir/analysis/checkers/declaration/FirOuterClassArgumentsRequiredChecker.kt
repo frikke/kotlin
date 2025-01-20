@@ -7,42 +7,22 @@ package org.jetbrains.kotlin.fir.analysis.checkers.declaration
 
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.extractArgumentsTypeRefAndSource
 import org.jetbrains.kotlin.fir.analysis.diagnostics.FirErrors
 import org.jetbrains.kotlin.fir.declarations.FirRegularClass
-import org.jetbrains.kotlin.fir.declarations.ResolveStateAccess
-import org.jetbrains.kotlin.fir.declarations.utils.classId
-import org.jetbrains.kotlin.fir.render
 import org.jetbrains.kotlin.fir.resolve.isValidTypeParameterFromOuterDeclaration
 import org.jetbrains.kotlin.fir.resolve.toSymbol
 import org.jetbrains.kotlin.fir.resolve.toTypeProjections
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.fir.types.*
 
-object FirOuterClassArgumentsRequiredChecker : FirRegularClassChecker() {
-    @OptIn(ResolveStateAccess::class)
+object FirOuterClassArgumentsRequiredChecker : FirRegularClassChecker(MppCheckerKind.Common) {
     override fun check(declaration: FirRegularClass, context: CheckerContext, reporter: DiagnosticReporter) {
         // Checking the rest super types that weren't resolved on the first OUTER_CLASS_ARGUMENTS_REQUIRED check in FirTypeResolver
-        val oldResolveState = declaration.resolveState
-        val oldList = declaration.superTypeRefs.toList()
-
-        try {
-            for (superTypeRef in declaration.superTypeRefs) {
-                checkOuterClassArgumentsRequired(superTypeRef, declaration, context, reporter)
-            }
-        } catch (e: ConcurrentModificationException) {
-            val newResolveState = declaration.resolveState
-            val newList = declaration.superTypeRefs.toList()
-
-            throw IllegalStateException(
-                """
-                CME while traversing superTypeRefs of declaration=${declaration.render()}:
-                classId: ${declaration.classId},
-                oldState: $oldResolveState, oldList: ${oldList.joinToString { it.render() }},
-                newState: $newResolveState, newList: ${newList.joinToString { it.render() }}
-                """.trimIndent(), e
-            )
+        for (superTypeRef in declaration.superTypeRefs) {
+            checkOuterClassArgumentsRequired(superTypeRef, declaration, context, reporter)
         }
     }
 
@@ -56,7 +36,7 @@ object FirOuterClassArgumentsRequiredChecker : FirRegularClassChecker() {
             return
         }
 
-        val type: ConeKotlinType = typeRef.type
+        val type: ConeKotlinType = typeRef.coneType.abbreviatedTypeOrSelf
         val delegatedTypeRef = typeRef.delegatedTypeRef
 
         if (delegatedTypeRef is FirUserTypeRef && type is ConeClassLikeType) {

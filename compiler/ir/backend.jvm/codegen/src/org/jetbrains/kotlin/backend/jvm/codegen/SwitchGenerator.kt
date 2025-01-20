@@ -20,6 +20,8 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
     data class CallToLabel(val call: IrCall, val label: Label)
     data class ValueToLabel(val value: Any?, val label: Label)
 
+    private val context = codegen.context
+
     // @return null if the IrWhen cannot be emitted as lookupswitch or tableswitch.
     fun generate(): PromisedValue? {
         val expressionToLabels = ArrayList<ExpressionToLabel>()
@@ -31,7 +33,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
             if (branch is IrElseBranch) {
                 elseExpression = branch.result
             } else {
-                val conditions = IrWhenUtils.matchConditions(codegen.context.irBuiltIns.ororSymbol, branch.condition) ?: return null
+                val conditions = IrWhenUtils.matchConditions(context.irBuiltIns.ororSymbol, branch.condition) ?: return null
                 val thenLabel = Label()
                 expressionToLabels.add(ExpressionToLabel(branch.result, thenLabel))
                 callToLabels += conditions.map { CallToLabel(it, thenLabel) }
@@ -59,12 +61,12 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
         //     CALL EQEQ(var,_)
 
         val firstCondition = callToLabels[0].call
-        if (firstCondition.symbol != codegen.classCodegen.context.irBuiltIns.eqeqSymbol) return null
+        if (firstCondition.symbol != context.irBuiltIns.eqeqSymbol) return null
         val subject = firstCondition.getValueArgument(0)
         return when {
             subject is IrCall && subject.isCoerceFromUIntToInt() ->
                 generateUIntSwitch(subject.getValueArgument(0)!! as? IrGetValue, calls, callToLabels, expressionToLabels, elseExpression)
-            subject is IrGetValue || subject is IrConst<*> && subject.type.isString() -> // also generate tableswitch for literal string subject
+            subject is IrGetValue || subject is IrConst && subject.type.isString() -> // also generate tableswitch for literal string subject
                 generatePrimitiveSwitch(subject, calls, callToLabels, expressionToLabels, elseExpression)
             else ->
                 null
@@ -72,9 +74,9 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
     }
 
     fun IrCall.isCoerceFromUIntToInt(): Boolean =
-        symbol == codegen.classCodegen.context.ir.symbols.unsafeCoerceIntrinsic
-                && getTypeArgument(0)?.isUInt() == true
-                && getTypeArgument(1)?.isInt() == true
+        symbol == context.ir.symbols.unsafeCoerceIntrinsic
+                && typeArguments[0]?.isUInt() == true
+                && typeArguments[1]?.isInt() == true
 
     private fun generateUIntSwitch(
         subject: IrGetValue?,
@@ -92,7 +94,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
         // Filter repeated cases. Allowed in Kotlin but unreachable.
         val cases = callToLabels.map {
             val constCoercion = it.call.getValueArgument(1)!! as IrCall
-            val constValue = (constCoercion.getValueArgument(0) as IrConst<*>).value
+            val constValue = (constCoercion.getValueArgument(0) as IrConst).value
             ValueToLabel(
                 constValue,
                 it.label
@@ -129,6 +131,15 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
                     cases
                 )
             }
+            subject is IrGetValue && areConstCharComparisons(conditions) -> {
+                val cases = extractSwitchCasesAndFilterUnreachableLabels(callToLabels, expressionToLabels)
+                IntSwitch(
+                    subject,
+                    elseExpression,
+                    expressionToLabels,
+                    cases.map { ValueToLabel((it.value as Char).code, it.label) }
+                )
+            }
             areConstStringComparisons(conditions) -> {
                 val cases = extractSwitchCasesAndFilterUnreachableLabels(callToLabels, expressionToLabels)
                 StringSwitch(
@@ -149,13 +160,13 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
     //
     // where subject is taken to be the first variable compared on the left hand side, if any.
     private fun areConstUIntComparisons(conditions: List<IrCall>): Boolean {
-        val lhs = conditions.map { it.takeIf { it.symbol == codegen.context.irBuiltIns.eqeqSymbol }?.getValueArgument(0) as? IrCall }
+        val lhs = conditions.map { it.takeIf { it.symbol == context.irBuiltIns.eqeqSymbol }?.getValueArgument(0) as? IrCall }
         if (lhs.any { it == null || !it.isCoerceFromUIntToInt() }) return false
         val lhsVariableAccesses = lhs.map { it!!.getValueArgument(0) as? IrGetValue }
         if (lhsVariableAccesses.any { it == null || it.symbol != lhsVariableAccesses[0]!!.symbol }) return false
 
         val rhs = conditions.map { it.getValueArgument(1) as? IrCall }
-        if (rhs.any { it == null || !it.isCoerceFromUIntToInt() || it.getValueArgument(0) !is IrConst<*> }) return false
+        if (rhs.any { it == null || !it.isCoerceFromUIntToInt() || it.getValueArgument(0) !is IrConst }) return false
 
         return true
     }
@@ -164,14 +175,14 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
 
         fun isValidIrGetValueTypeLHS(): Boolean {
             val lhs = conditions.map {
-                it.takeIf { it.symbol == codegen.context.irBuiltIns.eqeqSymbol }?.getValueArgument(0) as? IrGetValue
+                it.takeIf { it.symbol == context.irBuiltIns.eqeqSymbol }?.getValueArgument(0) as? IrGetValue
             }
             return lhs.all { it != null && it.symbol == lhs[0]!!.symbol }
         }
 
         fun isValidIrConstTypeLHS(): Boolean {
             val lhs = conditions.map {
-                it.takeIf { it.symbol == codegen.context.irBuiltIns.eqeqSymbol }?.getValueArgument(0) as? IrConst<*>
+                it.takeIf { it.symbol == context.irBuiltIns.eqeqSymbol }?.getValueArgument(0) as? IrConst
             }
             return lhs.all { it != null && it.value == lhs[0]!!.value }
         }
@@ -181,7 +192,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
             return false
 
         // All RHS are constants
-        if (conditions.any { it.getValueArgument(1) !is IrConst<*> })
+        if (conditions.any { it.getValueArgument(1) !is IrConst })
             return false
 
         return true
@@ -189,6 +200,10 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
 
     private fun areConstIntComparisons(conditions: List<IrCall>): Boolean {
         return checkTypeSpecifics(conditions, { it.isInt() }, { it.kind == IrConstKind.Int })
+    }
+
+    private fun areConstCharComparisons(conditions: List<IrCall>): Boolean {
+        return checkTypeSpecifics(conditions, { it.isChar() }, { it.kind == IrConstKind.Char })
     }
 
     private fun areConstStringComparisons(conditions: List<IrCall>): Boolean {
@@ -201,13 +216,13 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
     private fun checkTypeSpecifics(
         conditions: List<IrCall>,
         subjectTypePredicate: (IrType) -> Boolean,
-        irConstPredicate: (IrConst<*>) -> Boolean
+        irConstPredicate: (IrConst) -> Boolean
     ): Boolean {
-        val lhs = conditions.map { it.getValueArgument(0) as? IrGetValue ?: it.getValueArgument(0) as IrConst<*> }
+        val lhs = conditions.map { it.getValueArgument(0) as? IrGetValue ?: it.getValueArgument(0) as IrConst }
         if (lhs.any { !subjectTypePredicate(it.type) })
             return false
 
-        val rhs = conditions.map { it.getValueArgument(1) as IrConst<*> }
+        val rhs = conditions.map { it.getValueArgument(1) as IrConst }
         if (rhs.any { !irConstPredicate(it) })
             return false
 
@@ -221,7 +236,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
         // Don't generate repeated cases, which are unreachable but allowed in Kotlin.
         // Only keep the first encountered case:
         val cases =
-            callToLabels.map { ValueToLabel((it.call.getValueArgument(1) as IrConst<*>).value, it.label) }.distinctBy { it.value }
+            callToLabels.map { ValueToLabel((it.call.getValueArgument(1) as IrConst).value, it.label) }.distinctBy { it.value }
 
         expressionToLabels.removeUnreachableLabels(cases)
 
@@ -280,7 +295,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
 
                 for ((thenExpression, label) in expressionToLabels) {
                     mv.visitLabel(label)
-                    thenExpression.accept(codegen, data).also {
+                    thenExpression.accept(this, data).also {
                         if (elseExpression != null) {
                             it.materializedAt(expression.type)
                         } else {
@@ -291,7 +306,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
                 }
 
                 mv.visitLabel(defaultLabel)
-                val result = elseExpression?.accept(codegen, data)?.materializedAt(expression.type) ?: unitValue
+                val result = elseExpression?.accept(this, data)?.materializedAt(expression.type) ?: unitValue
                 mv.mark(endLabel)
                 return result
             }
@@ -327,11 +342,13 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
             // to the `x == 24` line. This is accomplished by ignoring the line number
             // information for the subject as the `when` line number has already been
             // emitted.
-            codegen.noLineNumberScope {
-                val subjectValue = subject.accept(codegen, data)
-                subjectValue.materializeAt(Type.INT_TYPE, subjectValue.irType)
+            with(codegen) {
+                noLineNumberScope {
+                    val subjectValue = subject.accept(this, data)
+                    subjectValue.materializeAt(Type.INT_TYPE, subjectValue.irType)
+                }
+                genIntSwitch(cases)
             }
-            genIntSwitch(cases)
         }
     }
 
@@ -410,7 +427,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
         // see:
         //  box/unit/nullableUnitInWhen3.kt
         override fun shouldOptimize() =
-            hashAndSwitchLabels.size > (if (subject is IrConst<*>) 0 else 2) ||
+            hashAndSwitchLabels.size > (if (subject is IrConst) 0 else 2) ||
                     subject.type.hasAnnotation(JvmAnnotationNames.ENHANCED_NULLABILITY_ANNOTATION) && hashAndSwitchLabels.isNotEmpty()
 
         override fun genSwitch() {
@@ -435,11 +452,11 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
                 // emitted.
                 noLineNumberScope {
                     if (subject.type.isNullableString()) {
-                        subject.accept(codegen, data).materialize()
+                        subject.accept(this, data).materialize()
                         mv.ifnull(cases.find { it.value == null }?.label ?: defaultLabel)
                     }
                     // Reevaluating the subject is fine here because it is a read of a temporary.
-                    subject.accept(codegen, data).materialize()
+                    subject.accept(this, data).materialize()
                     mv.invokevirtual("java/lang/String", "hashCode", "()I", false)
                 }
                 genIntSwitch(hashAndSwitchLabels)
@@ -450,7 +467,7 @@ class SwitchGenerator(private val expression: IrWhen, private val data: BlockInf
                     mv.visitLabel(switchLabel)
                     for ((string, label) in hashToStringAndExprLabels[hash]!!) {
                         noLineNumberScope {
-                            subject.accept(codegen, data).materialize()
+                            subject.accept(this, data).materialize()
                         }
                         mv.aconst(string)
                         mv.invokevirtual("java/lang/String", "equals", "(Ljava/lang/Object;)Z", false)

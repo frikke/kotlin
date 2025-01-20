@@ -24,23 +24,20 @@ import org.gradle.process.internal.ExecHandleFactory
 import org.gradle.work.NormalizeLineEndings
 import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporter
 import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporterImpl
-import org.jetbrains.kotlin.build.report.metrics.BuildPerformanceMetric
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildPerformanceMetric
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildTime
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinJsCompilation
-import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.util.archivesName
 import org.jetbrains.kotlin.gradle.report.UsesBuildMetricsService
 import org.jetbrains.kotlin.gradle.targets.js.RequiredKotlinJsDependency
 import org.jetbrains.kotlin.gradle.targets.js.dsl.KotlinWebpackRulesContainer
 import org.jetbrains.kotlin.gradle.targets.js.dsl.WebpackRulesDsl
 import org.jetbrains.kotlin.gradle.targets.js.dsl.WebpackRulesDsl.Companion.webpackRulesContainer
-import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNodeJsExtension
+import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrCompilation
+import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNodeJsRootExtension
 import org.jetbrains.kotlin.gradle.targets.js.npm.RequiresNpmDependencies
 import org.jetbrains.kotlin.gradle.targets.js.npm.npmProject
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig.Mode
-import org.jetbrains.kotlin.gradle.utils.getValue
-import org.jetbrains.kotlin.gradle.utils.injected
-import org.jetbrains.kotlin.gradle.utils.property
-import org.jetbrains.kotlin.gradle.utils.providerWithLazyConvention
+import org.jetbrains.kotlin.gradle.utils.*
 import java.io.File
 import javax.inject.Inject
 
@@ -50,13 +47,12 @@ abstract class KotlinWebpack
 constructor(
     @Internal
     @Transient
-    override val compilation: KotlinJsCompilation,
-    private val objects: ObjectFactory
+    final override val compilation: KotlinJsIrCompilation,
+    private val objects: ObjectFactory,
 ) : DefaultTask(), RequiresNpmDependencies, WebpackRulesDsl, UsesBuildMetricsService {
     @Transient
-    private val nodeJs = project.rootProject.kotlinNodeJsExtension
+    private val nodeJs = project.rootProject.kotlinNodeJsRootExtension
     private val versions = nodeJs.versions
-    private val rootPackageDir by lazy { nodeJs.rootPackageDir }
 
     private val npmProject = compilation.npmProject
 
@@ -67,7 +63,7 @@ constructor(
     open val execHandleFactory: ExecHandleFactory
         get() = injected
 
-    private val metrics: Property<BuildMetricsReporter> = project.objects
+    private val metrics: Property<BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric>> = project.objects
         .property(BuildMetricsReporterImpl())
 
     @Suppress("unused")
@@ -75,7 +71,7 @@ constructor(
     val compilationId: String by lazy {
         compilation.let {
             val target = it.target
-            target.project.path + "@" + target.name + ":" + it.compilationPurpose
+            target.project.path + "@" + target.name + ":" + it.compilationName
         }
     }
 
@@ -97,18 +93,18 @@ constructor(
     @get:NormalizeLineEndings
     val inputFiles: FileTree
         get() = objects.fileTree()
-            // in webpack.config.js there is path relative to npmProjectDir (kotlin/<module>.js).
-            // And we need have relative path in build cache
-            // That's why we use npmProjectDir with filter instead of just inputFilesDirectory,
-            // if we would use inputFilesDirectory, we will get in cache just file names,
-            // and if directory is changed to kotlin2, webpack config will be invalid.
-            .from(npmProjectDir)
-            .matching {
-                it.include { element: FileTreeElement ->
-                    val inputFilesDirectory = inputFilesDirectory.get().asFile
-                    element.file == inputFilesDirectory ||
-                            element.file.parentFile == inputFilesDirectory
-                }
+            .let { fileTree ->
+                // in webpack.config.js there is path relative to npmProjectDir (kotlin/<module>.js).
+                // And we need have relative path in build cache
+                // That's why we use npmProjectDir with filter instead of just inputFilesDirectory,
+                // if we would use inputFilesDirectory, we will get in cache just file names,
+                // and if directory is changed to kotlin2, webpack config will be invalid.
+                fileTree.from(npmProjectDir)
+                    .matching {
+                        it.include { element: FileTreeElement ->
+                            this.inputFilesDirectory.get().asFile.isParentOf(element.file)
+                        }
+                    }
             }
 
     @get:Input
@@ -121,7 +117,7 @@ constructor(
         }
 
     init {
-        onlyIf {
+        this.onlyIf {
             entry.get().asFile.exists()
         }
     }
@@ -137,7 +133,7 @@ constructor(
     val output: KotlinWebpackOutput = KotlinWebpackOutput(
         library = project.archivesName.orNull,
         libraryTarget = KotlinWebpackOutput.Target.UMD,
-        globalObject = "this"
+        clean = true,
     )
 
     @get:Internal
@@ -169,7 +165,8 @@ constructor(
         get() = mainOutputFile.get().asFile
 
     @get:Internal
-    val mainOutputFile: Provider<RegularFile> = objects.providerWithLazyConvention { outputDirectory.file(mainOutputFileName) }.flatMap { it }
+    val mainOutputFile: Provider<RegularFile> =
+        objects.providerWithLazyConvention { outputDirectory.file(mainOutputFileName) }.flatMap { it }
 
     private val projectDir = project.projectDir
 
@@ -180,6 +177,9 @@ constructor(
     @get:InputDirectory
     open val configDirectory: File?
         get() = projectDir.resolve("webpack.config.d").takeIf { it.isDirectory }
+
+    @Input
+    var debug: Boolean = false
 
     @Input
     var bin: String = "webpack/bin/webpack.js"
@@ -195,7 +195,16 @@ constructor(
 
     @Input
     @Optional
-    var devServer: KotlinWebpackConfig.DevServer? = null
+    val devServerProperty: Property<KotlinWebpackConfig.DevServer> = project.objects.property(KotlinWebpackConfig.DevServer::class.java)
+
+    @get:Internal
+    @Deprecated(
+        "This property is deprecated and will be removed in future. Use devServerProperty instead",
+        replaceWith = ReplaceWith("devServerProperty")
+    )
+    var devServer: KotlinWebpackConfig.DevServer
+        get() = devServerProperty.get()
+        set(value) = devServerProperty.set(value)
 
     @Input
     @Optional
@@ -233,7 +242,7 @@ constructor(
         outputFileName = mainOutputFileName.get(),
         configDirectory = configDirectory,
         rules = rules,
-        devServer = devServer,
+        devServer = devServerProperty.orNull,
         devtool = devtool,
         sourceMaps = sourceMaps,
         resolveFromModulesFirst = resolveFromModulesFirst,
@@ -252,13 +261,19 @@ constructor(
         webpackConfigAppliers
             .forEach { it.execute(config) }
 
+        val webpackArgs = args.run {
+            val port = devServerProperty.orNull?.port
+            if (debug && port != null) plus(listOf("--port", port.toString()))
+            else this
+        }
+
         return KotlinWebpackRunner(
             npmProject,
             logger,
             configFile.get(),
             execHandleFactory,
             bin,
-            args,
+            webpackArgs,
             nodeArgs,
             config
         )
@@ -288,7 +303,6 @@ constructor(
             runner.copy(
                 config = runner.config.copy(
                     progressReporter = true,
-                    progressReporterPathFilter = rootPackageDir
                 )
             ).execute(services)
 
@@ -299,7 +313,7 @@ constructor(
                 .map { it.length() }
                 .sum()
                 .let {
-                    buildMetrics.addMetric(BuildPerformanceMetric.BUNDLE_SIZE, it)
+                    buildMetrics.addMetric(GradleBuildPerformanceMetric.BUNDLE_SIZE, it)
                 }
 
             buildMetricsService.orNull?.also { it.addTask(path, this.javaClass, buildMetrics) }

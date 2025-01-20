@@ -5,9 +5,9 @@
 
 package org.jetbrains.kotlin.gradle
 
-import org.gradle.api.logging.configuration.WarningMode
 import org.gradle.util.GradleVersion
 import org.jetbrains.kotlin.gradle.testbase.*
+import org.jetbrains.kotlin.test.TestMetadata
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.extension.ExtensionContext
 import org.junit.jupiter.params.ParameterizedTest
@@ -16,10 +16,11 @@ import java.nio.file.Path
 import java.util.*
 import java.util.stream.Stream
 import kotlin.io.path.appendText
+import kotlin.io.path.createDirectories
+import kotlin.io.path.writeText
 import kotlin.streams.asStream
 import kotlin.streams.toList
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.fail
 
 @DisplayName("Kotlin default dependencies")
 class KotlinSpecificDependenciesIT : KGPBaseTest() {
@@ -30,7 +31,26 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
     fun testStdlibByDefaultJvm(gradleVersion: GradleVersion) {
         project("simpleProject", gradleVersion) {
             removeDependencies(buildGradle)
-            checkTaskCompileClasspath("compileKotlin", listOf("kotlin-stdlib"))
+            checkTaskCompileClasspath("compileKotlin", listOf("kotlin-stdlib"), listOf("kotlin-stdlib-jdk7", "kotlin-stdlib-jdk8"))
+        }
+    }
+
+    @GradleTest
+    @DisplayName("JVM: add pre-1.9.20 kotlin-stdlib dependency")
+    @JvmGradlePluginTests
+    fun testStdlibByDefaultPre1920Jvm(gradleVersion: GradleVersion) {
+        project("simpleProject", gradleVersion) {
+            removeDependencies(buildGradle)
+
+            buildGradle.appendText(
+                //language=groovy
+                """
+                |
+                |kotlin.coreLibrariesVersion = "1.9.0"
+                """.trimMargin()
+            )
+
+            checkTaskCompileClasspath("compileKotlin", listOf("kotlin-stdlib", "kotlin-stdlib-jdk7", "kotlin-stdlib-jdk8"))
         }
     }
 
@@ -86,6 +106,9 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
             gradleProperties.appendText(
                 "\nkotlin.stdlib.default.dependency=false"
             )
+            gradleProperties.appendText(
+                "\nkotlin.js.stdlib.dom.api.included=false"
+            )
             checkTaskCompileClasspath(
                 "compileKotlinJs",
                 listOf(),
@@ -112,7 +135,11 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
             buildJdk = jdkVersion.location
         ) {
             removeDependencies(buildGradle)
-            checkTaskCompileClasspath("compileDebugKotlin", listOf("kotlin-stdlib"))
+            checkTaskCompileClasspath(
+                "compileDebugKotlin",
+                listOf("kotlin-stdlib"),
+                listOf("kotlin-stdlib-jdk7", "kotlin-stdlib-jdk8")
+            )
         }
     }
 
@@ -209,6 +236,59 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
                 "compileKotlin",
                 listOf("kotlin-stdlib-${defaultBuildOptions.kotlinVersion}"),
                 listOf("kotlin-stdlib-jdk8")
+            )
+        }
+    }
+
+    @MppGradlePluginTests
+    @DisplayName("Stdlib should be added into compilation not depending on common")
+    @GradleTest
+    fun testStdlibAddedIntoCompilationNotUsingCommon(gradleVersion: GradleVersion) {
+        project("hierarchical-all-native", gradleVersion) {
+            buildGradleKts.modify {
+                it.substringBefore("kotlin {")
+                    .plus(
+                        """
+                        |
+                        |kotlin {
+                        |    js()
+                        |    jvm("standalone") {
+                        |        compilations.register("jvmAllAlone")
+                        |    }
+                        |}
+                        """.trimMargin()
+                    )
+            }
+
+            kotlinSourcesDir("standaloneJvmAllAlone").also {
+                it.createDirectories()
+                it.resolve("main.kt").writeText(
+                    """
+                    |fun main() {
+                    |    println("Hello")
+                    |}
+                    """.trimIndent()
+                )
+            }
+
+            checkTaskCompileClasspath(
+                "compileJvmAllAloneKotlinStandalone",
+                listOf("kotlin-stdlib"),
+                isBuildGradleKts = true
+            )
+        }
+    }
+
+    @JsGradlePluginTests
+    @DisplayName("Stdlib should be added into wasm compilations")
+    @GradleTest
+    fun testStdlibAddedIntoWasmCompilationDependencies(gradleVersion: GradleVersion) {
+        project("wasm-d8-simple-project", gradleVersion) {
+            checkTaskCompileClasspath(
+                "compileKotlinWasmJs",
+                checkModulesInClasspath = listOf("kotlin-stdlib-wasm-js"),
+                checkModulesNotInClasspath = listOf("kotlin-stdlib-wasm-wasi"),
+                isBuildGradleKts = true
             )
         }
     }
@@ -341,7 +421,7 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
         project("simpleProject", gradleVersion) {
             assertKotlinTestDependency(
                 listOf("testImplementation"),
-                mapOf("compileTestKotlin" to listOf("kotlin-test-testng"))
+                mapOf("compileTestKotlin" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}.jar", "kotlin-test-testng"))
             )
         }
     }
@@ -370,18 +450,18 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
             assertKotlinTestDependency(
                 listOf("commonTestImplementation"),
                 mapOf(
-                    "compileTestKotlinJvm" to listOf("kotlin-test-junit"),
+                    "compileTestKotlinJvm" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}.jar", "kotlin-test-junit"),
                     "compileTestKotlinJs" to listOf("kotlin-test-js")
                 ),
                 mapOf(
-                    "commonTestImplementationDependenciesMetadata" to listOf("kotlin-test-common", "kotlin-test-annotations-common"),
+                    "commonTestImplementationDependenciesMetadata" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}-all"),
 
                     /*
                     implementation, api and compileOnly scoped metadata configurations are deprecated and report the same dependencies.
                     The IDE does not rely on which exact configuration returned the dependencies.
                     */
-                    "commonTestApiDependenciesMetadata" to listOf("kotlin-test-common", "kotlin-test-annotations-common"),
-                    "commonTestCompileOnlyDependenciesMetadata" to listOf("kotlin-test-common", "kotlin-test-annotations-common"),
+                    "commonTestApiDependenciesMetadata" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}-all"),
+                    "commonTestCompileOnlyDependenciesMetadata" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}-all"),
                 ),
                 isBuildGradleKts = true
             )
@@ -396,14 +476,14 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
             assertKotlinTestDependency(
                 listOf("jvmAndJsTestApi", "jvmAndJsTestCompileOnly"), // add to the intermediate source set, and to two scopes
                 mapOf(
-                    "compileTestKotlinJvm" to listOf("kotlin-test-junit"),
+                    "compileTestKotlinJvm" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}.jar", "kotlin-test-junit"),
                     "compileTestKotlinJs" to listOf("kotlin-test-js")
                 ),
                 mapOf(
-                    "commonTestApiDependenciesMetadata" to listOf("!kotlin-test-common"),
-                    "commonTestCompileOnlyDependenciesMetadata" to listOf("!kotlin-test-common"),
-                    "jvmAndJsTestApiDependenciesMetadata" to listOf("kotlin-test-common"),
-                    "jvmAndJsTestCompileOnlyDependenciesMetadata" to listOf("kotlin-test-common"),
+                    "commonTestApiDependenciesMetadata" to listOf("!kotlin-test-${defaultBuildOptions.kotlinVersion}-all"),
+                    "commonTestCompileOnlyDependenciesMetadata" to listOf("!kotlin-test-${defaultBuildOptions.kotlinVersion}-all"),
+                    "jvmAndJsTestApiDependenciesMetadata" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}-all"),
+                    "jvmAndJsTestCompileOnlyDependenciesMetadata" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}-all"),
                 ),
                 isBuildGradleKts = true
             )
@@ -418,10 +498,10 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
             assertKotlinTestDependency(
                 listOf("commonTestImplementation"),
                 mapOf(
-                    "compileTestKotlinJvm" to listOf("kotlin-test-junit"),
+                    "compileTestKotlinJvm" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}.jar", "kotlin-test-junit"),
                 ),
                 mapOf(
-                    "commonTestImplementationDependenciesMetadata" to listOf("kotlin-test-common", "kotlin-test-annotations-common")
+                    "commonTestImplementationDependenciesMetadata" to listOf("kotlin-test-${defaultBuildOptions.kotlinVersion}-all")
                 ),
                 isBuildGradleKts = true
             )
@@ -580,6 +660,21 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
         }
     }
 
+    @JvmGradlePluginTests
+    @DisplayName("KT-65271: Don't mutate dependency after it is being finalized")
+    @GradleTest
+    @GradleTestVersions(
+        additionalVersions = [TestVersions.Gradle.G_8_6]
+    )
+    @TestMetadata("kt-65271-test-suite-with-kotlin-test-dependency")
+    fun testDontMutateDependencyAfterItIsFinalized(gradleVersion: GradleVersion) {
+        project("kt-65271-test-suite-with-kotlin-test-dependency", gradleVersion) {
+            build("dependencies") {
+                assertOutputDoesNotContain("org.jetbrains.kotlin:kotlin-test-junit5 FAILED")
+            }
+        }
+    }
+
     private fun TestProject.assertKotlinTestDependency(
         configurationsToAddDependency: List<String>,
         classpathElementsExpectedByTask: Map<String, List<String>>,
@@ -678,10 +773,14 @@ class KotlinSpecificDependenciesIT : KGPBaseTest() {
             val itemsLine = output.lines().single { "###$printingTaskName" in it }.substringAfter(printingTaskName)
             val items = itemsLine.removeSurrounding("[", "]").split(", ").toSet()
             checkAnyItemsContains.forEach { pattern ->
-                assertTrue("Dependencies($dependencyOwner) does not contain $pattern") { items.any { pattern in it } }
+                if (!items.any { pattern in it }) {
+                    fail("Dependencies($dependencyOwner) does not contain $pattern\nDependencies:\n${items.joinToString("\n")}")
+                }
             }
             checkNoItemContains.forEach { pattern ->
-                assertFalse("Dependencies($dependencyOwner) unexpectedly contains $pattern") { items.any { pattern in it } }
+                if (items.any { pattern in it }) {
+                    fail("Dependencies($dependencyOwner) unexpectedly contains $pattern\nDependencies:\n${items.joinToString("\n")}")
+                }
             }
         }
     }

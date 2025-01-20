@@ -12,7 +12,7 @@ import org.jetbrains.kotlin.backend.jvm.IrPropertyOrIrField.Property
 import org.jetbrains.kotlin.backend.jvm.NameableMfvcNodeImpl.Companion.MethodFullNameMode
 import org.jetbrains.kotlin.backend.jvm.UnboxFunctionImplementation.*
 import org.jetbrains.kotlin.backend.jvm.ir.createJvmIrBuilder
-import org.jetbrains.kotlin.backend.jvm.ir.erasedUpperBound
+import org.jetbrains.kotlin.ir.util.erasedUpperBound
 import org.jetbrains.kotlin.backend.jvm.ir.upperBound
 import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
@@ -24,7 +24,6 @@ import org.jetbrains.kotlin.ir.builders.declarations.buildConstructor
 import org.jetbrains.kotlin.ir.builders.declarations.buildField
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.deepCopyWithVariables
 import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.types.IrSimpleType
@@ -64,7 +63,7 @@ fun createLeafMfvcNode(
             oldBackingField.metadata = null
         }.apply {
             this.parent = oldBackingField.parent
-            this.annotations = fieldAnnotations.map { it.deepCopyWithVariables() }
+            this.annotations = fieldAnnotations.map { it.deepCopyWithoutPatchingParents() }
         }
     }
 
@@ -122,7 +121,7 @@ private fun makeUnboxMethod(
         this.parent = parent
         overriddenSymbols = overriddenNode?.let { it.unboxMethod.overriddenSymbols + it.unboxMethod.symbol } ?: listOf()
         if (!static) {
-            createDispatchReceiverParameter()
+            parameters += createDispatchReceiverParameterWithClassParent()
         }
     }
 
@@ -292,8 +291,8 @@ fun createIntermediateMfvcNode(
         unboxMethod = makeUnboxMethod(
             context, fullMethodName, type, parent, overriddenNode, static, unboxFunctionImplementation, oldGetter, modality
         ) { receiver ->
-            val valueArguments = subnodes.flatMap { it.fields!! }
-                .map { field -> irGetField(if (field.isStatic) null else irGet(receiver!!), field) }
+            val valueArguments = subnodes.flatMap { it.fields }
+                .map { field -> irGetField(if (field!!.isStatic) null else irGet(receiver!!), field) }
             rootNode.makeBoxedExpression(this, typeArguments, valueArguments, registerPossibleExtraBoxCreation = {})
         }
     }
@@ -328,7 +327,7 @@ fun collectPropertiesOrFieldsAfterLowering(irClass: IrClass, context: JvmBackend
         }
 
         fun handleAccessor(element: IrSimpleFunction) {
-            if (element.extensionReceiverParameter == null && element.contextReceiverParametersCount == 0) {
+            if (element.parameters.none { it.kind == IrParameterKind.ExtensionReceiver || it.kind == IrParameterKind.Context }) {
                 element.correspondingPropertySymbol?.owner?.let { add(Property(it)) }
             }
         }
@@ -374,9 +373,8 @@ fun getRootNode(context: JvmBackendContext, mfvc: IrClass): RootMfvcNode {
 
     val customEqualsMfvc = mfvc.functions.singleOrNull {
         it.name == OperatorNameConventions.EQUALS &&
-                it.contextReceiverParametersCount == 0 &&
-                it.extensionReceiverParameter == null &&
-                it.valueParameters.singleOrNull()?.type?.erasedUpperBound == mfvc
+                it.hasShape(dispatchReceiver = true, regularParameters = 1) &&
+                it.parameters[1].type.erasedUpperBound == mfvc
     }
 
     val specializedEqualsMethod = makeSpecializedEqualsMethod(context, mfvc, oldFields, customEqualsAny, customEqualsMfvc)
@@ -396,7 +394,7 @@ private fun makeSpecializedEqualsMethod(
     returnType = context.irBuiltIns.booleanType
 }.apply {
     parent = mfvc
-    createDispatchReceiverParameter()
+    parameters += createDispatchReceiverParameterWithClassParent()
 
     val other = addValueParameter {
         name = Name.identifier("other")
@@ -406,8 +404,8 @@ private fun makeSpecializedEqualsMethod(
         body = with(context.createJvmIrBuilder(this.symbol)) {
             if (customEqualsAny != null) {
                 irExprBody(irCall(customEqualsAny).apply {
-                    dispatchReceiver = irGet(dispatchReceiverParameter!!)
-                    putValueArgument(0, irGet(other))
+                    arguments[0] = irGet(dispatchReceiverParameter!!)
+                    arguments[1] = irGet(other)
                 })
             } else {
                 val leftArgs = oldFields.map { irGetField(irGet(dispatchReceiverParameter!!), it) }
@@ -415,8 +413,8 @@ private fun makeSpecializedEqualsMethod(
                 val conjunctions = leftArgs.zip(rightArgs) { l, r -> irEquals(l, r) }
                 irExprBody(conjunctions.reduce { acc, current ->
                     irCall(context.irBuiltIns.andandSymbol).apply {
-                        putValueArgument(0, acc)
-                        putValueArgument(1, current)
+                        arguments[0] = acc
+                        arguments[1] = current
                     }
                 })
             }
@@ -484,7 +482,7 @@ private fun makePrimaryConstructorImpl(
         metadata = oldPrimaryConstructor.metadata
         oldPrimaryConstructor.metadata = null
     }
-    copyAttributes(oldPrimaryConstructor as? IrAttributeContainer)
+    copyAttributes(oldPrimaryConstructor)
     // body is added in the Lowering file as it needs to be lowered
 }
 
@@ -493,7 +491,7 @@ private fun makeMfvcPrimaryConstructor(
     oldPrimaryConstructor: IrConstructor,
     mfvc: IrClass,
     leaves: List<LeafMfvcNode>,
-    fields: List<IrField>?
+    fields: List<IrField?>
 ) = context.irFactory.buildConstructor {
     updateFrom(oldPrimaryConstructor)
     visibility = DescriptorVisibilities.PRIVATE
@@ -507,8 +505,8 @@ private fun makeMfvcPrimaryConstructor(
     if (!mfvc.isKotlinExternalStub()) {
         body = context.createIrBuilder(irConstructor.symbol).irBlockBody(irConstructor) {
             +irDelegatingConstructorCall(context.irBuiltIns.anyClass.owner.constructors.single())
-            for ((field, parameter) in fields!! zip parameters) {
-                +irSetField(irGet(mfvc.thisReceiver!!), field, irGet(parameter))
+            for ((field, parameter) in fields zip parameters) {
+                +irSetField(irGet(mfvc.thisReceiver!!), field!!, irGet(parameter))
             }
         }
     }
@@ -519,13 +517,15 @@ private fun makeRootMfvcNodeSubnodes(
     properties: Map<Pair<Boolean, Name>, IrProperty>,
     context: JvmBackendContext,
     mfvc: IrClass
-) = representation.underlyingPropertyNamesToTypes.map { (name, type) ->
+): List<NameableMfvcNode> = representation.underlyingPropertyNamesToTypes.map { (name, type) ->
     val typeArguments = makeTypeArgumentsFromType(type)
-    val oldProperty = properties[false to name]!!
-    val oldBackingField = oldProperty.backingFieldIfNotDelegate
-    val oldGetter = oldProperty.getterIfDeclared(mfvc)
+    val oldProperty = properties[false to name]
+    val oldBackingField = oldProperty?.backingFieldIfNotDelegate
+    val oldGetter = oldProperty?.getterIfDeclared(mfvc)
     val overriddenNode = oldGetter?.let { getOverriddenNode(context.multiFieldValueClassReplacements, it) as IntermediateMfvcNode? }
-    val static = oldProperty.isStatic(mfvc)
+    val static = oldProperty?.isStatic(mfvc) ?: false
+    // ^ the only way to get oldProperty == null is access to the primary constructor property from a different module,
+    //   otherwise the property will be accessible from field or getter. So, it safe to assume static to be `false` in this case.
     createNameableMfvcNodes(
         mfvc,
         context,
@@ -541,7 +541,9 @@ private fun makeRootMfvcNodeSubnodes(
         Modality.FINAL,
         oldBackingField,
     ).also {
-        updateAnnotationsAndPropertyFromOldProperty(oldProperty, context, it)
+        if (oldProperty != null) {
+            updateAnnotationsAndPropertyFromOldProperty(oldProperty, context, it)
+        }
         it.unboxMethod.overriddenSymbols = listOf() // the getter is saved so it overrides itself
     }
 }

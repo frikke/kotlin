@@ -11,7 +11,6 @@ import org.jetbrains.kotlin.konan.target.*
 import java.io.File
 
 typealias ObjectFile = String
-typealias ExecutableFile = String
 
 internal class BitcodeCompiler(
         private val context: PhaseContext,
@@ -35,11 +34,7 @@ internal class BitcodeCompiler(
                     .execute()
 
     private fun targetTool(tool: String, vararg arg: String) {
-        val absoluteToolName = if (platform.configurables is AppleConfigurables) {
-            "${platform.absoluteTargetToolchain}/usr/bin/$tool"
-        } else {
-            "${platform.absoluteTargetToolchain}/bin/$tool"
-        }
+        val absoluteToolName = "${platform.absoluteTargetToolchain}/bin/$tool"
         runTool(absoluteToolName, *arg)
     }
 
@@ -66,12 +61,11 @@ internal class BitcodeCompiler(
                         debug -> configurables.clangDebugFlags
                         else -> configurables.clangNooptFlags
                     })
-                    addNonEmpty(BitcodeEmbedding.getClangOptions(config))
                     addNonEmpty(configurables.currentRelocationMode(context).translateToClangCc1Flag())
                 }
         val bitcodePath = bitcodeFile.absoluteFile.normalize().path
         val objectPath = objectFile.absoluteFile.normalize().path
-        if (configurables is AppleConfigurables && config.configuration.get(BinaryOptions.compileBitcodeWithXcodeLlvm) != false) {
+        if (configurables is AppleConfigurables && config.configuration.get(BinaryOptions.compileBitcodeWithXcodeLlvm) == true) {
             targetTool("clang++", *flags.toTypedArray(), bitcodePath, "-o", objectPath)
         } else {
             hostLlvmTool("clang++", *flags.toTypedArray(), bitcodePath, "-o", objectPath)

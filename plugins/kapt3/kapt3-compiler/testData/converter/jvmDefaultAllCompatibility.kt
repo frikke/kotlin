@@ -1,5 +1,4 @@
-// !JVM_DEFAULT_MODE: all-compatibility
-// EXPECTED_ERROR: (kotlin:15:5) modifier private not allowed here
+// JVM_DEFAULT_MODE: all-compatibility
 
 interface Foo {
     fun foo() {

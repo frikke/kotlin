@@ -1,5 +1,7 @@
-// !LANGUAGE: +EnumEntries
+// RUN_PIPELINE_TILL: BACKEND
+// LANGUAGE: +EnumEntries -PrioritizedEnumEntries
 // WITH_STDLIB
+// FIR_DUMP
 
 package foo
 
@@ -14,7 +16,7 @@ enum class A {
 }
 
 fun test() {
-    A.entries
+    <!DEPRECATED_ACCESS_TO_ENUM_ENTRY_COMPANION_PROPERTY!>A.entries<!>
 
     with(A) {
         entries

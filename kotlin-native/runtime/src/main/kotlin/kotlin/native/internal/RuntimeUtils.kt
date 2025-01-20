@@ -2,7 +2,7 @@
  * Copyright 2010-2023 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the LICENSE file.
  */
-@file:OptIn(ExperimentalForeignApi::class)
+@file:OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
 
 @file:Suppress("DEPRECATION", "DEPRECATION_ERROR") // Char.toInt()
 package kotlin.native.internal
@@ -10,9 +10,11 @@ package kotlin.native.internal
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.internal.getProgressionLastElement
 import kotlin.reflect.KClass
-import kotlin.native.concurrent.freeze
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlinx.cinterop.*
-import kotlin.native.concurrent.FreezableAtomicReference
+import kotlinx.cinterop.NativePtr
+import kotlin.native.internal.escapeAnalysis.Escapes
 
 @ExportForCppRuntime
 @PublishedApi
@@ -112,13 +114,6 @@ internal fun ThrowCharacterCodingException(): Nothing {
     throw CharacterCodingException()
 }
 
-@ExportForCppRuntime
-@FreezingIsDeprecated
-internal fun ThrowIncorrectDereferenceException() {
-    throw IncorrectDereferenceException(
-            "Trying to access top level value not marked as @ThreadLocal or @SharedImmutable from non-main thread")
-}
-
 internal class FileFailedToInitializeException(message: String?, cause: Throwable?) : Error(message, cause)
 
 @ExportForCppRuntime
@@ -156,22 +151,17 @@ internal fun ReportUnhandledException(throwable: Throwable) {
 // Using object to make sure that `hook` is initialized when it's needed instead of
 // in a normal global initialization flow. This is important if some global happens
 // to throw an exception during it's initialization before this hook would've been initialized.
-@OptIn(FreezingIsDeprecated::class, ExperimentalNativeApi::class)
+@OptIn(ExperimentalNativeApi::class)
 internal object UnhandledExceptionHookHolder {
-    internal val hook: FreezableAtomicReference<ReportUnhandledExceptionHook?> =
-        if (Platform.memoryModel == MemoryModel.EXPERIMENTAL) {
-            FreezableAtomicReference<ReportUnhandledExceptionHook?>(null)
-        } else {
-            FreezableAtomicReference<ReportUnhandledExceptionHook?>(null).freeze()
-        }
+    internal val hook: AtomicReference<ReportUnhandledExceptionHook?> = AtomicReference<ReportUnhandledExceptionHook?>(null)
 }
 
 // TODO: Can be removed only when native-mt coroutines stop using it.
 @PublishedApi
 @ExportForCppRuntime
-@OptIn(FreezingIsDeprecated::class, ExperimentalNativeApi::class)
+@OptIn(ExperimentalNativeApi::class)
 internal fun OnUnhandledException(throwable: Throwable) {
-    val handler = UnhandledExceptionHookHolder.hook.value
+    val handler = UnhandledExceptionHookHolder.hook.load()
     if (handler == null) {
         ReportUnhandledException(throwable);
         return
@@ -184,9 +174,9 @@ internal fun OnUnhandledException(throwable: Throwable) {
 }
 
 @ExportForCppRuntime("Kotlin_runUnhandledExceptionHook")
-@OptIn(FreezingIsDeprecated::class, ExperimentalNativeApi::class)
+@OptIn(ExperimentalNativeApi::class)
 internal fun runUnhandledExceptionHook(throwable: Throwable) {
-    val handler = UnhandledExceptionHookHolder.hook.value ?: throw throwable
+    val handler = UnhandledExceptionHookHolder.hook.load() ?: throw throwable
     handler(throwable)
 }
 
@@ -206,7 +196,7 @@ internal fun <T: Enum<T>> valueOfForEnum(name: String, values: Array<T>) : T {
             else -> return values[middle]
         }
     }
-    throw Exception("Invalid enum value name: $name")
+    throw IllegalArgumentException("Invalid enum value name: $name")
 }
 
 @PublishedApi
@@ -218,23 +208,32 @@ internal fun <T: Enum<T>> valuesForEnum(values: Array<T>): Array<T> {
     return result as Array<T>
 }
 
-@PublishedApi
 @TypedIntrinsic(IntrinsicType.CREATE_UNINITIALIZED_INSTANCE)
-internal external fun <T> createUninitializedInstance(): T
+@InternalForKotlinNative
+public external fun <T> createUninitializedInstance(): T
 
-@PublishedApi
 @TypedIntrinsic(IntrinsicType.INIT_INSTANCE)
-internal external fun initInstance(thiz: Any, constructorCall: Any): Unit
+@InternalForKotlinNative
+public external fun initInstance(thiz: Any, constructorCall: Any): Unit
+
+@TypedIntrinsic(IntrinsicType.CREATE_UNINITIALIZED_ARRAY)
+@InternalForKotlinNative
+public external fun <T> createUninitializedArray(size: Int): T
+
+@TypedIntrinsic(IntrinsicType.CREATE_EMPTY_STRING)
+@InternalForKotlinNative
+@PublishedApi
+internal external fun createEmptyString(): String
 
 @PublishedApi
 @TypedIntrinsic(IntrinsicType.IS_SUBTYPE)
 internal external fun <T> isSubtype(objTypeInfo: NativePtr): Boolean
 
 @PublishedApi
-internal fun checkProgressionStep(step: Int)  =
+internal fun checkProgressionStep(step: Int): Int =
         if (step > 0) step else throw IllegalArgumentException("Step must be positive, was: $step.")
 @PublishedApi
-internal fun checkProgressionStep(step: Long) =
+internal fun checkProgressionStep(step: Long): Long =
         if (step > 0) step else throw IllegalArgumentException("Step must be positive, was: $step.")
 
 @PublishedApi
@@ -270,3 +269,8 @@ internal fun KonanObjectToUtf8Array(value: Any?): ByteArray {
     }
     return string.encodeToByteArray()
 }
+
+@PublishedApi
+@TypedIntrinsic(IntrinsicType.IMMUTABLE_BLOB)
+@Escapes.Nothing
+internal external fun immutableBlobOfImpl(data: String): ImmutableBlob

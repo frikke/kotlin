@@ -1,9 +1,7 @@
-// IGNORE_BACKEND: WASM
 // WASM_MUTE_REASON: NESTED_OBJECT_INIT
-// KT-59058
-// IGNORE_BACKEND: NATIVE
 // WITH_STDLIB
 // WITH_COROUTINES
+
 import helpers.*
 import kotlin.coroutines.*
 import kotlin.coroutines.intrinsics.*

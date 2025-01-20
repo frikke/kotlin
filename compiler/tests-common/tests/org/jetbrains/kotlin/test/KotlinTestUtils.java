@@ -12,10 +12,10 @@ import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.psi.PsiElement;
-import com.intellij.rt.execution.junit.FileComparisonFailure;
 import com.intellij.testFramework.TestDataFile;
 import com.intellij.util.lang.JavaVersion;
 import junit.framework.TestCase;
+import kotlin.Pair;
 import kotlin.Unit;
 import kotlin.collections.CollectionsKt;
 import kotlin.jvm.functions.Function0;
@@ -26,7 +26,6 @@ import org.jetbrains.kotlin.analyzer.AnalysisResult;
 import org.jetbrains.kotlin.builtins.DefaultBuiltIns;
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns;
 import org.jetbrains.kotlin.checkers.CompilerTestLanguageVersionSettingsKt;
-import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys;
 import org.jetbrains.kotlin.cli.common.config.ContentRootsKt;
 import org.jetbrains.kotlin.cli.common.config.KotlinSourceRoot;
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity;
@@ -48,23 +47,24 @@ import org.jetbrains.kotlin.psi.KtPsiFactory;
 import org.jetbrains.kotlin.resolve.lazy.JvmResolveUtil;
 import org.jetbrains.kotlin.storage.LockBasedStorageManager;
 import org.jetbrains.kotlin.test.testFramework.KtUsefulTestCase;
-import org.jetbrains.kotlin.test.util.JUnit4Assertions;
 import org.jetbrains.kotlin.test.util.KtTestUtil;
 import org.jetbrains.kotlin.test.util.StringUtilsKt;
 import org.jetbrains.kotlin.utils.ExceptionUtilsKt;
 import org.junit.Assert;
+import org.opentest4j.AssertionFailedError;
+import org.opentest4j.FileInfo;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.jetbrains.kotlin.test.InTextDirectivesUtils.IGNORE_BACKEND_DIRECTIVE_PREFIXES;
-import static org.jetbrains.kotlin.test.InTextDirectivesUtils.isIgnoredTarget;
+import static org.jetbrains.kotlin.test.InTextDirectivesUtils.*;
 
 public class KotlinTestUtils {
     public static String TEST_MODULE_NAME = "test-module";
@@ -81,7 +81,7 @@ public class KotlinTestUtils {
     private static final boolean AUTOMATICALLY_UNMUTE_PASSED_TESTS = false;
     private static final boolean AUTOMATICALLY_MUTE_FAILED_TESTS = false;
 
-    private static final Pattern DIRECTIVE_PATTERN = Pattern.compile("^//\\s*[!]?([A-Z_]+)(:[ \\t]*(.*))?$", Pattern.MULTILINE);
+    private static final Pattern DIRECTIVE_PATTERN = Pattern.compile("^//\\s*([A-Z_0-9]+)(:[ \\t]*(.*))?$", Pattern.MULTILINE);
 
     private KotlinTestUtils() {
     }
@@ -127,7 +127,7 @@ public class KotlinTestUtils {
         CompilerConfiguration configuration = new CompilerConfiguration();
         configuration.put(CommonConfigurationKeys.MODULE_NAME, TEST_MODULE_NAME);
 
-        configuration.put(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, new MessageCollector() {
+        configuration.put(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY, new MessageCollector() {
             @Override
             public void clear() {
             }
@@ -178,18 +178,6 @@ public class KotlinTestUtils {
         else if (jdkKind == TestJdkKind.MODIFIED_MOCK_JDK) {
             JvmContentRootsKt.addJvmClasspathRoot(configuration, KtTestUtil.findMockJdkRtModified());
             configuration.put(JVMConfigurationKeys.NO_JDK, true);
-        }
-        else if (jdkKind == TestJdkKind.ANDROID_API) {
-            JvmContentRootsKt.addJvmClasspathRoot(configuration, KtTestUtil.findAndroidApiJar());
-            configuration.put(JVMConfigurationKeys.NO_JDK, true);
-        }
-        else if (jdkKind == TestJdkKind.FULL_JDK_6) {
-            String jdk6 = System.getenv("JDK_1_6");
-            if (jdk6 == null) {
-                jdk6 = System.getenv("JDK_16");
-            }
-            assert jdk6 != null : "Environment variable JDK_1_6 is not set";
-            configuration.put(JVMConfigurationKeys.JDK_HOME, new File(jdk6));
         }
         else if (jdkKind == TestJdkKind.FULL_JDK_11) {
             configuration.put(JVMConfigurationKeys.JDK_HOME, KtTestUtil.getJdk11Home());
@@ -260,7 +248,7 @@ public class KotlinTestUtils {
         assertEqualsToFile("Actual data differs from file content", expectedFile, actual, sanitizer);
     }
 
-    public static void assertEqualsToFile(@NotNull String message, @NotNull File expectedFile, @NotNull String actual, @NotNull Function1<String, String> sanitizer) {
+    public static Pair<Boolean, String> doesEqualToFile(@NotNull File expectedFile, @NotNull String actual, @NotNull Function1<String, String> sanitizer) {
         try {
             String actualText = StringUtilsKt.trimTrailingWhitespacesAndAddNewlineAtEOF(StringUtil.convertLineSeparators(actual.trim()));
 
@@ -276,34 +264,32 @@ public class KotlinTestUtils {
 
             String expectedText = StringUtilsKt.trimTrailingWhitespacesAndAddNewlineAtEOF(StringUtil.convertLineSeparators(expected.trim()));
 
-            if (!Objects.equals(sanitizer.invoke(expectedText), sanitizer.invoke(actualText))) {
-                throw new FileComparisonFailure(message + ": " + expectedFile.getName(),
-                                                expected, actual, expectedFile.getAbsolutePath());
-            }
+            return new Pair<>(Objects.equals(sanitizer.invoke(expectedText), sanitizer.invoke(actualText)), expected);
         }
         catch (IOException e) {
             throw ExceptionUtilsKt.rethrow(e);
         }
     }
 
-    public static boolean compileKotlinWithJava(
-            @NotNull List<File> javaFiles,
-            @NotNull List<File> ktFiles,
-            @NotNull File outDir,
-            @NotNull Disposable disposable,
-            @Nullable File javaErrorFile
-    ) throws IOException {
-        return compileKotlinWithJava(javaFiles, ktFiles, outDir, disposable, javaErrorFile, null);
+    public static void assertEqualsToFile(@NotNull String message, @NotNull File expectedFile, @NotNull String actual, @NotNull Function1<String, String> sanitizer) {
+        Pair<Boolean, String> pair = doesEqualToFile(expectedFile, actual, sanitizer);
+        String expected = pair.getSecond();
+        if (!pair.getFirst()) {
+            throw new AssertionFailedError(
+                    message + ": " + expectedFile.getName(),
+                    new FileInfo(expectedFile.getAbsolutePath(), expected.getBytes(StandardCharsets.UTF_8)),
+                    actual
+            );
+        }
     }
 
-    public static boolean compileKotlinWithJava(
+    public static JavaCompilationResult compileKotlinWithJava(
             @NotNull List<File> javaFiles,
             @NotNull List<File> ktFiles,
             @NotNull File outDir,
             @NotNull Disposable disposable,
-            @Nullable File javaErrorFile,
             @Nullable Function1<CompilerConfiguration, Unit> updateConfiguration
-    ) throws IOException {
+    ) {
         if (!ktFiles.isEmpty()) {
             KotlinCoreEnvironment environment = createEnvironmentWithFullJdkAndIdeaAnnotations(disposable);
             CompilerTestLanguageVersionSettingsKt.setupLanguageVersionSettingsForMultifileCompilerTests(ktFiles, environment);
@@ -316,12 +302,13 @@ public class KotlinTestUtils {
             boolean mkdirs = outDir.mkdirs();
             assert mkdirs : "Not created: " + outDir;
         }
-        if (javaFiles.isEmpty()) return true;
+        if (javaFiles.isEmpty()) return JavaCompilationResult.Success.INSTANCE;
 
-        return compileJavaFiles(javaFiles, Arrays.asList(
+        List<String> options = Arrays.asList(
                 "-classpath", outDir.getPath() + File.pathSeparator + ForTestCompileRuntime.runtimeJarForTests(),
                 "-d", outDir.getPath()
-        ), javaErrorFile);
+        );
+        return JvmCompilationUtils.compileJavaFiles(javaFiles, options);
     }
 
     @NotNull
@@ -412,40 +399,24 @@ public class KotlinTestUtils {
         return comments;
     }
 
-    public static boolean compileJavaFiles(@NotNull Collection<File> files, List<String> options) throws IOException {
-        return compileJavaFiles(files, options, null);
-    }
-
-    private static boolean compileJavaFiles(@NotNull Collection<File> files, List<String> options, @Nullable File javaErrorFile) throws IOException {
-        return JvmCompilationUtils.compileJavaFiles(files, options, javaErrorFile, JUnit4Assertions.INSTANCE);
-    }
-
-    public static boolean compileJavaFilesExternallyWithJava11(@NotNull Collection<File> files, @NotNull List<String> options) {
-        return JvmCompilationUtils.compileJavaFilesExternally(files, options, KtTestUtil.getJdk11Home());
-    }
-
-    public static boolean compileJavaFilesExternally(@NotNull Collection<File> files, @NotNull List<String> options, @NotNull File jdkHome) {
-        return JvmCompilationUtils.compileJavaFilesExternally(files, options, jdkHome);
-    }
-
     public static String navigationMetadata(@TestDataFile String testFile) {
         return testFile;
     }
 
     public interface DoTest {
-        void invoke(@NotNull String filePath) throws Exception;
+        void invoke(@NotNull String filePath);
     }
 
-    public static void runTest(@NotNull DoTest test, @NotNull TestCase testCase, @TestDataFile String testDataFile) throws Exception {
+    public static void runTest(@NotNull DoTest test, @NotNull TestCase testCase, @TestDataFile String testDataFile) {
         runTestImpl(testWithCustomIgnoreDirective(test, TargetBackend.ANY, IGNORE_BACKEND_DIRECTIVE_PREFIXES), testCase, testDataFile);
     }
 
     public static void runTest(@NotNull TestCase testCase, @NotNull Function0<Unit> test) {
-        MuteWithDatabaseKt.runTest(testCase, test);
+        MuteWithDatabaseJunit4Kt.runTest(testCase, test);
     }
 
     public static void runTestWithThrowable(@NotNull TestCase testCase, @NotNull RunnableWithThrowable test) {
-        MuteWithDatabaseKt.runTest(testCase, () -> {
+        MuteWithDatabaseJunit4Kt.runTest(testCase, () -> {
             try {
                 test.run();
             }
@@ -458,11 +429,11 @@ public class KotlinTestUtils {
 
     // In this test runner version the `testDataFile` parameter is annotated by `TestDataFile`.
     // So only file paths passed to this parameter will be used in navigation actions, like "Navigate to testdata" and "Related Symbol..."
-    public static void runTest(DoTest test, TargetBackend targetBackend, @TestDataFile String testDataFile) throws Exception {
+    public static void runTest(DoTest test, TargetBackend targetBackend, @TestDataFile String testDataFile) {
         runTest0(test, targetBackend, testDataFile);
     }
 
-    public static void runTestWithCustomIgnoreDirective(DoTest test, TargetBackend targetBackend, @TestDataFile String testDataFile, String ignoreDirective) throws Exception {
+    public static void runTestWithCustomIgnoreDirective(DoTest test, TargetBackend targetBackend, @TestDataFile String testDataFile, String ignoreDirective) {
         runTestImpl(testWithCustomIgnoreDirective(test, targetBackend, ignoreDirective), null, testDataFile);
     }
 
@@ -474,13 +445,16 @@ public class KotlinTestUtils {
     // Cons:
     // * sometimes, for too common/general names, it shows many variants to navigate
     // * it adds an additional step for navigation -- you must choose an exact file to navigate
-    public static void runTest0(DoTest test, TargetBackend targetBackend, String testDataFilePath) throws Exception {
-        runTestImpl(testWithCustomIgnoreDirective(test, targetBackend, IGNORE_BACKEND_DIRECTIVE_PREFIXES), null, testDataFilePath);
+    public static void runTest0(DoTest test, TargetBackend targetBackend, String testDataFilePath) {
+        String[] prefixes = test.getClass().getSimpleName().startsWith("Fir")
+                            ? new String[] { IGNORE_BACKEND_DIRECTIVE_PREFIX, IGNORE_BACKEND_K2_DIRECTIVE_PREFIX }
+                            : IGNORE_BACKEND_DIRECTIVE_PREFIXES;
+        runTestImpl(testWithCustomIgnoreDirective(test, targetBackend, prefixes), null, testDataFilePath);
     }
 
-    private static void runTestImpl(@NotNull DoTest test, @Nullable TestCase testCase, String testDataFilePath) throws Exception {
+    private static void runTestImpl(@NotNull DoTest test, @Nullable TestCase testCase, String testDataFilePath) {
         if (testCase != null && !isRunTestOverridden(testCase)) {
-            Function0<Unit> wrapWithMuteInDatabase = MuteWithDatabaseKt.wrapWithMuteInDatabase(testCase, () -> {
+            Function0<Unit> wrapWithMuteInDatabase = MuteWithDatabaseJunit4Kt.wrapWithMuteInDatabase(testCase, () -> {
                 try {
                     test.invoke(testDataFilePath);
                 }
@@ -510,7 +484,7 @@ public class KotlinTestUtils {
         return false;
     }
 
-    private static DoTest testWithCustomIgnoreDirective(DoTest test, TargetBackend targetBackend, String... ignoreDirectives) throws Exception {
+    private static DoTest testWithCustomIgnoreDirective(DoTest test, TargetBackend targetBackend, String... ignoreDirectives) {
         return filePath -> {
             File testDataFile = new File(filePath);
 
@@ -532,10 +506,10 @@ public class KotlinTestUtils {
                     String directive = ignoreDirectives[0] + targetBackend.name() + "\n";
 
                     String newText;
-                    if (text.startsWith("// !")) {
+                    if (text.startsWith("//")) {
                         StringBuilder prefixBuilder = new StringBuilder();
                         int l = 0;
-                        while (text.startsWith("// !", l)) {
+                        while (text.startsWith("//", l)) {
                             int r = text.indexOf("\n", l) + 1;
                             if (r <= 0) r = text.length();
                             prefixBuilder.append(text.substring(l, r));
@@ -551,7 +525,11 @@ public class KotlinTestUtils {
 
                     if (!newText.equals(text)) {
                         System.err.println("\"" + directive + "\" was added to \"" + testDataFile + "\"");
-                        FileUtil.writeToFile(testDataFile, newText);
+                        try {
+                            FileUtil.writeToFile(testDataFile, newText);
+                        } catch (IOException ioException) {
+                            throw ExceptionUtilsKt.rethrow(e);
+                        }
                     }
                 }
 
@@ -578,7 +556,11 @@ public class KotlinTestUtils {
                         String newText = Pattern.compile("^" + directive + "\n", Pattern.MULTILINE).matcher(text).replaceAll("");
                         if (!newText.equals(text)) {
                             System.err.println("\"" + directive + "\" was removed from \"" + testDataFile + "\"");
-                            FileUtil.writeToFile(testDataFile, newText);
+                            try {
+                                FileUtil.writeToFile(testDataFile, newText);
+                            } catch (IOException e) {
+                                throw ExceptionUtilsKt.rethrow(e);
+                            }
                         }
                     }
                 }

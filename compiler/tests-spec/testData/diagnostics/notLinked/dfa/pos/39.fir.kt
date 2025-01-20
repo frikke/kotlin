@@ -1,5 +1,14 @@
-// !DIAGNOSTICS: -UNUSED_EXPRESSION
+// DIAGNOSTICS: -UNUSED_EXPRESSION
 // SKIP_TXT
+
+/*
+ * KOTLIN DIAGNOSTICS NOT LINKED SPEC TEST (POSITIVE)
+ *
+ * SECTIONS: dfa
+ * NUMBER: 39
+ * DESCRIPTION: Raw data flow analysis test
+ * HELPERS: classes, objects, typealiases, functions, enumClasses, interfaces, sealedClasses
+ */
 
 /*
  * TESTCASE NUMBER: 1
@@ -20,8 +29,8 @@ fun case_2(x: Number) {
     val y: Int? = null
 
     if (<!FORBIDDEN_IDENTITY_EQUALS_WARNING!>x === y<!>) {
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Number & kotlin.Int")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Number & kotlin.Int")!>x<!>.inv()
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int")!>x<!>.inv()
     }
 }
 
@@ -30,8 +39,8 @@ fun case_3(x: Number) {
     var y: Int? = null
 
     if (<!FORBIDDEN_IDENTITY_EQUALS_WARNING!>x === y<!>) {
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Number & kotlin.Int")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Number & kotlin.Int")!>x<!>.inv()
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int")!>x<!>.inv()
     }
 }
 

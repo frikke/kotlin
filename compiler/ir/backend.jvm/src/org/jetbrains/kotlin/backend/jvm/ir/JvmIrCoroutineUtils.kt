@@ -21,7 +21,7 @@ import org.jetbrains.kotlin.ir.util.parentAsClass
 
 fun IrFunction.continuationParameter(): IrValueParameter? = when {
     isInvokeSuspendOfLambda() || isInvokeSuspendForInlineOfLambda() -> dispatchReceiverParameter
-    else -> valueParameters.singleOrNull { it.origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS }
+    else -> parameters.singleOrNull { it.origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS }
 }
 
 fun IrFunction.isInvokeSuspendOfLambda(): Boolean =
@@ -48,13 +48,13 @@ private fun IrFunction.isBridgeToSuspendImplMethod(): Boolean =
     } == true
 
 private fun IrFunction.isStaticInlineClassReplacementDelegatingCall(): Boolean {
-    if (this !is IrAttributeContainer || isStaticInlineClassReplacement) return false
+    if (isStaticInlineClassReplacement) return false
 
     val parentClass = parent as? IrClass ?: return false
     if (!parentClass.isSingleFieldValueClass) return false
 
     return parentClass.declarations.find {
-        it is IrAttributeContainer && it.attributeOwnerId == attributeOwnerId && it !== this
+        it.attributeOwnerId == attributeOwnerId && it !== this
     }?.isStaticInlineClassReplacement == true
 }
 
@@ -62,7 +62,7 @@ private val BRIDGE_ORIGINS = setOf(
     IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER,
     JvmLoweredDeclarationOrigin.JVM_STATIC_WRAPPER,
     JvmLoweredDeclarationOrigin.JVM_OVERLOADS_WRAPPER,
-    JvmLoweredDeclarationOrigin.SYNTHETIC_ACCESSOR,
+    IrDeclarationOrigin.SYNTHETIC_ACCESSOR,
     JvmLoweredDeclarationOrigin.SYNTHETIC_ACCESSOR_FOR_HIDDEN_CONSTRUCTOR,
     JvmLoweredDeclarationOrigin.SUPER_INTERFACE_METHOD_BRIDGE,
     IrDeclarationOrigin.BRIDGE,
@@ -95,7 +95,7 @@ fun IrFunction.hasContinuation(): Boolean = isInvokeSuspendOfLambda() ||
         isSuspend && shouldContainSuspendMarkers() &&
         // These are templates for the inliner; the continuation is borrowed from the caller method.
         !isEffectivelyInlineOnly() &&
-        origin != JvmLoweredDeclarationOrigin.INLINE_LAMBDA &&
+        origin != IrDeclarationOrigin.INLINE_LAMBDA &&
         origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE &&
         origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE_CAPTURES_CROSSINLINE
 

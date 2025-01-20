@@ -77,7 +77,3 @@ internal fun <T> wasmIsInterface(obj: Any): Boolean =
 @ExcludedFromCodegen
 internal fun <T> wasmTypeId(): Int =
     implementedAsIntrinsic
-
-@ExcludedFromCodegen
-internal fun <T> wasmGetTypeInfoData(): TypeInfoData =
-    implementedAsIntrinsic

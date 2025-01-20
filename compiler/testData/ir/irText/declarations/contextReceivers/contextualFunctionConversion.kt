@@ -1,4 +1,4 @@
-// !LANGUAGE: +ContextReceivers
+// LANGUAGE: +ContextReceivers
 
 fun withContext(f: context(String) () -> String) = f("OK")
 

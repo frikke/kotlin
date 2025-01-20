@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
-// !LANGUAGE: -ProhibitUseSiteGetTargetAnnotations
+// LANGUAGE: -ProhibitUseSiteGetTargetAnnotations
 annotation class Ann
 
 <!REPEATED_ANNOTATION!>@get:Ann<!>

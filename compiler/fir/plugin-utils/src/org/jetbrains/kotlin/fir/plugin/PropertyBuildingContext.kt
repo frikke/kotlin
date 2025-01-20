@@ -6,8 +6,10 @@
 package org.jetbrains.kotlin.fir.plugin
 
 import org.jetbrains.kotlin.GeneratedDeclarationKey
+import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.Visibility
+import org.jetbrains.kotlin.fakeElement
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.builder.buildProperty
@@ -15,13 +17,16 @@ import org.jetbrains.kotlin.fir.declarations.builder.buildReceiverParameter
 import org.jetbrains.kotlin.fir.declarations.impl.FirDefaultPropertyBackingField
 import org.jetbrains.kotlin.fir.declarations.impl.FirDefaultPropertyGetter
 import org.jetbrains.kotlin.fir.declarations.impl.FirDefaultPropertySetter
+import org.jetbrains.kotlin.fir.declarations.utils.isExpect
+import org.jetbrains.kotlin.fir.extensions.ExperimentalTopLevelDeclarationsGenerationApi
 import org.jetbrains.kotlin.fir.extensions.FirExtension
 import org.jetbrains.kotlin.fir.moduleData
 import org.jetbrains.kotlin.fir.resolve.defaultType
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirReceiverParameterSymbol
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
-import org.jetbrains.kotlin.fir.types.toFirResolvedTypeRef
+import org.jetbrains.kotlin.fir.toFirResolvedTypeRef
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.Name
 
@@ -68,6 +73,8 @@ public class PropertyBuildingContext(
             moduleData = session.moduleData
             origin = key.origin
 
+            source = owner?.source?.fakeElement(KtFakeSourceElementKind.PluginGenerated)
+
             symbol = FirPropertySymbol(callableId)
             name = callableId.callableName
 
@@ -85,10 +92,14 @@ public class PropertyBuildingContext(
             extensionReceiverTypeProvider?.invoke(typeParameters)?.let {
                 receiverParameter = buildReceiverParameter {
                     typeRef = it.toFirResolvedTypeRef()
+                    symbol = FirReceiverParameterSymbol()
+                    moduleData = session.moduleData
+                    origin = key.origin
+                    containingDeclarationSymbol = this@buildProperty.symbol
                 }
             }
 
-            produceContextReceiversTo(contextReceivers, typeParameters)
+            produceContextReceiversTo(contextParameters, typeParameters, origin, symbol)
 
             isVar = !isVal
             getter = FirDefaultPropertyGetter(
@@ -120,7 +131,7 @@ public class PropertyBuildingContext(
                 )
             }
             isLocal = false
-            bodyResolveState = FirPropertyBodyResolveState.EVERYTHING_RESOLVED
+            bodyResolveState = FirPropertyBodyResolveState.ALL_BODIES_RESOLVED
         }
     }
 }
@@ -156,7 +167,11 @@ public fun FirExtension.createMemberProperty(
     config: PropertyBuildingContext.() -> Unit = {}
 ): FirProperty {
     val callableId = CallableId(owner.classId, name)
-    return PropertyBuildingContext(session, key, owner, callableId, returnTypeProvider, isVal, hasBackingField).apply(config).build()
+    return PropertyBuildingContext(session, key, owner, callableId, returnTypeProvider, isVal, hasBackingField).apply(config).apply {
+        status {
+            isExpect = owner.isExpect
+        }
+    }.build()
 }
 
 /**
@@ -165,6 +180,7 @@ public fun FirExtension.createMemberProperty(
  * If you create top-level extension property don't forget to set [hasBackingField] to false,
  *   since such properties never have backing fields
  */
+@ExperimentalTopLevelDeclarationsGenerationApi
 public fun FirExtension.createTopLevelProperty(
     key: GeneratedDeclarationKey,
     callableId: CallableId,
@@ -184,6 +200,7 @@ public fun FirExtension.createTopLevelProperty(
  *
  * Use this overload when those types use type parameters of constructed property
  */
+@ExperimentalTopLevelDeclarationsGenerationApi
 public fun FirExtension.createTopLevelProperty(
     key: GeneratedDeclarationKey,
     callableId: CallableId,

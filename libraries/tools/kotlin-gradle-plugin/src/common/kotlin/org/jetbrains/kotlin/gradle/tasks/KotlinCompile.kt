@@ -5,7 +5,6 @@
 
 package org.jetbrains.kotlin.gradle.tasks
 
-import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileCollection
@@ -19,7 +18,6 @@ import org.gradle.api.tasks.*
 import org.gradle.api.tasks.compile.AbstractCompile
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.util.PatternFilterable
-import org.gradle.util.GradleVersion
 import org.gradle.work.Incremental
 import org.gradle.work.InputChanges
 import org.gradle.work.NormalizeLineEndings
@@ -30,27 +28,27 @@ import org.jetbrains.kotlin.compilerRunner.IncrementalCompilationEnvironment
 import org.jetbrains.kotlin.compilerRunner.OutputItemsCollectorImpl
 import org.jetbrains.kotlin.config.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.*
-import org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompilerOptionsHelper
 import org.jetbrains.kotlin.gradle.dsl.jvm.JvmTargetValidationMode
-import org.jetbrains.kotlin.gradle.dsl.usesK2
 import org.jetbrains.kotlin.gradle.internal.tasks.allOutputFiles
 import org.jetbrains.kotlin.gradle.logging.GradleErrorMessageCollector
 import org.jetbrains.kotlin.gradle.logging.GradlePrintingMessageCollector
 import org.jetbrains.kotlin.gradle.logging.kotlinDebug
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerArgumentsProducer
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerArgumentsProducer.CreateCompilerArgumentsContext.Companion.create
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.KotlinToolingDiagnostics
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.ToolingDiagnostic
 import org.jetbrains.kotlin.gradle.plugin.getKotlinPluginVersion
 import org.jetbrains.kotlin.gradle.report.BuildReportMode
 import org.jetbrains.kotlin.gradle.tasks.internal.KotlinJvmOptionsCompat
 import org.jetbrains.kotlin.gradle.utils.*
 import org.jetbrains.kotlin.incremental.ClasspathChanges
-import org.jetbrains.kotlin.incremental.ClasspathChanges.*
-import org.jetbrains.kotlin.incremental.ClasspathChanges.ClasspathSnapshotEnabled.*
+import org.jetbrains.kotlin.incremental.ClasspathChanges.ClasspathSnapshotDisabled
 import org.jetbrains.kotlin.incremental.ClasspathChanges.ClasspathSnapshotEnabled.IncrementalRun.NoChanges
 import org.jetbrains.kotlin.incremental.ClasspathChanges.ClasspathSnapshotEnabled.IncrementalRun.ToBeComputedByIncrementalCompiler
+import org.jetbrains.kotlin.incremental.ClasspathChanges.ClasspathSnapshotEnabled.NotAvailableDueToMissingClasspathSnapshot
+import org.jetbrains.kotlin.incremental.ClasspathChanges.ClasspathSnapshotEnabled.NotAvailableForNonIncrementalRun
 import org.jetbrains.kotlin.incremental.ClasspathSnapshotFiles
-import org.jetbrains.kotlin.incremental.classpathAsList
-import org.jetbrains.kotlin.incremental.destinationAsFile
+import org.jetbrains.kotlin.incremental.IncrementalCompilationFeatures
 import org.jetbrains.kotlin.utils.addToStdlib.cast
 import javax.inject.Inject
 
@@ -58,13 +56,13 @@ import javax.inject.Inject
 abstract class KotlinCompile @Inject constructor(
     final override val compilerOptions: KotlinJvmCompilerOptions,
     workerExecutor: WorkerExecutor,
-    objectFactory: ObjectFactory
+    objectFactory: ObjectFactory,
 ) : AbstractKotlinCompile<K2JVMCompilerArguments>(objectFactory, workerExecutor),
     K2MultiplatformCompilationTask,
-    @Suppress("TYPEALIAS_EXPANSION_DEPRECATION") KotlinJvmCompileDsl,
-    KotlinCompilationTask<KotlinJvmCompilerOptions>,
-    UsesKotlinJavaToolchain {
+    @Suppress("TYPEALIAS_EXPANSION_DEPRECATION") KotlinJvmCompileDsl {
 
+    @Suppress("DEPRECATION")
+    @Deprecated(KOTLIN_OPTIONS_DEPRECATION_MESSAGE)
     final override val kotlinOptions: KotlinJvmOptions = KotlinJvmOptionsCompat(
         { this },
         compilerOptions
@@ -105,9 +103,6 @@ abstract class KotlinCompile @Inject constructor(
     @get:Input
     abstract override val moduleName: Property<String>
 
-    @get:Input
-    abstract val useKotlinAbiSnapshot: Property<Boolean>
-
     @get:Nested
     abstract val classpathSnapshotProperties: ClasspathSnapshotProperties
 
@@ -146,7 +141,7 @@ abstract class KotlinCompile @Inject constructor(
     final override val defaultKotlinJavaToolchain: Provider<DefaultKotlinJavaToolchain> = objectFactory
         .propertyWithNewInstance({ compilerOptions })
 
-    final override val kotlinJavaToolchainProvider: Provider<KotlinJavaToolchain> = defaultKotlinJavaToolchain.cast()
+    final override val kotlinJavaToolchainProvider: Provider<out KotlinJavaToolchain> = defaultKotlinJavaToolchain
 
     @get:Internal
     internal abstract val associatedJavaCompileTaskTargetCompatibility: Property<String>
@@ -267,15 +262,17 @@ abstract class KotlinCompile @Inject constructor(
         }
 
         sources { args ->
-            if (compilerOptions.usesK2.get()) {
-                args.fragmentSources = multiplatformStructure.fragmentSourcesCompilerArgs(sourceFileFilter)
-            } else {
-                args.commonSources = commonSourceSet.asFileTree.toPathsArray()
-            }
-
             val sourcesFiles = sources.asFileTree.files.toList()
             val javaSourcesFiles = javaSources.files.toList()
             val scriptSourcesFiles = scriptSources.asFileTree.files.toList()
+
+            if (multiPlatformEnabled.get()) {
+                if (compilerOptions.usesK2.get()) {
+                    args.fragmentSources = multiplatformStructure.fragmentSourcesCompilerArgs(sourcesFiles, sourceFileFilter)
+                } else {
+                    args.commonSources = commonSourceSet.asFileTree.toPathsArray()
+                }
+            }
 
             if (logger.isInfoEnabled) {
                 logger.info("Kotlin source files: ${sourcesFiles.joinToString()}")
@@ -303,6 +300,8 @@ abstract class KotlinCompile @Inject constructor(
         }
     }
 
+    private val projectRootDir = project.rootDir
+
     override fun callCompilerAsync(
         args: K2JVMCompilerArguments,
         inputChanges: InputChanges,
@@ -311,9 +310,10 @@ abstract class KotlinCompile @Inject constructor(
         validateKotlinAndJavaHasSameTargetCompatibility(args)
 
         val gradlePrintingMessageCollector = GradlePrintingMessageCollector(logger, args.allWarningsAsErrors)
-        val gradleMessageCollector = GradleErrorMessageCollector(
-            gradlePrintingMessageCollector, kotlinPluginVersion = getKotlinPluginVersion(logger)
-        )
+        val gradleMessageCollector =
+            GradleErrorMessageCollector(
+                logger, gradlePrintingMessageCollector, kotlinPluginVersion = getKotlinPluginVersion(logger)
+            )
         val outputItemCollector = OutputItemsCollectorImpl()
         val compilerRunner = compilerRunner.get()
 
@@ -323,12 +323,12 @@ abstract class KotlinCompile @Inject constructor(
                 changedFiles = getChangedFiles(inputChanges, incrementalProps),
                 classpathChanges = getClasspathChanges(inputChanges),
                 workingDir = taskBuildCacheableOutputDirectory.get().asFile,
+                rootProjectDir = projectRootDir,
+                buildDir = projectLayout.buildDirectory.getFile(),
                 usePreciseJavaTracking = usePreciseJavaTracking,
                 disableMultiModuleIC = disableMultiModuleIC,
                 multiModuleICSettings = multiModuleICSettings,
-                withAbiSnapshot = useKotlinAbiSnapshot.get(),
-                preciseCompilationResultsBackup = preciseCompilationResultsBackup.get(),
-                keepIncrementalCompilationCachesInMemory = keepIncrementalCompilationCachesInMemory.get(),
+                icFeatures = makeIncrementalCompilationFeatures(),
             )
         } else null
 
@@ -342,7 +342,8 @@ abstract class KotlinCompile @Inject constructor(
                     - (classpathSnapshotProperties.classpathSnapshotDir.orNull?.asFile?.let { setOf(it) } ?: emptySet()),
             reportingSettings = reportingSettings(),
             incrementalCompilationEnvironment = icEnv,
-            kotlinScriptExtensions = scriptExtensions.get().toTypedArray()
+            kotlinScriptExtensions = scriptExtensions.get().toTypedArray(),
+            compilerArgumentsLogLevel = kotlinCompilerArgumentsLogLevel.get()
         )
         compilerRunner.runJvmCompilerAsync(
             args,
@@ -350,14 +351,17 @@ abstract class KotlinCompile @Inject constructor(
             defaultKotlinJavaToolchain.get().buildJvm.get().javaHome,
             taskOutputsBackup
         )
-        compilerRunner.errorsFile?.also { gradleMessageCollector.flush(it) }
+        compilerRunner.errorsFiles?.let { gradleMessageCollector.flush(it) }
     }
 
     private fun validateKotlinAndJavaHasSameTargetCompatibility(
         args: K2JVMCompilerArguments,
     ) {
-        val jvmTargetValidationMode: JvmTargetValidationMode = jvmTargetValidationMode.get()
-        if (jvmTargetValidationMode == JvmTargetValidationMode.IGNORE) return
+        val severity = when (jvmTargetValidationMode.get()) {
+            JvmTargetValidationMode.ERROR -> ToolingDiagnostic.Severity.FATAL
+            JvmTargetValidationMode.WARNING -> ToolingDiagnostic.Severity.WARNING
+            else -> return
+        }
 
         associatedJavaCompileTaskTargetCompatibility.orNull?.let { targetCompatibility ->
             val normalizedJavaTarget = when (targetCompatibility) {
@@ -370,24 +374,15 @@ abstract class KotlinCompile @Inject constructor(
 
             val jvmTarget = args.jvmTarget ?: JvmTarget.DEFAULT.toString()
             if (normalizedJavaTarget != jvmTarget) {
-                val javaTaskName = associatedJavaCompileTaskName.get()
-
-                val errorMessage = buildString {
-                    append("'$javaTaskName' task (current target is $targetCompatibility) and ")
-                    append("'$name' task (current target is $jvmTarget) ")
-                    appendLine("jvm target compatibility should be set to the same Java version.")
-                    if (GradleVersion.current().baseVersion < GradleVersion.version("8.0")) {
-                        append("By default will become an error since Gradle 8.0+! ")
-                        appendLine("Read more: https://kotl.in/gradle/jvm/target-validation")
-                    }
-                    appendLine("Consider using JVM toolchain: https://kotl.in/gradle/jvm/toolchain")
-                }
-
-                when (jvmTargetValidationMode) {
-                    JvmTargetValidationMode.ERROR -> throw GradleException(errorMessage)
-                    JvmTargetValidationMode.WARNING -> logger.warn(errorMessage)
-                    else -> Unit
-                }
+                reportDiagnostic(
+                    KotlinToolingDiagnostics.InconsistentTargetCompatibilityForKotlinAndJavaTasks(
+                        javaTaskName = associatedJavaCompileTaskName.get(),
+                        targetCompatibility = targetCompatibility,
+                        kotlinTaskName = name,
+                        jvmTarget = args.jvmTarget ?: "not provided explicitly, picked up default ${JvmTarget.DEFAULT}",
+                        severity = severity
+                    )
+                )
             }
         }
     }
@@ -469,6 +464,14 @@ abstract class KotlinCompile @Inject constructor(
         javaSourceFiles.from(*sources)
         scriptSourceFiles.from(*sources)
         super.setSource(*sources)
+    }
+
+    // jvm-specific incremental compilation features
+    override fun makeIncrementalCompilationFeatures(): IncrementalCompilationFeatures {
+        return super.makeIncrementalCompilationFeatures().copy(
+            /* Disabled on JVM in favor of classpath snapshot machinery */
+            withAbiSnapshot = false,
+        )
     }
 
     private fun getClasspathChanges(inputChanges: InputChanges): ClasspathChanges = when {

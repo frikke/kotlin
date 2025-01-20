@@ -5,12 +5,11 @@
 
 package org.jetbrains.kotlin.backend.jvm.lower
 
-import gnu.trove.TObjectIntHashMap
 import org.jetbrains.kotlin.backend.common.ClassLoweringPass
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.ir.createJvmIrBuilder
@@ -27,7 +26,6 @@ import org.jetbrains.kotlin.ir.builders.declarations.addValueParameter
 import org.jetbrains.kotlin.ir.builders.declarations.buildConstructor
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.expressions.impl.IrExpressionBodyImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrGetValueImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrSetValueImpl
 import org.jetbrains.kotlin.ir.symbols.IrConstructorSymbol
@@ -40,17 +38,11 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.SpecialNames
 
-internal val enumClassPhase = makeIrFilePhase(
-    ::EnumClassLowering,
-    name = "EnumClass",
-    description = "Handle enum classes"
-)
-
 private const val VALUES_HELPER_FUNCTION_NAME = "\$values"
 private const val ENTRIES_FIELD_NAME = "\$ENTRIES"
 
-private class EnumClassLowering(private val context: JvmBackendContext) : ClassLoweringPass {
-
+@PhaseDescription(name = "EnumClass")
+internal class EnumClassLowering(private val context: JvmBackendContext) : ClassLoweringPass {
     /*
      * Example of codegen for
      * `enum class MyEnum { A }`
@@ -89,20 +81,20 @@ private class EnumClassLowering(private val context: JvmBackendContext) : ClassL
     override fun lower(irClass: IrClass) {
         if (!irClass.isEnumClass) return
         // Also protected by API version check as it relies on EnumEntries in standard library
-        EnumClassTransformer(irClass, context.state.languageVersionSettings.supportsFeature(LanguageFeature.EnumEntries)).run()
+        EnumClassTransformer(irClass, context.config.languageVersionSettings.supportsFeature(LanguageFeature.EnumEntries)).run()
     }
 
     private inner class EnumClassTransformer(private val irClass: IrClass, private val supportsEnumEntries: Boolean) {
         private val loweredEnumConstructors = hashMapOf<IrConstructorSymbol, IrConstructor>()
         private val loweredEnumConstructorParameters = hashMapOf<IrValueParameterSymbol, IrValueParameter>()
-        private val enumEntryOrdinals = TObjectIntHashMap<IrEnumEntry>()
+        private val enumEntryOrdinals = hashMapOf<IrEnumEntry, Int>()
         private val declarationToEnumEntry = mutableMapOf<IrDeclaration, IrEnumEntry>()
         private val enumArrayType = context.irBuiltIns.arrayClass.typeWith(irClass.defaultType) // Enum[]
 
         fun run() {
             // Lower IrEnumEntry into IrField and IrClass members
             irClass.declarations.asSequence().filterIsInstance<IrEnumEntry>().withIndex().forEach { (index, enumEntry) ->
-                enumEntryOrdinals.put(enumEntry, index)
+                enumEntryOrdinals[enumEntry] = index
                 enumEntry.correspondingClass?.let { entryClass -> declarationToEnumEntry[entryClass] = enumEntry }
                 declarationToEnumEntry[buildEnumEntryField(enumEntry)] = enumEntry
             }
@@ -144,7 +136,9 @@ private class EnumClassLowering(private val context: JvmBackendContext) : ClassL
 
         private fun buildEnumEntryField(enumEntry: IrEnumEntry): IrField =
             context.cachedDeclarations.getFieldForEnumEntry(enumEntry).apply {
-                initializer = IrExpressionBodyImpl(enumEntry.initializerExpression!!.expression.patchDeclarationParents(this))
+                initializer = enumEntry.initializerExpression?.let {
+                    context.irFactory.createExpressionBody(it.expression.patchDeclarationParents(this))
+                }
                 annotations = annotations + enumEntry.annotations
             }
 
@@ -217,7 +211,7 @@ private class EnumClassLowering(private val context: JvmBackendContext) : ClassL
                         "\$enum\$ordinal", context.irBuiltIns.intType, JvmLoweredDeclarationOrigin.ENUM_CONSTRUCTOR_SYNTHETIC_PARAMETER
                     )
                     valueParameters += declaration.valueParameters.map { param ->
-                        param.copyTo(this, index = param.index + 2).also { newParam ->
+                        param.copyTo(this).also { newParam ->
                             loweredEnumConstructorParameters[param.symbol] = newParam
                         }
                     }
@@ -307,7 +301,7 @@ private class EnumClassLowering(private val context: JvmBackendContext) : ClassL
                 call.copyTypeArgumentsFrom(original)
                 if (enumEntry != null) {
                     call.putValueArgument(0, irString(enumEntry.name.asString()))
-                    call.putValueArgument(1, irInt(enumEntryOrdinals[enumEntry]))
+                    call.putValueArgument(1, irInt(enumEntryOrdinals[enumEntry]!!))
                 } else {
                     val constructor = currentScope!!.scope.scopeOwnerSymbol as IrConstructorSymbol
                     call.putValueArgument(0, irGet(constructor.owner.valueParameters[0]))

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -11,84 +11,146 @@ import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.fir.FirImplementationDetail
 import org.jetbrains.kotlin.fir.FirModuleData
-import org.jetbrains.kotlin.fir.MutableOrEmptyList
 import org.jetbrains.kotlin.fir.builder.FirAnnotationContainerBuilder
 import org.jetbrains.kotlin.fir.builder.FirBuilderDsl
-import org.jetbrains.kotlin.fir.builder.toMutableOrEmpty
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.builder.FirRegularClassBuilder
+import org.jetbrains.kotlin.fir.declarations.impl.FirResolvedDeclarationStatusImpl
 import org.jetbrains.kotlin.fir.expressions.FirAnnotation
 import org.jetbrains.kotlin.fir.java.JavaTypeParameterStack
-import org.jetbrains.kotlin.fir.java.convertAnnotationsToFir
-import org.jetbrains.kotlin.fir.java.enhancement.FirSignatureEnhancement
+import org.jetbrains.kotlin.fir.java.MutableJavaTypeParameterStack
+import org.jetbrains.kotlin.fir.java.enhancement.*
 import org.jetbrains.kotlin.fir.references.FirControlFlowGraphReference
 import org.jetbrains.kotlin.fir.scopes.FirScopeProvider
+import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.fir.types.FirTypeRef
 import org.jetbrains.kotlin.fir.visitors.FirTransformer
 import org.jetbrains.kotlin.fir.visitors.FirVisitor
-import org.jetbrains.kotlin.fir.visitors.transformInplace
-import org.jetbrains.kotlin.fir.visitors.transformSingle
-import org.jetbrains.kotlin.load.java.structure.JavaAnnotation
 import org.jetbrains.kotlin.load.java.structure.JavaPackage
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.utils.addToStdlib.shouldNotBeCalled
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.properties.Delegates
 
 class FirJavaClass @FirImplementationDetail internal constructor(
     override val source: KtSourceElement?,
     override val moduleData: FirModuleData,
-    resolvePhase: FirResolvePhase,
     override val name: Name,
     override val origin: FirDeclarationOrigin.Java,
-    private val unEnhancedAnnotations: MutableOrEmptyList<JavaAnnotation>,
-    override var status: FirDeclarationStatus,
+    private val annotationList: FirJavaAnnotationList,
+    internal val originalStatus: FirResolvedDeclarationStatusImpl,
     override val classKind: ClassKind,
-    override val declarations: MutableList<FirDeclaration>,
+    private val declarationList: FirJavaDeclarationList,
     override val scopeProvider: FirScopeProvider,
     override val symbol: FirRegularClassSymbol,
-    private val unenhnancedSuperTypes: List<FirTypeRef>,
-    override val typeParameters: MutableList<FirTypeParameterRef>,
+    private val nonEnhancedSuperTypes: List<FirTypeRef>,
+    val nonEnhancedTypeParameters: List<FirTypeParameterRef>,
     internal val javaPackage: JavaPackage?,
-    val javaTypeParameterStack: JavaTypeParameterStack,
-    internal val existingNestedClassifierNames: List<Name>
+
+    /**
+     * Contains mapping for type parameters from classes.
+     *
+     * @see javaTypeParameterStack
+     */
+    val classJavaTypeParameterStack: MutableJavaTypeParameterStack,
+    internal val existingNestedClassifierNames: List<Name>,
+    internal val containingClassSymbol: FirClassSymbol<*>?,
 ) : FirRegularClass() {
+    /**
+     * Unlike [classJavaTypeParameterStack] contains mapping not only for classes,
+     * but also for all member functions.
+     *
+     * @see classJavaTypeParameterStack
+     */
+    val javaTypeParameterStack: JavaTypeParameterStack by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val copy = classJavaTypeParameterStack.copy()
+        for (declaration in declarations) {
+            if (declaration !is FirTypeParameterRefsOwner) continue
+            for (typeParameter in declaration.typeParameters) {
+                if (typeParameter !is FirJavaTypeParameter) continue
+                copy.addParameter(typeParameter.javaTypeParameter, typeParameter.symbol)
+            }
+        }
+
+        copy
+    }
+
     override val hasLazyNestedClassifiers: Boolean get() = true
     override val controlFlowGraphReference: FirControlFlowGraphReference? get() = null
 
-    override val contextReceivers: List<FirContextReceiver>
+    override val contextParameters: List<FirValueParameter>
         get() = emptyList()
 
     init {
+        @OptIn(FirImplementationDetail::class)
         symbol.bind(this)
 
         @OptIn(ResolveStateAccess::class)
-        this.resolveState = resolvePhase.asResolveState()
+        this.resolveState = FirResolvePhase.ANALYZED_DEPENDENCIES.asResolveState()
     }
 
     override val attributes: FirDeclarationAttributes = FirDeclarationAttributes()
 
     // TODO: the lazy superTypeRefs is a workaround for KT-55387, some non-lazy solution should probably be used instead
     override val superTypeRefs: List<FirTypeRef> by lazy {
-        val enhancement = FirSignatureEnhancement(this@FirJavaClass, moduleData.session, overridden = { emptyList() })
-        enhancement.enhanceSuperTypes(unenhnancedSuperTypes)
+        val enhancement = FirSignatureEnhancement(
+            this,
+            moduleData.session,
+            enhanceClassHeaderOnly = true,
+            overridden = { emptyList() },
+        )
+
+        enhancement.enhanceSuperTypes(nonEnhancedSuperTypes)
     }
 
     // TODO: the lazy annotations is a workaround for KT-55387, some non-lazy solution should probably be used instead
-    override val annotations: List<FirAnnotation> by lazy {
-        unEnhancedAnnotations.convertAnnotationsToFir(moduleData.session, javaTypeParameterStack)
-    }
+    override val annotations: List<FirAnnotation> get() = annotationList
+
+    // TODO: the lazy declarations is a workaround for KT-55387, some non-lazy solution should probably be used instead
+    override val declarations: List<FirDeclaration> get() = declarationList.declarations
 
     // TODO: the lazy deprecationsProvider is a workaround for KT-55387, some non-lazy solution should probably be used instead
     override val deprecationsProvider: DeprecationsProvider by lazy {
         getDeprecationsProvider(moduleData.session)
     }
 
+    // TODO: KT-68587
+    private val typeParameterBoundsResolveLock = ReentrantLock()
+
+    /**
+     * It is crucial to have [LazyThreadSafetyMode.PUBLICATION] here as [typeParameters] can be
+     * accessible recursively via [FirSignatureEnhancement.enhanceTypeParameterBounds] from different threads,
+     * so we may avoid deadlock.
+     *
+     * TODO: the lazy deprecationsProvider is a workaround for KT-55387, some non-lazy solution should probably be used instead
+     */
+    override val typeParameters: List<FirTypeParameterRef> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val enhancement = FirSignatureEnhancement(
+            this,
+            moduleData.session,
+            enhanceClassHeaderOnly = true,
+            overridden = { emptyList() },
+        )
+
+        enhancement.enhanceTypeParameterBounds(this, nonEnhancedTypeParameters, typeParameterBoundsResolveLock::withLock)
+        nonEnhancedTypeParameters
+    }
+
+    // TODO: the lazy deprecationsProvider is a workaround for KT-55387, some non-lazy solution should probably be used instead
+    override val status: FirDeclarationStatus by lazy {
+        applyStatusTransformerExtensions(this, originalStatus) {
+            transformStatus(it, this@FirJavaClass, containingClassSymbol, isLocal = false)
+        }
+    }
+
     override fun replaceSuperTypeRefs(newSuperTypeRefs: List<FirTypeRef>) {
-        error("${::replaceSuperTypeRefs.name} should not be called for ${this::class.simpleName}, ${superTypeRefs::class.simpleName} is lazily calulated")
+        shouldNotBeCalled(::replaceSuperTypeRefs, ::superTypeRefs)
     }
 
     override fun replaceDeprecationsProvider(newDeprecationsProvider: DeprecationsProvider) {
-        error("${::replaceDeprecationsProvider.name} should not be called for ${this::class.simpleName}, ${deprecationsProvider::class.simpleName} is lazily calculated")
+        shouldNotBeCalled(::replaceDeprecationsProvider, ::deprecationsProvider)
     }
 
     override fun replaceControlFlowGraphReference(newControlFlowGraphReference: FirControlFlowGraphReference?) {}
@@ -107,11 +169,6 @@ class FirJavaClass @FirImplementationDetail internal constructor(
     }
 
     override fun <D> transformChildren(transformer: FirTransformer<D>, data: D): FirJavaClass {
-        transformTypeParameters(transformer, data)
-        transformDeclarations(transformer, data)
-        status = status.transformSingle(transformer, data)
-        transformSuperTypeRefs(transformer, data)
-        transformAnnotations(transformer, data)
         return this
     }
 
@@ -119,13 +176,16 @@ class FirJavaClass @FirImplementationDetail internal constructor(
         return this
     }
 
+    override fun <D> transformContextParameters(transformer: FirTransformer<D>, data: D): FirRegularClass {
+        return this
+    }
+
     override fun <D> transformStatus(transformer: FirTransformer<D>, data: D): FirJavaClass {
-        status = status.transformSingle(transformer, data)
         return this
     }
 
     override fun replaceAnnotations(newAnnotations: List<FirAnnotation>) {
-        error("${::replaceAnnotations.name} should not be called for ${this::class.simpleName}, ${annotations::class.simpleName} is lazily calculated")
+        shouldNotBeCalled(::replaceAnnotations, ::annotations)
     }
 
     override fun <D> transformAnnotations(transformer: FirTransformer<D>, data: D): FirJavaClass {
@@ -133,17 +193,15 @@ class FirJavaClass @FirImplementationDetail internal constructor(
     }
 
     override fun <D> transformDeclarations(transformer: FirTransformer<D>, data: D): FirJavaClass {
-        declarations.transformInplace(transformer, data)
         return this
     }
 
     override fun <D> transformTypeParameters(transformer: FirTransformer<D>, data: D): FirRegularClass {
-        typeParameters.transformInplace(transformer, data)
         return this
     }
 
     override fun replaceStatus(newStatus: FirDeclarationStatus) {
-        status = newStatus
+        shouldNotBeCalled(::replaceStatus, ::status)
     }
 }
 
@@ -154,38 +212,38 @@ class FirJavaClassBuilder : FirRegularClassBuilder(), FirAnnotationContainerBuil
     var isFromSource: Boolean by Delegates.notNull()
     var isTopLevel: Boolean by Delegates.notNull()
     var isStatic: Boolean by Delegates.notNull()
-    var isNotSam: Boolean by Delegates.notNull()
     var javaPackage: JavaPackage? = null
-    lateinit var javaTypeParameterStack: JavaTypeParameterStack
+    lateinit var javaTypeParameterStack: MutableJavaTypeParameterStack
     val existingNestedClassifierNames: MutableList<Name> = mutableListOf()
 
     override var source: KtSourceElement? = null
-    override var resolvePhase: FirResolvePhase = FirResolvePhase.RAW_FIR
-    var javaAnnotations: MutableList<JavaAnnotation> = mutableListOf()
+    var annotationList: FirJavaAnnotationList = FirEmptyJavaAnnotationList
     override val typeParameters: MutableList<FirTypeParameterRef> = mutableListOf()
-    override val declarations: MutableList<FirDeclaration> = mutableListOf()
+    override val declarations: MutableList<FirDeclaration> get() = shouldNotBeCalled()
 
     override val superTypeRefs: MutableList<FirTypeRef> = mutableListOf()
+    var containingClassSymbol: FirClassSymbol<*>? = null
+    var declarationList: FirJavaDeclarationList = FirEmptyJavaDeclarationList
 
     @OptIn(FirImplementationDetail::class)
     override fun build(): FirJavaClass {
         return FirJavaClass(
             source,
             moduleData,
-            resolvePhase = FirResolvePhase.ANALYZED_DEPENDENCIES,
             name,
             origin = javaOrigin(isFromSource),
-            javaAnnotations.toMutableOrEmpty(),
-            status,
+            annotationList,
+            status as FirResolvedDeclarationStatusImpl,
             classKind,
-            declarations,
+            declarationList,
             scopeProvider,
             symbol,
             superTypeRefs,
             typeParameters,
             javaPackage,
-            javaTypeParameterStack,
-            existingNestedClassifierNames
+            javaTypeParameterStack.copy(),
+            existingNestedClassifierNames,
+            containingClassSymbol,
         )
     }
 

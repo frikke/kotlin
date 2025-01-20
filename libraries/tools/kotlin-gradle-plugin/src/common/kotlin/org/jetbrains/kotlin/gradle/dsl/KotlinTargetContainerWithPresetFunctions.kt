@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.konan.target.DEPRECATED_TARGET_MESSAGE
 
 private const val ANDROID_TARGET_MIGRATION_MESSAGE = "Please use androidTarget() instead. Learn more here: https://kotl.in/android-target-dsl"
 
+@KotlinGradlePluginPublicDsl
 interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithPresets {
 
     fun jvm(
@@ -26,6 +27,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinJvmTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("jvm") as KotlinJvmTargetPreset,
             configure
         )
@@ -41,6 +43,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinAndroidTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("android") as KotlinAndroidTargetPreset,
             configure
         )
@@ -51,39 +54,40 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     fun androidTarget(configure: Action<KotlinAndroidTarget>) = androidTarget { configure.execute(this) }
 
 
-    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.WARNING)
+    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.ERROR)
     fun android(
         name: String = "android",
         configure: KotlinAndroidTarget.() -> Unit = { }
     ): KotlinAndroidTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("android") as KotlinAndroidTargetPreset,
             configure
         ).also {
-            it.project.logger.warn(
+            it.project.logger.error(
                 """
-                    w: Please use `androidTarget` function instead of `android` to configure android target inside `kotlin { }` block.
+                    e: Please use `androidTarget` function instead of `android` to configure android target inside `kotlin { }` block.
                     See the details here: https://kotl.in/android-target-dsl
                 """.trimIndent()
             )
         }
 
 
-    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.WARNING, replaceWith = ReplaceWith("androidTarget()"))
-    @Suppress("DEPRECATION")
+    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("androidTarget()"))
+    @Suppress("DEPRECATION_ERROR")
     fun android() = android("android") { }
 
-    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.WARNING, replaceWith = ReplaceWith("androidTarget(name)"))
-    @Suppress("DEPRECATION")
+    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("androidTarget(name)"))
+    @Suppress("DEPRECATION_ERROR")
     fun android(name: String) = android(name) { }
 
-    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.WARNING)
-    @Suppress("DEPRECATION")
+    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.ERROR)
+    @Suppress("DEPRECATION_ERROR")
     fun android(name: String, configure: Action<KotlinAndroidTarget>) = android(name) { configure.execute(this) }
 
-    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.WARNING)
-    @Suppress("DEPRECATION")
+    @Deprecated(ANDROID_TARGET_MIGRATION_MESSAGE, level = DeprecationLevel.ERROR)
+    @Suppress("DEPRECATION_ERROR")
     fun android(configure: Action<KotlinAndroidTarget>) = android { configure.execute(this) }
 
     fun androidNativeX64(
@@ -92,6 +96,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("androidNativeX64") as KotlinNativeTargetPreset,
             configure
         )
@@ -107,6 +112,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("androidNativeX86") as KotlinNativeTargetPreset,
             configure
         )
@@ -122,6 +128,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("androidNativeArm32") as KotlinNativeTargetPreset,
             configure
         )
@@ -137,6 +144,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("androidNativeArm64") as KotlinNativeTargetPreset,
             configure
         )
@@ -154,6 +162,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("iosArm32") as KotlinNativeTargetPreset,
             configure
         )
@@ -181,6 +190,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("iosArm64") as KotlinNativeTargetPreset,
             configure
         )
@@ -196,6 +206,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithSimulatorTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("iosX64") as KotlinNativeTargetWithSimulatorTestsPreset,
             configure
         )
@@ -211,6 +222,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithSimulatorTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("iosSimulatorArm64") as KotlinNativeTargetWithSimulatorTestsPreset,
             configure
         )
@@ -226,6 +238,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("watchosArm32") as KotlinNativeTargetPreset,
             configure
         )
@@ -241,6 +254,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("watchosArm64") as KotlinNativeTargetPreset,
             configure
         )
@@ -258,6 +272,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithSimulatorTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("watchosX86") as KotlinNativeTargetWithSimulatorTestsPreset,
             configure
         )
@@ -285,6 +300,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithSimulatorTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("watchosX64") as KotlinNativeTargetWithSimulatorTestsPreset,
             configure
         )
@@ -300,6 +316,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithSimulatorTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("watchosSimulatorArm64") as KotlinNativeTargetWithSimulatorTestsPreset,
             configure
         )
@@ -315,6 +332,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("watchosDeviceArm64") as KotlinNativeTargetPreset,
             configure
         )
@@ -330,6 +348,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("tvosArm64") as KotlinNativeTargetPreset,
             configure
         )
@@ -345,6 +364,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithSimulatorTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("tvosX64") as KotlinNativeTargetWithSimulatorTestsPreset,
             configure
         )
@@ -360,6 +380,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithSimulatorTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("tvosSimulatorArm64") as KotlinNativeTargetWithSimulatorTestsPreset,
             configure
         )
@@ -375,6 +396,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithHostTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("linuxX64") as KotlinNativeTargetWithHostTestsPreset,
             configure
         )
@@ -392,6 +414,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("mingwX86") as KotlinNativeTargetPreset,
             configure
         )
@@ -419,6 +442,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithHostTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("mingwX64") as KotlinNativeTargetWithHostTestsPreset,
             configure
         )
@@ -434,6 +458,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithHostTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("macosX64") as KotlinNativeTargetWithHostTestsPreset,
             configure
         )
@@ -449,6 +474,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTargetWithHostTests =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("macosArm64") as KotlinNativeTargetWithHostTestsPreset,
             configure
         )
@@ -464,6 +490,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("linuxArm64") as KotlinNativeTargetPreset,
             configure
         )
@@ -474,32 +501,33 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     fun linuxArm64(configure: Action<KotlinNativeTarget>) = linuxArm64 { configure.execute(this) }
 
 
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
+    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.WARNING)
     fun linuxArm32Hfp(
         name: String = "linuxArm32Hfp",
         configure: KotlinNativeTarget.() -> Unit = { }
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("linuxArm32Hfp") as KotlinNativeTargetPreset,
             configure
         )
 
 
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    @Suppress("DEPRECATION_ERROR")
+    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.WARNING)
+    @Suppress("DEPRECATION")
     fun linuxArm32Hfp() = linuxArm32Hfp("linuxArm32Hfp") { }
 
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    @Suppress("DEPRECATION_ERROR")
+    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.WARNING)
+    @Suppress("DEPRECATION")
     fun linuxArm32Hfp(name: String) = linuxArm32Hfp(name) { }
 
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    @Suppress("DEPRECATION_ERROR")
+    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.WARNING)
+    @Suppress("DEPRECATION")
     fun linuxArm32Hfp(name: String, configure: Action<KotlinNativeTarget>) = linuxArm32Hfp(name) { configure.execute(this) }
 
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    @Suppress("DEPRECATION_ERROR")
+    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.WARNING)
+    @Suppress("DEPRECATION")
     fun linuxArm32Hfp(configure: Action<KotlinNativeTarget>) = linuxArm32Hfp { configure.execute(this) }
 
 
@@ -510,6 +538,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("linuxMips32") as KotlinNativeTargetPreset,
             configure
         )
@@ -539,6 +568,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("linuxMipsel32") as KotlinNativeTargetPreset,
             configure
         )
@@ -568,6 +598,7 @@ interface KotlinTargetContainerWithPresetFunctions : KotlinTargetsContainerWithP
     ): KotlinNativeTarget =
         configureOrCreate(
             name,
+            @Suppress("DEPRECATION_ERROR")
             presets.getByName("wasm32") as KotlinNativeTargetPreset,
             configure
         )

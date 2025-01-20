@@ -164,7 +164,7 @@ class PropertyLazyInitLowering(
     }
 
     companion object {
-        object PROPERTY_INIT_FUN_CALL : IrStatementOriginImpl("PROPERTY_INIT_FUN_CALL")
+        val PROPERTY_INIT_FUN_CALL by IrStatementOriginImpl
     }
 }
 
@@ -190,6 +190,9 @@ private fun allFieldsInFilePure(fieldToInitializer: Collection<IrExpression>): B
             expression.isPure(anyVariable = true)
         }
 
+/**
+ * Removes property initializers if they were initialized lazily.
+ */
 class RemoveInitializersForLazyProperties(
     private val context: JsCommonBackendContext
 ) : DeclarationTransformer {

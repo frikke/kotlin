@@ -17,7 +17,9 @@
 
 package org.jetbrains.benchmarksLauncher
 
+import kotlin.native.concurrent.ThreadLocal
 import kotlin.native.runtime.GC
+import kotlin.time.measureTime
 import platform.posix.*
 import kotlinx.cinterop.*
 
@@ -31,13 +33,14 @@ actual fun writeToFile(fileName: String, text: String) {
 }
 
 // Wrapper for assert funtion in stdlib
+@OptIn(kotlin.experimental.ExperimentalNativeApi::class)
 actual fun assert(value: Boolean) {
     kotlin.assert(value)
 }
 
 // Wrapper for measureNanoTime funtion in stdlib
 actual inline fun measureNanoTime(block: () -> Unit): Long {
-    return kotlin.system.measureNanoTime(block)
+    return measureTime(block).inWholeNanoseconds
 }
 
 @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
@@ -51,10 +54,8 @@ actual fun printStderr(message: String) {
     fflush(STDERR)
 }
 
-actual fun nanoTime(): Long = kotlin.system.getTimeNanos()
-
 actual class Blackhole {
-    @kotlin.native.ThreadLocal
+    @ThreadLocal
     actual companion object {
         actual var consumer = 0
         actual fun consume(value: Any) {
@@ -64,7 +65,7 @@ actual class Blackhole {
 }
 
 actual class Random actual constructor() {
-    @kotlin.native.ThreadLocal
+    @ThreadLocal
     actual companion object {
         actual var seedInt = 0
         actual fun nextInt(boundary: Int): Int {

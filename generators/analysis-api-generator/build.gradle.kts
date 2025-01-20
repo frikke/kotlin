@@ -19,14 +19,20 @@ dependencies {
     testImplementation(projectTests(":analysis:analysis-api-fe10"))
     testImplementation(projectTests(":analysis:analysis-api-standalone"))
     testImplementation(projectTests(":analysis:analysis-api-impl-base"))
-    testImplementation(projectTests(":analysis:analysis-api-impl-barebone"))
     testImplementation(projectTests(":analysis:decompiled:decompiler-to-file-stubs"))
     testImplementation(projectTests(":analysis:decompiled:decompiler-to-psi"))
     testImplementation(projectTests(":analysis:symbol-light-classes"))
+    testImplementation(projectTests(":analysis:decompiled:decompiler-native"))
     testImplementation(intellijCore())
-    testApiJUnit5()
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 }
 
-val generateFrontendApiTests by generator("org.jetbrains.kotlin.generators.tests.analysis.api.GenerateAnalysisApiTestsKt")
+val generateFrontendApiTests by generator("org.jetbrains.kotlin.generators.tests.analysis.api.GenerateAnalysisApiTestsKt") {
+    if (kotlinBuildProperties.isKotlinNativeEnabled) {
+        dependsOn(":generators:analysis-api-generator:generator-kotlin-native:generateAnalysisApiNativeTests")
+    }
+}
 
 testsJar()

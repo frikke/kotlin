@@ -1,10 +1,10 @@
-// TARGET_BACKEND: JVM_IR
+// DONT_TARGET_EXACT_BACKEND: JVM
 annotation class Key(val value: String)
 
 object Messanger {
     const val DEFAULT_TEXT = <!EVALUATED("OK")!>"OK"<!>
 
-    fun message(@Key(value = <!EVALUATED("OK")!>DEFAULT_TEXT<!>) text: String = <!EVALUATED("OK")!>DEFAULT_TEXT<!>): String {
+    fun message(@Key(value = <!EVALUATED("OK")!>DEFAULT_TEXT<!>) text: String = <!EVALUATED{IR}("OK")!>DEFAULT_TEXT<!>): String {
         return text
     }
 }

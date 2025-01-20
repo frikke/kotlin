@@ -11,13 +11,17 @@ import org.jetbrains.kotlin.test.directives.model.RegisteredDirectives
 import org.jetbrains.kotlin.test.model.TestFile
 import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.AdditionalSourceProvider
+import org.jetbrains.kotlin.test.services.TestModuleStructure
 import org.jetbrains.kotlin.test.services.TestServices
 import java.io.File
 
 class IrInterpreterHelpersSourceFilesProvider(testServices: TestServices) : AdditionalSourceProvider(testServices) {
     companion object {
         private const val HELPERS_PATH = "./compiler/testData/ir/interpreter/helpers"
-        private const val UNSIGNED_PATH = "./libraries/stdlib/unsigned/src/kotlin"
+        private val UNSIGNED_PATH = arrayOf(
+            "./libraries/stdlib/unsigned/src/kotlin",
+            "./libraries/stdlib/jvm/src/kotlin/util/UnsignedJVM.kt"
+        )
         private val RUNTIME_PATHS = arrayOf(
             "./libraries/stdlib/src/kotlin/ranges/Progressions.kt",
             "./libraries/stdlib/src/kotlin/ranges/ProgressionIterators.kt",
@@ -25,7 +29,6 @@ class IrInterpreterHelpersSourceFilesProvider(testServices: TestServices) : Addi
             "./libraries/stdlib/jvm/runtime/kotlin/TypeAliases.kt",
             "./libraries/stdlib/jvm/runtime/kotlin/text/TypeAliases.kt",
             "./libraries/stdlib/jvm/src/kotlin/collections/TypeAliases.kt",
-            "./libraries/stdlib/common/src/kotlin/TextH.kt",
             "./libraries/stdlib/src/kotlin/text/regex/MatchResult.kt",
             "./libraries/stdlib/src/kotlin/collections/Sequence.kt",
         )
@@ -40,7 +43,7 @@ class IrInterpreterHelpersSourceFilesProvider(testServices: TestServices) : Addi
         private const val REFLECT_PATH = "./libraries/stdlib/jvm/src/kotlin/reflect"
         private val EXCLUDES = listOf(
             "src/kotlin/UStrings.kt", "src/kotlin/UMath.kt", "src/kotlin/UNumbers.kt", "src/kotlin/reflect/TypesJVM.kt",
-            "core/builtins/src/kotlin/CompileTimeAnnotations.kt"
+            "libraries/stdlib/unsigned/src/kotlin/UnsignedCommon.kt",
         ).map(::File)
     }
 
@@ -59,7 +62,17 @@ class IrInterpreterHelpersSourceFilesProvider(testServices: TestServices) : Addi
         }
     }
 
-    override fun produceAdditionalFiles(globalDirectives: RegisteredDirectives, module: TestModule): List<TestFile> {
-        return getTestFilesForEachDirectory(HELPERS_PATH, UNSIGNED_PATH, *RUNTIME_PATHS, *ANNOTATIONS_PATHS, REFLECT_PATH)
+    override fun produceAdditionalFiles(
+        globalDirectives: RegisteredDirectives,
+        module: TestModule,
+        testModuleStructure: TestModuleStructure
+    ): List<TestFile> {
+        return getTestFilesForEachDirectory(
+            HELPERS_PATH,
+            *UNSIGNED_PATH,
+            *RUNTIME_PATHS,
+            *ANNOTATIONS_PATHS,
+            REFLECT_PATH
+        )
     }
 }

@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.resolve
 
+import org.jetbrains.kotlin.builtins.PlatformSpecificCastChecker
 import org.jetbrains.kotlin.builtins.PlatformToKotlinClassMapper
 import org.jetbrains.kotlin.container.*
 import org.jetbrains.kotlin.resolve.calls.checkers.*
@@ -16,6 +17,8 @@ import org.jetbrains.kotlin.types.DynamicTypesSettings
 
 private val DEFAULT_DECLARATION_CHECKERS = listOf(
     ExpectActualInTheSameModuleChecker,
+    ActualClassifierMustHasTheSameMembersAsNonFinalExpectClassifierChecker,
+    ExpectActualClassifiersAreInBetaChecker,
     DataClassDeclarationChecker(),
     ConstModifierChecker,
     UnderscoreChecker,
@@ -58,6 +61,8 @@ private val DEFAULT_DECLARATION_CHECKERS = listOf(
     DataObjectContentChecker,
     EnumEntriesRedeclarationChecker,
     VolatileAnnotationChecker,
+    ActualTypealiasToSpecialAnnotationChecker,
+    StubForBuilderInferenceParameterTypeChecker,
 )
 
 private val DEFAULT_CALL_CHECKERS = listOf(
@@ -76,7 +81,7 @@ private val DEFAULT_CALL_CHECKERS = listOf(
     NewSchemeOfIntegerOperatorResolutionChecker, EnumEntryVsCompanionPriorityCallChecker, CompanionInParenthesesLHSCallChecker,
     ResolutionToPrivateConstructorOfSealedClassChecker, EqualityCallChecker, UnsupportedUntilOperatorChecker,
     BuilderInferenceAssignmentChecker, IncorrectCapturedApproximationCallChecker, CompanionIncorrectlyUnboundedWhenUsedAsLHSCallChecker,
-    CustomEnumEntriesMigrationCallChecker, EnumEntriesUnsupportedChecker
+    CustomEnumEntriesMigrationCallChecker, EnumEntriesUnsupportedChecker,
 )
 private val DEFAULT_TYPE_CHECKERS = emptyList<AdditionalTypeChecker>()
 private val DEFAULT_CLASSIFIER_USAGE_CHECKERS = listOf(
@@ -125,6 +130,7 @@ abstract class PlatformConfiguratorBase(
     private val identifierChecker: IdentifierChecker? = null,
     private val overloadFilter: OverloadFilter? = null,
     private val platformToKotlinClassMapper: PlatformToKotlinClassMapper? = null,
+    private val platformSpecificCastChecker: PlatformSpecificCastChecker? = null,
     private val delegationFilter: DelegationFilter? = null,
     private val overridesBackwardCompatibilityHelper: OverridesBackwardCompatibilityHelper? = null,
     private val declarationReturnTypeSanitizer: DeclarationReturnTypeSanitizer? = null
@@ -151,6 +157,7 @@ abstract class PlatformConfiguratorBase(
             useInstanceIfNotNull(identifierChecker)
             useInstanceIfNotNull(overloadFilter)
             useInstanceIfNotNull(platformToKotlinClassMapper)
+            useInstanceIfNotNull(platformSpecificCastChecker)
             useInstanceIfNotNull(delegationFilter)
             useInstanceIfNotNull(overridesBackwardCompatibilityHelper)
             useInstanceIfNotNull(declarationReturnTypeSanitizer)

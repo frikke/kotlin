@@ -5,18 +5,37 @@
 
 package org.jetbrains.kotlin.fir.analysis.checkers
 
-import org.jetbrains.kotlin.fir.analysis.checkers.type.FirUnsupportedDefaultValueInFunctionTypeParameterChecker
 import org.jetbrains.kotlin.fir.analysis.checkers.type.*
 
 object CommonTypeCheckers : TypeCheckers() {
     override val typeRefCheckers: Set<FirTypeRefChecker> = setOf(
+        FirSuspendModifierChecker,
+    )
+
+    override val resolvedTypeRefCheckers: Set<FirResolvedTypeRefChecker> = setOf(
         FirTypeAnnotationChecker,
         FirSuspendModifierChecker,
         FirDeprecatedTypeChecker,
         FirOptInUsageTypeRefChecker,
+        FirStarProjectionModifierChecker,
+        FirInOutProjectionModifierChecker,
+        FirDuplicateParameterNameInFunctionTypeChecker,
+        FirOptionalExpectationTypeChecker,
+        FirIncompatibleClassTypeChecker,
+        FirContextReceiversTypeChecker,
+        FirContextReceiversDeprecatedTypeChecker,
+        FirKotlinActualAnnotationHasNoEffectInKotlinTypeChecker,
+        FirProjectionRelationChecker,
+        FirCommonAtomicReferenceToPrimitiveTypeChecker,
+        FirArrayOfNothingTypeChecker,
+    )
+
+    override val intersectionTypeRefCheckers: Set<FirIntersectionTypeRefChecker> = setOf(
         FirDefinitelyNotNullableChecker,
+    )
+
+    override val functionTypeRefCheckers: Set<FirFunctionTypeRefChecker> = setOf(
         FirUnsupportedDefaultValueInFunctionTypeParameterChecker,
         FirUnsupportedModifiersInFunctionTypeParameterChecker,
-        FirStarProjectionModifierChecker,
     )
 }

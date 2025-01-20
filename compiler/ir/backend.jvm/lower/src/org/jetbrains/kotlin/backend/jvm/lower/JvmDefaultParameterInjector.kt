@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.lower.DefaultParameterInjector
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.ir.defaultValue
@@ -20,10 +21,13 @@ import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.expressions.impl.IrCompositeImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
 import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.util.explicitParametersCount
 import org.jetbrains.kotlin.ir.util.render
 
-class JvmDefaultParameterInjector(context: JvmBackendContext) : DefaultParameterInjector<JvmBackendContext>(
+@PhaseDescription(
+    name = "DefaultParameterInjector",
+    prerequisite = [FunctionReferenceLowering::class, JvmInlineCallableReferenceToLambdaPhase::class]
+)
+internal class JvmDefaultParameterInjector(context: JvmBackendContext) : DefaultParameterInjector<JvmBackendContext>(
     context = context,
     factory = JvmDefaultArgumentFunctionFactory(context),
     skipInline = false,
@@ -83,9 +87,9 @@ class JvmDefaultParameterInjector(context: JvmBackendContext) : DefaultParameter
             }
 
 
-        assert(stubFunction.explicitParametersCount - mainArguments.size - maskValues.size in listOf(0, 1)) {
+        assert(stubFunction.parameters.size - mainArguments.size - maskValues.size in listOf(0, 1)) {
             "argument count mismatch: expected $realArgumentsNumber arguments + ${maskValues.size} masks + optional handler/marker, " +
-                    "got ${stubFunction.explicitParametersCount} total in ${stubFunction.render()}"
+                    "got ${stubFunction.parameters.size} total in ${stubFunction.render()}"
         }
 
         return buildMap {

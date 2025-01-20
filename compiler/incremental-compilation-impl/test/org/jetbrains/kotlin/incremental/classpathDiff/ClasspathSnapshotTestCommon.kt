@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.incremental.classpathDiff
 
 import com.google.gson.GsonBuilder
+import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity
 import org.jetbrains.kotlin.cli.common.isWindows
 import org.jetbrains.kotlin.incremental.classpathDiff.ClasspathSnapshotTestCommon.ClassFileUtil.snapshot
 import org.jetbrains.kotlin.incremental.classpathDiff.ClasspathSnapshotTestCommon.CompileUtil.compile
@@ -13,7 +14,7 @@ import org.jetbrains.kotlin.incremental.classpathDiff.ClasspathSnapshotTestCommo
 import org.jetbrains.kotlin.incremental.classpathDiff.ClasspathSnapshotTestCommon.SourceFile.KotlinSourceFile
 import org.jetbrains.kotlin.incremental.storage.fromByteArray
 import org.jetbrains.kotlin.incremental.storage.toByteArray
-import org.jetbrains.kotlin.test.KotlinTestUtils
+import org.jetbrains.kotlin.test.compileJavaFiles
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.io.File
@@ -138,6 +139,8 @@ abstract class ClasspathSnapshotTestCommon {
                 "-classpath", (listOf(srcDir) + classpath).joinToString(File.pathSeparator) { it.path }
             )
             runCommandInNewProcess(commandAndArgs)
+
+            classesDir.resolve("META-INF").deleteRecursively()
         }
 
         private fun compileJava(srcDir: File, classesDir: File, classpath: List<File>): List<ClassFile> {
@@ -155,7 +158,7 @@ abstract class ClasspathSnapshotTestCommon {
 
             val classpathOption =
                 if (classpath.isNotEmpty()) listOf("-classpath", classpath.joinToString(File.pathSeparator)) else emptyList()
-            KotlinTestUtils.compileJavaFiles(javaFiles, listOf("-d", classesDir.path) + classpathOption)
+            compileJavaFiles(javaFiles, listOf("-d", classesDir.path) + classpathOption).assertSuccessful()
         }
 
         private fun getClassFilesInDir(classesDir: File): List<ClassFile> {

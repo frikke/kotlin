@@ -5,28 +5,28 @@
 
 package kotlin.test
 
-import kotlin.js.JsExport
+import kotlin.wasm.WasmExport
 
-/**
- * Overrides current framework adapter with a provided instance of [FrameworkAdapter]. Use in order to support custom test frameworks.
- *
- * If this function is not called, the test framework will be detected automatically.
- *
- */
-internal fun setAdapter(adapter: FrameworkAdapter) {
-    currentAdapter = adapter
-}
+internal expect fun adapter(): FrameworkAdapter
 
 /**
  * The functions below are used by the compiler to describe the tests structure, e.g.
+ * fun startUnitTests() {
+ *     `declare test fun`()
+ *     runRootSuites()
+ * }
  *
- * suite('a suite', false, function() {
- *   suite('a subsuite', false, function() {
- *     test('a test', false, function() {...});
- *     test('an ignored/pending test', true, function() {...});
- *   });
- *   suite('an ignored/pending test', true, function() {...});
- * });
+ * fun `declare test fun`() {
+ *     registerRootSuiteBlock("top-level-package1") {
+ *         suite("TestClass1", ignored = false) {
+ *             suite("a subsuite", ignored = false) {
+ *                 test("a test", ignored = false) {...}
+ *                 test("an ignored/pending test", ignored = true) {...}
+ *             }
+ *             suite("an ignored/pending test", ignored = true) {...}
+ *         }
+ *     }
+ * }
  */
 
 internal fun suite(name: String, ignored: Boolean, suiteFn: () -> Unit) {
@@ -37,20 +37,16 @@ internal fun test(name: String, ignored: Boolean, testFn: () -> Any?) {
     adapter().test(name, ignored, testFn)
 }
 
-internal var currentAdapter: FrameworkAdapter? = null
+private val rootSuiteBlocks: MutableMap<String, MutableList<() -> Unit>> = mutableMapOf()
 
-private fun isJasmine(): Boolean =
-    js("typeof describe === 'function' && typeof it === 'function'")
-
-internal fun adapter(): FrameworkAdapter {
-    val result = currentAdapter ?: if (isJasmine()) JasmineLikeAdapter() else TeamcityAdapter()
-    currentAdapter = result
-    return result
+internal fun registerRootSuiteBlock(suiteName: String, block: () -> Unit) {
+    rootSuiteBlocks.getOrPut(suiteName, ::mutableListOf).add(block)
 }
 
-// This is called from the js-launcher alongside wasm start function
-@JsExport
-@OptIn(kotlin.js.ExperimentalJsExport::class)
-internal fun startUnitTests() {
-    // This will be filled with the corresponding code during lowering
+internal fun runRootSuites() {
+    rootSuiteBlocks.entries.forEach { (suiteName, block) ->
+        suite(name = suiteName, ignored = false) {
+            block.forEach { it() }
+        }
+    }
 }

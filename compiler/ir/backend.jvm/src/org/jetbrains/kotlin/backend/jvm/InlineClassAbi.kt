@@ -6,7 +6,7 @@
 package org.jetbrains.kotlin.backend.jvm
 
 import org.jetbrains.kotlin.backend.jvm.MemoizedMultiFieldValueClassReplacements.RemappedParameter.MultiFieldValueClassMapping
-import org.jetbrains.kotlin.backend.jvm.ir.erasedUpperBound
+import org.jetbrains.kotlin.ir.util.erasedUpperBound
 import org.jetbrains.kotlin.backend.jvm.ir.isInlineClassType
 import org.jetbrains.kotlin.backend.jvm.ir.isValueClassType
 import org.jetbrains.kotlin.builtins.StandardNames
@@ -17,6 +17,7 @@ import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrStatementOriginImpl
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
@@ -33,7 +34,7 @@ object InlineClassAbi {
      * perform inline class mangling and so in the absence of jvm signatures in the metadata we need to avoid
      * inline class mangling as well in the function references used as arguments to the signature string intrinsic.
      */
-    object UNMANGLED_FUNCTION_REFERENCE : IrStatementOriginImpl("UNMANGLED_FUNCTION_REFERENCE")
+    val UNMANGLED_FUNCTION_REFERENCE by IrStatementOriginImpl
 
     /**
      * Unwraps inline class types to their underlying representation.
@@ -91,12 +92,12 @@ object InlineClassAbi {
     }
 
     private fun IrFunction.isAlreadyMangledMfvcFunction(context: JvmBackendContext) =
-        context.multiFieldValueClassReplacements.bindingNewFunctionToParameterTemplateStructure[this]?.any { it is MultiFieldValueClassMapping } == true
+        this.parameterTemplateStructureOfThisNewMfvcBidingFunction?.any { it is MultiFieldValueClassMapping } == true
 
     fun hashSuffix(irFunction: IrFunction, mangleReturnTypes: Boolean, useOldMangleRules: Boolean): String? =
         hashSuffix(
             useOldMangleRules,
-            irFunction.fullValueParameterList.map { it.type },
+            irFunction.nonDispatchParameters.map { it.type },
             irFunction.returnType.takeIf { mangleReturnTypes && irFunction.hasMangledReturnType },
             irFunction.isSuspend
         )
@@ -134,22 +135,20 @@ object InlineClassAbi {
 
 fun IrType.getRequiresMangling(includeInline: Boolean = true, includeMFVC: Boolean = true): Boolean {
     val irClass = erasedUpperBound
-    return irClass.fqNameWhenAvailable != StandardNames.RESULT_FQ_NAME && when {
+    return !irClass.isClassWithFqName(StandardNames.RESULT_FQ_NAME) && when {
         irClass.isSingleFieldValueClass -> includeInline
         irClass.isMultiFieldValueClass -> includeMFVC
         else -> false
     }
 }
 
-val IrFunction.fullValueParameterList: List<IrValueParameter>
-    get() = listOfNotNull(extensionReceiverParameter) + valueParameters
-
 fun IrFunction.hasMangledParameters(includeInline: Boolean = true, includeMFVC: Boolean = true): Boolean =
     (dispatchReceiverParameter != null && when {
         parentAsClass.isSingleFieldValueClass -> includeInline
         parentAsClass.isMultiFieldValueClass -> includeMFVC
         else -> false
-    }) || fullValueParameterList.any { it.type.getRequiresMangling(includeInline, includeMFVC) } || (this is IrConstructor && when {
+    }) || nonDispatchParameters.any { it.type.getRequiresMangling(includeInline, includeMFVC) }
+            || (this is IrConstructor && when {
         constructedClass.isSingleFieldValueClass -> includeInline
         constructedClass.isMultiFieldValueClass -> includeMFVC
         else -> false
@@ -162,13 +161,13 @@ val IrClass.inlineClassFieldName: Name
     get() = (inlineClassRepresentation ?: error("Not an inline class: ${render()}")).underlyingPropertyName
 
 val IrFunction.isInlineClassFieldGetter: Boolean
-    get() = (parent as? IrClass)?.isSingleFieldValueClass == true && this is IrSimpleFunction && extensionReceiverParameter == null &&
-            contextReceiverParametersCount == 0 && !isStatic &&
+    get() = (parent as? IrClass)?.isSingleFieldValueClass == true && this is IrSimpleFunction &&
+            hasShape(dispatchReceiver = true) &&
             correspondingPropertySymbol?.let { it.owner.getter == this && it.owner.name == parentAsClass.inlineClassFieldName } == true
 
 val IrFunction.isMultiFieldValueClassFieldGetter: Boolean
-    get() = (parent as? IrClass)?.isMultiFieldValueClass == true && this is IrSimpleFunction && extensionReceiverParameter == null &&
-            contextReceiverParametersCount == 0 && !isStatic &&
+    get() = (parent as? IrClass)?.isMultiFieldValueClass == true && this is IrSimpleFunction &&
+            hasShape(dispatchReceiver = true) &&
             correspondingPropertySymbol?.let {
                 val multiFieldValueClassRepresentation = parentAsClass.multiFieldValueClassRepresentation
                     ?: error("Multi-field value class must have multiFieldValueClassRepresentation: ${parentAsClass.render()}")

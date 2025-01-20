@@ -1,4 +1,4 @@
-// TARGET_BACKEND: JVM_IR
+// DONT_TARGET_EXACT_BACKEND: JVM
 // This test is needed to check that IrCompileTimeChecker will not fail trying to find and analyze correct toString method
 
 object Obj {

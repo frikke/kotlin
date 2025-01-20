@@ -11,22 +11,25 @@ import org.gradle.api.Action
 import org.gradle.api.GradleException
 import org.gradle.api.attributes.AttributeContainer
 import org.gradle.api.file.FileCollection
-import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.tasks.TaskProvider
-import org.jetbrains.kotlin.gradle.dsl.*
+import org.jetbrains.kotlin.gradle.dsl.KotlinCommonOptions
+import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
 import org.jetbrains.kotlin.gradle.plugin.*
-import org.jetbrains.kotlin.gradle.plugin.mpp.*
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.KotlinToolingDiagnostics.KotlinCompilationSourceDeprecation
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.kotlinToolingDiagnosticsCollector
+import org.jetbrains.kotlin.gradle.plugin.mpp.HierarchyAttributeContainer
 import org.jetbrains.kotlin.gradle.plugin.mpp.InternalKotlinCompilation
 import org.jetbrains.kotlin.gradle.plugin.mpp.internal
-import org.jetbrains.kotlin.gradle.plugin.mpp.moduleNameForCompilation
+import org.jetbrains.kotlin.gradle.plugin.mpp.isMain
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 import org.jetbrains.kotlin.gradle.tasks.locateTask
+import org.jetbrains.kotlin.gradle.utils.MutableObservableSetImpl
 import org.jetbrains.kotlin.gradle.utils.ObservableSet
 import org.jetbrains.kotlin.tooling.core.MutableExtras
 import org.jetbrains.kotlin.tooling.core.mutableExtrasOf
 
 internal class KotlinCompilationImpl constructor(
-    private val params: Params
+    private val params: Params,
 ) : InternalKotlinCompilation<KotlinCommonOptions> {
 
     //region Params
@@ -39,11 +42,11 @@ internal class KotlinCompilationImpl constructor(
         val compilationTaskNames: KotlinCompilationTaskNamesContainer,
         val processResourcesTaskName: String?,
         val output: KotlinCompilationOutput,
-        val compilerOptions: HasCompilerOptions<*>,
+        @Suppress("TYPEALIAS_EXPANSION_DEPRECATION") val compilerOptions: DeprecatedHasCompilerOptions<*>,
         val kotlinOptions: KotlinCommonOptions,
         val compilationAssociator: KotlinCompilationAssociator,
         val compilationFriendPathsResolver: KotlinCompilationFriendPathsResolver,
-        val compilationSourceSetInclusion: KotlinCompilationSourceSetInclusion
+        val compilationSourceSetInclusion: KotlinCompilationSourceSetInclusion,
     )
 
     //endregion
@@ -90,8 +93,9 @@ internal class KotlinCompilationImpl constructor(
     override val kotlinSourceSets: ObservableSet<KotlinSourceSet>
         get() = sourceSets.kotlinSourceSets
 
-    @Deprecated("scheduled for removal with Kotlin 2.0")
+    @Deprecated("scheduled for removal with Kotlin 2.1")
     override fun source(sourceSet: KotlinSourceSet) {
+        project.kotlinToolingDiagnosticsCollector.report(project, KotlinCompilationSourceDeprecation(Throwable()))
         sourceSets.source(sourceSet)
     }
 
@@ -127,16 +131,6 @@ internal class KotlinCompilationImpl constructor(
 
     override var runtimeDependencyFiles: FileCollection? = configurations.runtimeDependencyConfiguration
 
-    @Deprecated("Scheduled for removal with Kotlin 2.0")
-    override val relatedConfigurationNames: List<String> = listOfNotNull(
-        apiConfigurationName,
-        implementationConfigurationName,
-        compileOnlyConfigurationName,
-        runtimeOnlyConfigurationName,
-        compileDependencyConfigurationName,
-        runtimeDependencyConfigurationName
-    )
-
     override fun dependencies(configure: KotlinDependencyHandler.() -> Unit) {
         HasKotlinDependencies(project, configurations).dependencies(configure)
     }
@@ -171,13 +165,22 @@ internal class KotlinCompilationImpl constructor(
 
     //endregion
 
+    override val archiveTaskName: String?
+        get() = project.kotlinCompilationArchiveTasksOrNull?.getArchiveTaskOrNull(this)?.name
+            ?: target.artifactsTaskName.takeIf { isMain() }
 
     //region CompilerOptions & KotlinOptions
 
+    @Suppress("OVERRIDE_DEPRECATION")
     override val kotlinOptions: KotlinCommonOptions
         get() = params.kotlinOptions
 
-    override val compilerOptions: HasCompilerOptions<*>
+    @Deprecated(
+        "To configure compilation compiler options use 'compileTaskProvider':\ncompilation.compileTaskProvider.configure{\n" +
+                "    compilerOptions {}\n}"
+    )
+    @Suppress("TYPEALIAS_EXPANSION_DEPRECATION")
+    override val compilerOptions: DeprecatedHasCompilerOptions<*>
         get() = params.compilerOptions
 
     //endregion
@@ -190,23 +193,33 @@ internal class KotlinCompilationImpl constructor(
 
     // endregion
 
-    private val associateWithImpl = mutableSetOf<KotlinCompilation<*>>()
 
-    override val associateWith: List<KotlinCompilation<*>>
-        get() = associateWithImpl.toList()
+    private val associatedCompilationsImpl = MutableObservableSetImpl<KotlinCompilation<*>>()
+
+    private val allAssociatedCompilationsImpl = MutableObservableSetImpl<KotlinCompilation<*>>()
+
+    override val associatedCompilations: ObservableSet<KotlinCompilation<*>>
+        get() = associatedCompilationsImpl
+
+    override val allAssociatedCompilations: ObservableSet<KotlinCompilation<*>>
+        get() = allAssociatedCompilationsImpl
 
     override fun associateWith(other: KotlinCompilation<*>) {
         require(other.target == target) { "Only associations between compilations of a single target are supported" }
-        if (!associateWithImpl.add(other)) return
-        params.compilationAssociator.associate(target, this, other.internal)
+        if (!associatedCompilationsImpl.add(other)) return
+        if (!allAssociatedCompilationsImpl.add(other)) return
+        other.internal.allAssociatedCompilations.forAll { compilation -> allAssociatedCompilationsImpl.add(compilation) }
     }
-
 
     //region final init
 
     init {
         sourceSets.allKotlinSourceSets.forAll { sourceSet ->
             params.compilationSourceSetInclusion.include(this, sourceSet)
+        }
+
+        allAssociatedCompilations.forAll { compilation ->
+            params.compilationAssociator.associate(target, this, compilation.internal)
         }
     }
 

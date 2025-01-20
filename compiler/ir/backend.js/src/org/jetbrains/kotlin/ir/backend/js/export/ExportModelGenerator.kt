@@ -5,7 +5,7 @@
 
 package org.jetbrains.kotlin.ir.backend.js.export
 
-import org.jetbrains.kotlin.backend.common.ir.isExpect
+import org.jetbrains.kotlin.ir.util.isExpect
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.descriptors.DescriptorVisibility
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
 import org.jetbrains.kotlin.ir.backend.js.JsLoweredDeclarationOrigin
+import org.jetbrains.kotlin.ir.backend.js.lower.ES6_BOX_PARAMETER
 import org.jetbrains.kotlin.ir.backend.js.lower.isBoxParameter
 import org.jetbrains.kotlin.ir.backend.js.lower.isEs6ConstructorReplacement
 import org.jetbrains.kotlin.ir.backend.js.utils.*
@@ -22,6 +23,7 @@ import org.jetbrains.kotlin.ir.symbols.IrClassifierSymbol
 import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.serialization.js.ModuleKind
 import org.jetbrains.kotlin.utils.*
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
@@ -33,7 +35,10 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
 
     fun generateExport(file: IrPackageFragment): List<ExportedDeclaration> {
         val namespaceFqName = file.packageFqName
-        val exports = file.declarations.memoryOptimizedFlatMap { declaration -> listOfNotNull(exportDeclaration(declaration)) }
+        val exports = file.declarations.memoryOptimizedMapNotNull { declaration ->
+            declaration.takeIf { it.couldBeConvertedToExplicitExport() != true }?.let(::exportDeclaration)
+        }
+
         return when {
             exports.isEmpty() -> emptyList()
             !generateNamespacesForPackages || namespaceFqName.isRoot -> exports
@@ -59,7 +64,9 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
             is IrProperty -> exportProperty(candidate)
             is IrClass -> exportClass(candidate)
             is IrField -> null
-            else -> error("Can't export declaration $candidate")
+            else -> irError("Can't export declaration") {
+                withIrEntry("candidate", candidate)
+            }
         }?.withAttributesFor(candidate)
     }
 
@@ -80,6 +87,7 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
             is Exportability.Prohibited -> ErrorDeclaration(exportability.reason)
             is Exportability.Allowed -> {
                 val parent = function.parent
+                val realOverrideTarget = function.realOverrideTarget
                 ExportedFunction(
                     function.getExportedIdentifier(),
                     returnType = exportType(function.returnType),
@@ -91,7 +99,13 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
                     ir = function,
                     parameters = (listOfNotNull(function.extensionReceiverParameter) + function.valueParameters)
                         .filter { it.shouldBeExported() }
-                        .memoryOptimizedMap { exportParameter(it) },
+                        .memoryOptimizedMapIndexed { i, it ->
+                            exportParameter(
+                                it,
+                                it.hasDefaultValue
+                                        || realOverrideTarget.valueParameters.getOrNull(i)?.hasDefaultValue == true
+                            )
+                        }
                 )
             }
         }
@@ -101,12 +115,14 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
         if (!constructor.isPrimary) return null
         val allValueParameters = listOfNotNull(constructor.extensionReceiverParameter) + constructor.valueParameters
         return ExportedConstructor(
-            parameters = allValueParameters.filterNot { it.isBoxParameter }.memoryOptimizedMap { exportParameter(it) },
+            parameters = allValueParameters
+                .filterNot { it.isBoxParameter }
+                .memoryOptimizedMap { exportParameter(it, it.hasDefaultValue) },
             visibility = constructor.visibility.toExportedVisibility()
         )
     }
 
-    private fun exportParameter(parameter: IrValueParameter): ExportedParameter {
+    private fun exportParameter(parameter: IrValueParameter, hasDefaultValue: Boolean): ExportedParameter {
         // Parameter names do not matter in d.ts files. They can be renamed as we like
         var parameterName = sanitizeName(parameter.name.asString(), withHash = false)
         if (parameterName in allReservedWords)
@@ -115,9 +131,12 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
         return ExportedParameter(
             parameterName,
             exportType(parameter.type),
-            parameter.origin == JsLoweredDeclarationOrigin.JS_SHADOWED_DEFAULT_PARAMETER
+            hasDefaultValue
         )
     }
+
+    private val IrValueParameter.hasDefaultValue: Boolean
+        get() = origin == JsLoweredDeclarationOrigin.JS_SHADOWED_DEFAULT_PARAMETER
 
     private fun exportProperty(property: IrProperty): ExportedDeclaration? {
         for (accessor in listOfNotNull(property.getter, property.setter)) {
@@ -158,7 +177,9 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
 
     private fun exportEnumEntry(field: IrField, enumEntries: Map<IrEnumEntry, Int>): ExportedProperty {
         val irEnumEntry = context.mapping.fieldToEnumEntry[field]
-            ?: error("Unable to find enum entry for ${field.fqNameWhenAvailable}")
+            ?: irError("Unable to find enum entry") {
+                withIrEntry("field", field)
+            }
 
         val parentClass = field.parent as IrClass
 
@@ -190,7 +211,9 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
             isStatic = true,
             isProtected = parentClass.visibility == DescriptorVisibilities.PROTECTED,
             irGetter = context.mapping.enumEntryToGetInstanceFun[irEnumEntry]
-                ?: error("Unable to find get instance fun for ${field.fqNameWhenAvailable}"),
+                ?: irError("Unable to find get instance fun") {
+                    withIrEntry("field", field)
+                },
         )
     }
 
@@ -241,7 +264,9 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
 
     private fun exportOrdinaryClass(klass: IrClass, superTypes: Iterable<IrType>): ExportedDeclaration? {
         when (val exportability = classExportability(klass)) {
-            is Exportability.Prohibited -> error(exportability.reason)
+            is Exportability.Prohibited -> irError(exportability.reason) {
+                withIrEntry("klass", klass)
+            }
             Exportability.NotNeeded -> return null
             Exportability.Implicit -> return exportDeclarationImplicitly(klass, superTypes)
             Exportability.Allowed -> {}
@@ -259,7 +284,9 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
 
     private fun exportEnumClass(klass: IrClass, superTypes: Iterable<IrType>): ExportedDeclaration? {
         when (val exportability = classExportability(klass)) {
-            is Exportability.Prohibited -> error(exportability.reason)
+            is Exportability.Prohibited -> irError(exportability.reason) {
+                withIrEntry("klass", klass)
+            }
             Exportability.NotNeeded -> return null
             Exportability.Implicit -> return exportDeclarationImplicitly(klass, superTypes)
             Exportability.Allowed -> {}
@@ -298,6 +325,7 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
         specialProcessing: (IrDeclarationWithName) -> ExportedDeclaration? = { null }
     ): ExportedClassDeclarationsInfo {
         val members = mutableListOf<ExportedDeclaration>()
+        val specialMembers = mutableListOf<ExportedDeclaration>()
         val nestedClasses = mutableListOf<ExportedClass>()
         val isImplicitlyExportedClass = klass.isJsImplicitExport()
 
@@ -305,10 +333,11 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
             val candidate = getExportCandidate(declaration) ?: continue
             if (isImplicitlyExportedClass && candidate !is IrClass) continue
             if (!shouldDeclarationBeExportedImplicitlyOrExplicitly(candidate, context)) continue
+            if (candidate.isFakeOverride && klass.isInterface) continue
 
             val processingResult = specialProcessing(candidate)
             if (processingResult != null) {
-                members.add(processingResult)
+                specialMembers.add(processingResult)
                 continue
             }
 
@@ -323,11 +352,15 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
                     members.addIfNotNull(exportProperty(candidate)?.withAttributesFor(candidate))
 
                 is IrClass -> {
-                    val ec = exportClass(candidate)?.withAttributesFor(candidate)
-                    if (ec is ExportedClass) {
-                        nestedClasses.add(ec)
+                    if (klass.isInterface) {
+                        nestedClasses.addIfNotNull(klass.companionObject()?.let { exportClass(it) as? ExportedClass }?.withAttributesFor(candidate))
                     } else {
-                        members.addIfNotNull(ec)
+                        val ec = exportClass(candidate)?.withAttributesFor(candidate)
+                        if (ec is ExportedClass) {
+                            nestedClasses.add(ec)
+                        } else {
+                            members.addIfNotNull(ec)
+                        }
                     }
                 }
 
@@ -341,7 +374,9 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
                     }
                 }
 
-                else -> error("Can't export member declaration $declaration")
+                else -> irError("Can't export member declaration") {
+                    withIrEntry("declaration", declaration)
+                }
             }
         }
 
@@ -352,7 +387,7 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
         }
 
         return ExportedClassDeclarationsInfo(
-            members,
+            specialMembers + members,
             nestedClasses
         )
     }
@@ -362,13 +397,13 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
     }
 
     private fun IrValueParameter.shouldBeExported(): Boolean {
-        return origin != JsLoweredDeclarationOrigin.JS_SUPER_CONTEXT_PARAMETER
+        return origin != JsLoweredDeclarationOrigin.JS_SUPER_CONTEXT_PARAMETER && origin != ES6_BOX_PARAMETER
     }
 
     private fun IrClass.shouldContainImplementationOfMagicProperty(superTypes: Iterable<IrType>): Boolean {
         return !isExternal && superTypes.any {
             val superClass = it.classOrNull?.owner ?: return@any false
-            superClass.isInterface && superClass.isExported(context) || superClass.isJsImplicitExport()
+            superClass.isInterface && it.shouldAddMagicPropertyOfSuper() || superClass.isJsImplicitExport()
         }
     }
 
@@ -435,7 +470,7 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
             .map { exportType(it, false) }
             .memoryOptimizedFilter { it !is ExportedType.ErrorType }
 
-        val name = klass.getExportedIdentifier()
+        val name = klass.getExportedIdentifierForClass()
 
         return if (klass.kind == ClassKind.OBJECT) {
             return ExportedObject(
@@ -478,15 +513,15 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
         return when (candidate) {
             is IrProperty -> {
                 if (candidate.isAllowedFakeOverriddenDeclaration(context)) {
-                    val type: ExportedType? = when (candidate.getExportedIdentifier()) {
+                    val type: ExportedType = when (candidate.getExportedIdentifier()) {
                         "name" -> enumEntries
                             .map { it.getExportedIdentifier() }
                             .map { ExportedType.LiteralType.StringLiteralType(it) }
-                            .reduce { acc: ExportedType, s: ExportedType -> ExportedType.UnionType(acc, s) }
+                            .reduceOrNull { acc: ExportedType, s: ExportedType -> ExportedType.UnionType(acc, s) } ?: return null
                         "ordinal" -> enumEntriesToOrdinal
                             .map { (_, ordinal) -> ExportedType.LiteralType.NumberLiteralType(ordinal) }
-                            .reduce { acc: ExportedType, s: ExportedType -> ExportedType.UnionType(acc, s) }
-                        else -> null
+                            .reduceOrNull { acc: ExportedType, s: ExportedType -> ExportedType.UnionType(acc, s) } ?: return null
+                        else -> return null
                     }
                     exportPropertyUnsafely(
                         candidate,
@@ -522,7 +557,7 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
         return ExportedType.ErrorType("UnknownType ${type.render()}")
     }
 
-    private fun exportTypeParameter(typeParameter: IrTypeParameter): ExportedType.TypeParameter {
+    fun exportTypeParameter(typeParameter: IrTypeParameter): ExportedType.TypeParameter {
         val constraint = typeParameter.superTypes.asSequence()
             .filter { it != context.irBuiltIns.anyNType }
             .map {
@@ -546,12 +581,6 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
                 }
             }
         )
-    }
-
-    private fun ExportedDeclaration.withAttributesFor(declaration: IrDeclaration): ExportedDeclaration {
-        declaration.getDeprecated()?.let { attributes.add(ExportedAttribute.DeprecatedAttribute(it)) }
-
-        return this
     }
 
     private val currentlyProcessedTypes = hashSetOf<IrType>()
@@ -630,19 +659,14 @@ class ExportModelGenerator(val context: JsIrBackendContext, val generateNamespac
                 }.withImplicitlyExported(isImplicitlyExported, exportedSupertype)
             }
 
-            else -> error("Unexpected classifier $classifier")
+            else -> irError("Unexpected classifier") {
+                withIrEntry("classifier.owner", classifier.owner)
+            }
         }
 
         return exportedType.withNullability(isMarkedNullable)
             .also { currentlyProcessedTypes.remove(type) }
     }
-
-    private fun IrDeclarationWithName.getExportedIdentifier(): String =
-        with(getJsNameOrKotlinName()) {
-            if (isSpecial)
-                error("Cannot export special name: ${name.asString()} for declaration $fqNameWhenAvailable")
-            else identifier
-        }
 
     private fun functionExportability(function: IrSimpleFunction): Exportability {
         if (function.isInline && function.typeParameters.any { it.isReified })
@@ -745,14 +769,14 @@ private fun shouldDeclarationBeExported(declaration: IrDeclarationWithName, cont
     if (declaration is IrClass && declaration.kind == ClassKind.ENUM_ENTRY)
         return false
 
+    if (declaration.isJsExportIgnore() || (declaration as? IrDeclarationWithVisibility)?.visibility?.isPublicAPI == false)
+        return false
+
     if (context.additionalExportedDeclarationNames.contains(declaration.fqNameWhenAvailable))
         return true
 
     if (context.additionalExportedDeclarations.contains(declaration))
         return true
-
-    if (declaration.isJsExportIgnore())
-        return false
 
     if (declaration is IrOverridableDeclaration<*>) {
         val overriddenNonEmpty = declaration
@@ -778,10 +802,10 @@ private fun shouldDeclarationBeExported(declaration: IrDeclarationWithName, cont
 
 fun IrOverridableDeclaration<*>.isAllowedFakeOverriddenDeclaration(context: JsIrBackendContext): Boolean {
     val firstExportedRealOverride = runIf(isFakeOverride) {
-        resolveFakeOverrideOrNull(allowAbstract = true) { it === this || it.parentClassOrNull?.isExported(context) != true }
+        resolveFakeOverrideMaybeAbstract { it === this || it.isFakeOverride || it.parentClassOrNull?.isExported(context) != true }
     }
 
-    if (firstExportedRealOverride?.parentClassOrNull.isExportedInterface(context)) {
+    if (firstExportedRealOverride?.parentClassOrNull.isExportedInterface(context) && firstExportedRealOverride?.isJsExportIgnore() != true) {
         return true
     }
 
@@ -809,7 +833,7 @@ fun IrDeclaration.isExportedImplicitlyOrExplicitly(context: JsIrBackendContext):
     return shouldDeclarationBeExportedImplicitlyOrExplicitly(candidate, context)
 }
 
-private fun DescriptorVisibility.toExportedVisibility() =
+fun DescriptorVisibility.toExportedVisibility() =
     when (this) {
         DescriptorVisibilities.PROTECTED -> ExportedVisibility.PROTECTED
         else -> ExportedVisibility.DEFAULT
@@ -868,3 +892,26 @@ val strictModeReservedWords = setOf(
 )
 
 private val allReservedWords = reservedWords + strictModeReservedWords
+
+fun <T : ExportedDeclaration> T.withAttributesFor(declaration: IrDeclaration): T {
+    declaration.getDeprecated()?.let { attributes.add(ExportedAttribute.DeprecatedAttribute(it)) }
+
+    return this
+}
+
+fun IrClass.getExportedIdentifierForClass(): String {
+    val parentClass = parentClassOrNull
+    return if (parentClass != null && isCompanion && parentClass.isInterface) {
+        parentClass.getExportedIdentifierForClass()
+    } else getExportedIdentifier()
+}
+
+fun IrDeclarationWithName.getExportedIdentifier(): String =
+    with(getJsNameOrKotlinName()) {
+        if (isSpecial)
+            irError("Cannot export special name: ${name.asString()} for declaration") {
+                withIrEntry("this", this@getExportedIdentifier)
+            }
+        else identifier
+    }
+

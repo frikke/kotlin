@@ -28,10 +28,12 @@ dependencies {
     compileOnly(jpsModel())
     compileOnly(jpsModelImpl())
     compileOnly(jpsModelSerialization())
+    compileOnly(intellijJDom())
+    testCompileOnly(intellijJDom())
 
     testImplementation(project(":compiler:cli-common"))
     testImplementation(jpsModelSerialization())
-    testImplementation(commonDependency("junit:junit"))
+    testImplementation(libs.junit4)
     testImplementation(kotlin("test-junit"))
 }
 

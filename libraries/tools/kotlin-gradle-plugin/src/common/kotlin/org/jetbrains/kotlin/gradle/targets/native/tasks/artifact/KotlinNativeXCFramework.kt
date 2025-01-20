@@ -10,6 +10,7 @@ import org.gradle.api.Task
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.language.base.plugins.LifecycleBasePlugin
 import org.jetbrains.kotlin.gradle.dsl.*
+import org.jetbrains.kotlin.gradle.plugin.mpp.BITCODE_EMBEDDING_DEPRECATION_MESSAGE
 import org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeOutputKind
@@ -29,6 +30,7 @@ abstract class KotlinNativeXCFrameworkConfigImpl @Inject constructor(artifactNam
         this.targets = targets.toSet()
     }
 
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE)
     override var embedBitcode: BitcodeEmbeddingMode? = null
 
     override fun validate() {
@@ -55,7 +57,6 @@ abstract class KotlinNativeXCFrameworkConfigImpl @Inject constructor(artifactNam
             toolOptionsConfigure = toolOptionsConfigure,
             binaryOptions = binaryOptions,
             targets = targets,
-            embedBitcode = embedBitcode,
             extensions = extensions
         )
     }
@@ -67,11 +68,14 @@ class KotlinNativeXCFrameworkImpl(
     override val modes: Set<NativeBuildType>,
     override val isStatic: Boolean,
     override val linkerOptions: List<String>,
+    @Suppress("DEPRECATION")
+    @Deprecated("Please migrate to toolOptionsConfigure DSL. More details are here: https://kotl.in/u1r8ln")
     override val kotlinOptionsFn: KotlinCommonToolOptions.() -> Unit,
     override val toolOptionsConfigure: KotlinCommonCompilerToolOptions.() -> Unit,
     override val binaryOptions: Map<String, String>,
     override val targets: Set<KonanTarget>,
-    override val embedBitcode: BitcodeEmbeddingMode?,
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE)
+    override val embedBitcode: BitcodeEmbeddingMode? = null,
     extensions: ExtensionAware
 ) : KotlinNativeXCFramework, ExtensionAware by extensions {
     override fun getName() = lowerCamelCaseName(artifactName, "XCFramework")
@@ -102,7 +106,6 @@ class KotlinNativeXCFrameworkImpl(
                     buildType = buildType,
                     librariesConfigurationName = librariesConfigurationName,
                     exportConfigurationName = exportConfigurationName,
-                    embedBitcode = embedBitcode,
                     outDirName = "${artifactName}XCFrameworkTemp",
                     taskNameSuffix = nameSuffix
                 )
@@ -120,7 +123,7 @@ class KotlinNativeXCFrameworkImpl(
             }
             holder.task.configure {
                 it.fromFrameworkDescriptors(frameworkDescriptors)
-                it.outputDir = project.buildDir.resolve(outDir)
+                it.outputDir = project.layout.buildDirectory.dir(outDir).get().asFile
             }
         }
     }

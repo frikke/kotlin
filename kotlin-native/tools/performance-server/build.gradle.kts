@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JsModuleKind.MODULE_COMMONJS
 import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrLink
+import org.jetbrains.kotlin.gradle.targets.js.testing.KotlinJsTest
 
 buildscript {
     val rootBuildDirectory by extra(file("../.."))
@@ -36,18 +37,16 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                implementation("org.jetbrains.kotlin:kotlin-stdlib-common:$kotlinVersion")
+                implementation("org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion")
             }
             kotlin.srcDir("../benchmarks/shared/src")
         }
         val jsMain by creating {
             dependencies {
-                implementation("org.jetbrains.kotlin:kotlin-stdlib-js:$kotlinVersion")
-                implementation(npm("body-parser", "~1.20.0"))
+                implementation(npm("body-parser", "~1.20.3"))
                 implementation(npm("debug", "~4.3.4"))
                 implementation(npm("ejs", "~3.1.7"))
-                implementation(npm("express", "~4.18.1"))
-                implementation(npm("kotlin", "~1.6.20"))
+                implementation(npm("express", "~4.20.0"))
                 implementation(npm("node-fetch", "~2.6.6"))
             }
             kotlin {
@@ -63,9 +62,11 @@ kotlin {
             moduleName = "app"
             nodejs()
             compilations.all {
-                compilerOptions.configure {
-                    moduleKind.set(MODULE_COMMONJS)
-                    sourceMap.set(true)
+                compileTaskProvider.configure {
+                    compilerOptions {
+                        moduleKind.set(MODULE_COMMONJS)
+                        sourceMap.set(true)
+                    }
                 }
             }
             binaries.executable()
@@ -75,4 +76,9 @@ kotlin {
 
 tasks.withType<KotlinJsIrLink> {
     destinationDirectory.set(project.file("server"))
+}
+
+// Fixes Gradle complaint about the same input of this task and production one
+tasks.named<KotlinJsIrLink>("compileTestDevelopmentExecutableKotlinJs") {
+    destinationDirectory.set(project.file("server-test"))
 }

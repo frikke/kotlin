@@ -5,11 +5,12 @@
 
 package org.jetbrains.kotlin.backend.jvm.lower
 
-import org.jetbrains.kotlin.backend.common.ScopeWithIr
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.irBlockBody
+import org.jetbrains.kotlin.backend.common.lower.loops.ForLoopsLowering
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.*
-import org.jetbrains.kotlin.backend.jvm.ir.erasedUpperBound
+import org.jetbrains.kotlin.ir.util.erasedUpperBound
 import org.jetbrains.kotlin.builtins.StandardNames
 import org.jetbrains.kotlin.config.ApiVersion
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
@@ -25,6 +26,7 @@ import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.transformStatement
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.JVM_INLINE_ANNOTATION_FQ_NAME
@@ -37,17 +39,24 @@ import org.jetbrains.kotlin.resolve.JVM_INLINE_ANNOTATION_FQ_NAME
  * We do not unfold inline class types here. Instead, the type mapper will lower inline class
  * types to the types of their underlying field.
  */
-internal class JvmInlineClassLowering(
-    context: JvmBackendContext,
-    scopeStack: MutableList<ScopeWithIr>,
-) : JvmValueClassAbstractLowering(context, scopeStack) {
+@PhaseDescription(
+    name = "InlineClasses",
+    // forLoopsPhase may produce UInt and ULong which are inline classes.
+    // Standard library replacements are done on the not mangled names for UInt and ULong classes.
+    // Collection stubs may require mangling by value class rules.
+    // SAM wrappers may require mangling for fun interfaces with value class parameters
+    prerequisite = [
+        ForLoopsLowering::class, JvmBuiltInsLowering::class, CollectionStubMethodLowering::class, JvmSingleAbstractMethodLowering::class
+    ]
+)
+internal class JvmInlineClassLowering(context: JvmBackendContext) : JvmValueClassAbstractLowering(context) {
     override val replacements: MemoizedValueClassAbstractReplacements
         get() = context.inlineClassReplacements
 
     private val valueMap = mutableMapOf<IrValueSymbol, IrValueDeclaration>()
 
     override fun addBindingsFor(original: IrFunction, replacement: IrFunction) {
-        for ((param, newParam) in original.explicitParameters.zip(replacement.explicitParameters)) {
+        for ((param, newParam) in original.parameters.zip(replacement.parameters)) {
             valueMap[param.symbol] = newParam
         }
     }
@@ -58,7 +67,7 @@ internal class JvmInlineClassLowering(
             name = mangledName
             returnType = source.returnType
         }.apply {
-            copyParameterDeclarationsFrom(source)
+            copyValueAndTypeParametersFrom(source)
             annotations = source.annotations
             parent = source.parent
             // We need to ensure that this bridge has the same attribute owner as its static inline class replacement, since this
@@ -124,7 +133,7 @@ internal class JvmInlineClassLowering(
         source.body = context.createIrBuilder(source.symbol, source.startOffset, source.endOffset).run {
             irExprBody(irCall(target).apply {
                 passTypeArgumentsFrom(source)
-                for ((parameter, newParameter) in source.explicitParameters.zip(target.explicitParameters)) {
+                for ((parameter, newParameter) in source.parameters.zip(target.parameters)) {
                     putArgument(newParameter, irGet(parameter))
                 }
             })
@@ -198,7 +207,7 @@ internal class JvmInlineClassLowering(
         replacement: IrSimpleFunction
     ) {
         copyTypeArgumentsFrom(original)
-        val valueParameterMap = originalFunction.explicitParameters.zip(replacement.explicitParameters).toMap()
+        val valueParameterMap = originalFunction.parameters.zip(replacement.parameters).toMap()
         for ((parameter, argument) in typedArgumentList(originalFunction, original)) {
             if (argument == null) continue
             val newParameter = valueParameterMap.getValue(parameter)
@@ -220,10 +229,11 @@ internal class JvmInlineClassLowering(
         return IrFunctionReferenceImpl(
             expression.startOffset, expression.endOffset, expression.type,
             replacement.symbol, function.typeParameters.size,
-            replacement.valueParameters.size, expression.reflectionTarget, expression.origin
+            expression.reflectionTarget, expression.origin
         ).apply {
             buildReplacement(function, expression, replacement)
-        }.copyAttributes(expression)
+            copyAttributes(expression)
+        }
     }
 
     override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
@@ -232,9 +242,13 @@ internal class JvmInlineClassLowering(
             ?: return super.visitFunctionAccess(expression)
 
         return IrCallImpl(
-            expression.startOffset, expression.endOffset, function.returnType.substitute(expression.typeSubstitutionMap),
-            replacement.symbol, replacement.typeParameters.size, replacement.valueParameters.size,
-            expression.origin, (expression as? IrCall)?.superQualifierSymbol
+            startOffset = expression.startOffset,
+            endOffset = expression.endOffset,
+            type = function.returnType.substitute(expression.typeSubstitutionMap),
+            symbol = replacement.symbol,
+            typeArgumentsCount = replacement.typeParameters.size,
+            origin = expression.origin,
+            superQualifierSymbol = (expression as? IrCall)?.superQualifierSymbol
         ).apply {
             buildReplacement(function, expression, replacement)
         }
@@ -244,16 +258,16 @@ internal class JvmInlineClassLowering(
         return IrCallImpl.fromSymbolOwner(UNDEFINED_OFFSET, UNDEFINED_OFFSET, to, context.ir.symbols.unsafeCoerceIntrinsic).apply {
             val underlyingType = from.erasedUpperBound.inlineClassRepresentation?.underlyingType
             if (underlyingType?.isTypeParameter() == true && !skipCast) {
-                putTypeArgument(0, from)
-                putTypeArgument(1, underlyingType)
+                typeArguments[0] = from
+                typeArguments[1] = underlyingType
                 putValueArgument(
                     0, IrTypeOperatorCallImpl(
                         UNDEFINED_OFFSET, UNDEFINED_OFFSET, to, IrTypeOperator.IMPLICIT_CAST, underlyingType, argument
                     )
                 )
             } else {
-                putTypeArgument(0, from)
-                putTypeArgument(1, to)
+                typeArguments[0] = from
+                typeArguments[1] = to
                 putValueArgument(0, argument)
             }
         }
@@ -329,7 +343,10 @@ internal class JvmInlineClassLowering(
             // since the underlying representations are the same.
             expression.symbol.owner.isInlineClassFieldGetter -> {
                 val arg = expression.dispatchReceiver!!.transform(this, null)
-                coerceInlineClasses(arg, expression.symbol.owner.dispatchReceiverParameter!!.type, expression.type)
+                val from = expression.symbol.owner.dispatchReceiverParameter!!.type
+                val to = context.inlineClassReplacements.getUnboxFunction(from.erasedUpperBound).returnType
+                // We need direct unboxed parameter type here
+                coerceInlineClasses(arg, from, to)
             }
             // Specialize calls to equals when the left argument is a value of inline class type.
             expression.isEqEqCallOnInlineClass || expression.isEqualsMethodCallOnInlineClass -> {
@@ -371,8 +388,8 @@ internal class JvmInlineClassLowering(
         get() {
             if (!isSingleFieldValueClass) return false
             // Before version 1.4, we cannot rely on the Result.equals-impl0 method
-            return fqNameWhenAvailable != StandardNames.RESULT_FQ_NAME ||
-                    context.state.languageVersionSettings.apiVersion >= ApiVersion.KOTLIN_1_4
+            return !isClassWithFqName(StandardNames.RESULT_FQ_NAME) ||
+                    context.config.languageVersionSettings.apiVersion >= ApiVersion.KOTLIN_1_4
         }
 
     override fun visitGetField(expression: IrGetField): IrExpression {
@@ -423,7 +440,7 @@ internal class JvmInlineClassLowering(
         }.apply {
             // Don't create a default argument stub for the primary constructor
             irConstructor.valueParameters.forEach { it.defaultValue = null }
-            copyParameterDeclarationsFrom(irConstructor)
+            copyValueAndTypeParametersFrom(irConstructor)
             annotations = irConstructor.annotations
             body = context.createIrBuilder(this.symbol).irBlockBody(this) {
                 +irDelegatingConstructorCall(context.irBuiltIns.anyClass.owner.constructors.single())

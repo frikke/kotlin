@@ -3,23 +3,25 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
-// Quite big library written in Kotlin:
+// Relatively big library written in Kotlin:
 // - uses Spring boot
 // - uses Kotlin kapt
 @file:BenchmarkProject(
     name = "graphql-kotlin",
     gitUrl = "https://github.com/ExpediaGroup/graphql-kotlin.git",
     gitCommitSha = "7d1e5a3114e95a4e0d63a8c515e9e8e37d5c504c",
-    stableKotlinVersion = "1.8.21",
+    stableKotlinVersion = "2.1.0",
 )
 
 import java.io.File
 
 val repoPatch = {
-    "graphql-kotlin-current.patch" to File("benchmarkScripts/files/graphql-kotlin-repo.patch")
-        .readText()
-        .run { replace("<kotlin_version>", currentKotlinVersion) }
-        .byteInputStream()
+    listOf(
+        "graphql-kotlin-current.patch" to File("benchmarkScripts/files/graphql-kotlin-repo.patch")
+            .readText()
+            .run { replace("<kotlin_version>", currentKotlinVersion) }
+            .byteInputStream(),
+    )
 }
 
 runBenchmarks(

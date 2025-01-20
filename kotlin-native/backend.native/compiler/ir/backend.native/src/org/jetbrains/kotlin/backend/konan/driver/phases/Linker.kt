@@ -5,9 +5,11 @@
 
 package org.jetbrains.kotlin.backend.konan.driver.phases
 
+import org.jetbrains.kotlin.backend.common.phaser.createSimpleNamedCompilerPhase
 import org.jetbrains.kotlin.backend.konan.*
 import org.jetbrains.kotlin.backend.konan.Linker
 import org.jetbrains.kotlin.backend.konan.driver.PhaseContext
+import org.jetbrains.kotlin.konan.TempFiles
 import org.jetbrains.kotlin.konan.target.LinkerOutputKind
 import java.io.File
 
@@ -17,19 +19,18 @@ internal data class LinkerPhaseInput(
         val objectFiles: List<ObjectFile>,
         val dependenciesTrackingResult: DependenciesTrackingResult,
         val outputFiles: OutputFiles,
+        val tempFiles: TempFiles,
         val resolvedCacheBinaries: ResolvedCacheBinaries,
-        val isCoverageEnabled: Boolean,
 )
 
 internal val LinkerPhase = createSimpleNamedCompilerPhase<PhaseContext, LinkerPhaseInput>(
         name = "Linker",
-        description = "Linker"
 ) { context, input ->
     val linker = Linker(
             config = context.config,
             linkerOutput = input.outputKind,
-            isCoverageEnabled = input.isCoverageEnabled,
-            outputFiles = input.outputFiles
+            outputFiles = input.outputFiles,
+            tempFiles = input.tempFiles,
     )
     val commands = linker.linkCommands(
             input.outputFile,
@@ -48,7 +49,6 @@ internal data class PreLinkCachesInput(
 
 internal val PreLinkCachesPhase = createSimpleNamedCompilerPhase<PhaseContext, PreLinkCachesInput>(
         name = "PreLinkCaches",
-        description = "Pre-link static caches",
 ) { context, input ->
     val inputFiles = input.objectFiles.map { it.absoluteFile.normalize().path } + input.caches.static
     val commands = context.config.platform.linker.preLinkCommands(inputFiles, input.outputObjectFile.absoluteFile.normalize().path)

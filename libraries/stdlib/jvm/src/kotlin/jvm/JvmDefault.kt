@@ -9,15 +9,13 @@ import kotlin.internal.RequireKotlin
 import kotlin.internal.RequireKotlinVersionKind
 
 /**
- * Specifies that a JVM default method should be generated for non-abstract Kotlin interface member.
- *
  * This annotation can no longer be used. It has been superseded by the new `-Xjvm-default` modes `all` and `all-compatibility`,
- * and the new annotations `@JvmDefaultWithCompatibility` and `@JvmDefaultWithoutCompatibility`.
+ * and the new annotations [JvmDefaultWithCompatibility] and [JvmDefaultWithoutCompatibility].
  */
 @SinceKotlin("1.2")
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY)
-@Deprecated("Switch to new -Xjvm-default modes: `all` or `all-compatibility`", level = DeprecationLevel.ERROR)
-annotation class JvmDefault
+@Deprecated("Switch to new -Xjvm-default modes: `all` or `all-compatibility`", level = DeprecationLevel.HIDDEN)
+public annotation class JvmDefault
 
 /**
  * Prevents the compiler from generating compatibility accessors for the annotated class or interface, and suppresses
@@ -32,7 +30,7 @@ annotation class JvmDefault
 @SinceKotlin("1.4")
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
-annotation class JvmDefaultWithoutCompatibility
+public annotation class JvmDefaultWithoutCompatibility
 
 /**
  * Forces the compiler to generate compatibility accessors for the annotated interface in the `DefaultImpls` class.
@@ -45,4 +43,4 @@ annotation class JvmDefaultWithoutCompatibility
 @RequireKotlin("1.6", versionKind = RequireKotlinVersionKind.COMPILER_VERSION)
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
-annotation class JvmDefaultWithCompatibility
+public annotation class JvmDefaultWithCompatibility

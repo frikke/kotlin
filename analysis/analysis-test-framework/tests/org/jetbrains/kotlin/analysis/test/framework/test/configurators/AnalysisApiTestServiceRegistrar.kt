@@ -7,14 +7,17 @@ package org.jetbrains.kotlin.analysis.test.framework.test.configurators
 
 import com.intellij.mock.MockApplication
 import com.intellij.mock.MockProject
+import com.intellij.openapi.Disposable
+import org.jetbrains.kotlin.analysis.api.standalone.base.projectStructure.AnalysisApiServiceRegistrar
 import org.jetbrains.kotlin.test.services.TestServices
 
-abstract class AnalysisApiTestServiceRegistrar {
-    abstract fun registerApplicationServices(application: MockApplication, testServices: TestServices)
+@Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE") // Use `testServices` name instead of `data`
+abstract class AnalysisApiTestServiceRegistrar : AnalysisApiServiceRegistrar<TestServices> {
+    override fun registerApplicationServices(application: MockApplication, testServices: TestServices) {}
 
-    abstract fun registerProjectExtensionPoints(project: MockProject, testServices: TestServices)
+    override fun registerProjectExtensionPoints(project: MockProject, testServices: TestServices) {}
 
-    abstract fun registerProjectServices(project: MockProject, testServices: TestServices)
+    override fun registerProjectServices(project: MockProject, testServices: TestServices) {}
 
-    abstract fun registerProjectModelServices(project: MockProject, testServices: TestServices)
+    override fun registerProjectModelServices(project: MockProject, disposable: Disposable, testServices: TestServices) {}
 }

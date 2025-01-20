@@ -1,4 +1,7 @@
-// !LANGUAGE: +ContextReceivers
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -CONTEXT_RECEIVERS_DEPRECATED
+// FIR_IDENTICAL
+// LANGUAGE: +ContextReceivers
 
 class File(name: String)
 interface InputStream

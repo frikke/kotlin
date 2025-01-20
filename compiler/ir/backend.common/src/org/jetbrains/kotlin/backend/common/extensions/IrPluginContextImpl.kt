@@ -6,18 +6,27 @@
 package org.jetbrains.kotlin.backend.common.extensions
 
 import org.jetbrains.kotlin.backend.common.ir.BuiltinSymbolsBase
+import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
+import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSourceLocation
+import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.descriptors.TypeAliasDescriptor
+import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
+import org.jetbrains.kotlin.diagnostics.DiagnosticReporterFactory
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.ir.IrBuiltIns
+import org.jetbrains.kotlin.ir.IrDiagnosticReporter
+import org.jetbrains.kotlin.ir.KtDiagnosticReporterWithImplicitIrBasedContext
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.IrConstructor
+import org.jetbrains.kotlin.ir.declarations.IrDeclaration
+import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 import org.jetbrains.kotlin.ir.linkage.IrDeserializer
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.util.IdSignature
-import org.jetbrains.kotlin.ir.util.IrMessageLogger
 import org.jetbrains.kotlin.ir.util.ReferenceSymbolTable
 import org.jetbrains.kotlin.ir.util.TypeTranslator
 import org.jetbrains.kotlin.name.CallableId
@@ -38,8 +47,9 @@ open class IrPluginContextImpl constructor(
     override val typeTranslator: TypeTranslator,
     override val irBuiltIns: IrBuiltIns,
     val linker: IrDeserializer,
-    private val diagnosticReporter: IrMessageLogger,
-    override val symbols: BuiltinSymbolsBase = BuiltinSymbolsBase(irBuiltIns, st)
+    override val messageCollector: MessageCollector,
+    diagnosticReporter: DiagnosticReporter = DiagnosticReporterFactory.createReporter(messageCollector),
+    override val symbols: BuiltinSymbolsBase = BuiltinSymbolsBase(irBuiltIns)
 ) : IrPluginContext {
 
     override val afterK2: Boolean = false
@@ -49,7 +59,11 @@ open class IrPluginContextImpl constructor(
     @OptIn(ObsoleteDescriptorBasedAPI::class)
     override val moduleDescriptor: ModuleDescriptor = module
 
+    @ObsoleteDescriptorBasedAPI
     override val symbolTable: ReferenceSymbolTable = st
+
+    final override val metadataDeclarationRegistrar: IrGeneratedDeclarationsRegistrar
+        get() = DummyIrGeneratedDeclarationsRegistrar
 
     private fun resolveMemberScope(fqName: FqName): MemberScope? {
         val pkg = module.getPackage(fqName)
@@ -76,17 +90,22 @@ open class IrPluginContextImpl constructor(
         return symbol
     }
 
-    override fun createDiagnosticReporter(pluginId: String): IrMessageLogger {
-        return object : IrMessageLogger {
+    @Deprecated("Use messageCollector or diagnosticReporter properties instead", level = DeprecationLevel.ERROR)
+    override fun createDiagnosticReporter(pluginId: String): MessageCollector {
+        return object : MessageCollector by messageCollector {
             override fun report(
-                severity: IrMessageLogger.Severity,
+                severity: CompilerMessageSeverity,
                 message: String,
-                location: IrMessageLogger.Location?
+                location: CompilerMessageSourceLocation?
             ) {
-                diagnosticReporter.report(severity, "[Plugin $pluginId] $message", location)
+                messageCollector.report(severity, "[Plugin $pluginId] $message", location)
             }
         }
     }
+
+    @ExperimentalAPIForScriptingPlugin
+    override val diagnosticReporter: IrDiagnosticReporter =
+        KtDiagnosticReporterWithImplicitIrBasedContext(diagnosticReporter, languageVersionSettings)
 
     private fun <S : IrSymbol> resolveSymbolCollection(fqName: FqName, referencer: (MemberScope) -> Collection<S>): Collection<S> {
         val memberScope = resolveMemberScope(fqName) ?: return emptyList()
@@ -106,7 +125,7 @@ open class IrPluginContextImpl constructor(
         return resolveSymbol(fqName.parent()) { scope ->
             val classDescriptor = scope.getContributedClassifier(fqName.shortName(), NoLookupLocation.FROM_BACKEND) as? ClassDescriptor?
             classDescriptor?.let {
-                st.referenceClass(it)
+                st.descriptorExtension.referenceClass(it)
             }
         }
     }
@@ -117,14 +136,13 @@ open class IrPluginContextImpl constructor(
         return resolveSymbol(fqName.parent()) { scope ->
             val aliasDescriptor = scope.getContributedClassifier(fqName.shortName(), NoLookupLocation.FROM_BACKEND) as? TypeAliasDescriptor?
             aliasDescriptor?.let {
-                st.referenceTypeAlias(it)
+                st.descriptorExtension.referenceTypeAlias(it)
             }
         }
     }
 
     @OptIn(FirIncompatiblePluginAPI::class)
     override fun referenceConstructors(classFqn: FqName): Collection<IrConstructorSymbol> {
-        @Suppress("DEPRECATION")
         val classSymbol = referenceClass(classFqn) ?: error("Cannot find class $classFqn")
         return classSymbol.owner.declarations.filterIsInstance<IrConstructor>().map { it.symbol }
     }
@@ -134,7 +152,7 @@ open class IrPluginContextImpl constructor(
         assert(!fqName.isRoot)
         return resolveSymbolCollection(fqName.parent()) { scope ->
             val descriptors = scope.getContributedFunctions(fqName.shortName(), NoLookupLocation.FROM_BACKEND)
-            descriptors.map { st.referenceSimpleFunction(it) }
+            descriptors.map { st.descriptorExtension.referenceSimpleFunction(it) }
         }
     }
 
@@ -143,7 +161,7 @@ open class IrPluginContextImpl constructor(
         assert(!fqName.isRoot)
         return resolveSymbolCollection(fqName.parent()) { scope ->
             val descriptors = scope.getContributedVariables(fqName.shortName(), NoLookupLocation.FROM_BACKEND)
-            descriptors.map { st.referenceProperty(it) }
+            descriptors.map { st.descriptorExtension.referenceProperty(it) }
         }
     }
 
@@ -175,5 +193,19 @@ open class IrPluginContextImpl constructor(
         val symbol = linker.resolveBySignatureInModule(signature, kind, moduleDescriptor.name)
         linker.postProcess(inOrAfterLinkageStep = false)
         return symbol
+    }
+
+    private object DummyIrGeneratedDeclarationsRegistrar : IrGeneratedDeclarationsRegistrar() {
+        override fun addMetadataVisibleAnnotationsToElement(declaration: IrDeclaration, annotations: List<IrConstructorCall>) {
+            declaration.annotations += annotations
+        }
+
+        override fun registerFunctionAsMetadataVisible(irFunction: IrSimpleFunction) {}
+
+        override fun registerConstructorAsMetadataVisible(irConstructor: IrConstructor) {}
+
+        override fun addCustomMetadataExtension(irDeclaration: IrDeclaration, pluginId: String, data: ByteArray) {}
+
+        override fun getCustomMetadataExtension(irDeclaration: IrDeclaration, pluginId: String): ByteArray? = null
     }
 }

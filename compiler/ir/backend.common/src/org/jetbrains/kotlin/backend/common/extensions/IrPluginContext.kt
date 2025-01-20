@@ -6,14 +6,15 @@
 package org.jetbrains.kotlin.backend.common.extensions
 
 import org.jetbrains.kotlin.backend.common.ir.BuiltinSymbolsBase
+import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+import org.jetbrains.kotlin.ir.IrDiagnosticReporter
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.builders.IrGeneratorContext
 import org.jetbrains.kotlin.ir.linkage.IrDeserializer
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.util.IdSignature
-import org.jetbrains.kotlin.ir.util.IrMessageLogger
 import org.jetbrains.kotlin.ir.util.ReferenceSymbolTable
 import org.jetbrains.kotlin.ir.util.TypeTranslator
 import org.jetbrains.kotlin.name.CallableId
@@ -31,6 +32,9 @@ import org.jetbrains.kotlin.resolve.BindingContext
 @RequiresOptIn("This API is deprecated. It will be removed after the release of K2 compiler")
 annotation class FirIncompatiblePluginAPI(val hint: String = "")
 
+@RequiresOptIn("This API is experimental and may be changed or dropped in the future")
+annotation class ExperimentalAPIForScriptingPlugin(val hint: String = "")
+
 interface IrPluginContext : IrGeneratorContext {
     val languageVersionSettings: LanguageVersionSettings
 
@@ -46,6 +50,7 @@ interface IrPluginContext : IrGeneratorContext {
     @FirIncompatiblePluginAPI
     val bindingContext: BindingContext
 
+    @ObsoleteDescriptorBasedAPI
     val symbolTable: ReferenceSymbolTable
 
     @ObsoleteDescriptorBasedAPI
@@ -57,12 +62,26 @@ interface IrPluginContext : IrGeneratorContext {
     val platform: TargetPlatform?
 
     /**
-     * Returns a logger instance to post diagnostic messages from plugin
-     *
-     * @param pluginId the unique plugin ID to make it easy to distinguish in log
-     * @return         the logger associated with specified ID
+     * Use this service to:
+     * - add annotations to declarations if those annotations should be saved into metadata
+     * - register that declaration generated at IR stage will appear in compiled metadata
+     * This service properly works only in K2 compiler
      */
-    fun createDiagnosticReporter(pluginId: String): IrMessageLogger
+    val metadataDeclarationRegistrar: IrGeneratedDeclarationsRegistrar
+
+    @Deprecated("Use messageCollector or diagnosticReporter properties instead", level = DeprecationLevel.ERROR)
+    fun createDiagnosticReporter(pluginId: String): MessageCollector
+
+    /**
+     * Returns a message collector instance to report generic diagnostic messages from plugin
+     */
+    val messageCollector: MessageCollector
+
+    /**
+     * Returns a diagnostic reporter instance to report IR diagnostics from plugin
+     */
+    @ExperimentalAPIForScriptingPlugin("This API is experimental, use message collector instead")
+    val diagnosticReporter: IrDiagnosticReporter
 
     // The following API is experimental
     @FirIncompatiblePluginAPI("Use classId overload instead")

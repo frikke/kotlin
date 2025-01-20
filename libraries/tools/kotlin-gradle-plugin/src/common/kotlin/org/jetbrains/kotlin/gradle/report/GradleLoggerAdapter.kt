@@ -6,12 +6,13 @@
 package org.jetbrains.kotlin.gradle.report
 
 import org.gradle.api.logging.Logger
-import org.jetbrains.kotlin.compilerRunner.KotlinLogger
+import org.jetbrains.kotlin.buildtools.api.KotlinLogger
 
 class GradleLoggerAdapter(private val log: Logger) : KotlinLogger {
 
     override val isDebugEnabled: Boolean
         get() = log.isDebugEnabled
+
     override fun info(msg: String) {
         log.info(msg)
     }
@@ -20,15 +21,15 @@ class GradleLoggerAdapter(private val log: Logger) : KotlinLogger {
         log.debug(msg)
     }
 
-    override fun warn(msg: String) {
-        log.warn(msg)
+    override fun warn(msg: String, throwable: Throwable?) {
+        log.warn(msg, throwable)
     }
 
     override fun error(msg: String, throwable: Throwable?) {
         throwable?.let { log.error(msg, throwable) } ?: log.error(msg)
     }
 
-    override fun lifecycle(message: String) {
-        log.lifecycle(message)
+    override fun lifecycle(msg: String) {
+        log.lifecycle(msg)
     }
 }

@@ -6,41 +6,38 @@
 package org.jetbrains.kotlin.gradle.targets.js.testing
 
 import org.gradle.api.Action
-import org.gradle.api.DomainObjectSet
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.tasks.*
 import org.gradle.process.internal.DefaultProcessForkOptions
+import org.gradle.work.DisableCachingByDefault
 import org.gradle.work.NormalizeLineEndings
 import org.jetbrains.kotlin.gradle.internal.testing.TCServiceMessagesTestExecutionSpec
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinJsCompilation
 import org.jetbrains.kotlin.gradle.targets.js.RequiredKotlinJsDependency
-import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNodeJsExtension
+import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrCompilation
+import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsPlugin.Companion.kotlinNodeJsEnvSpec
 import org.jetbrains.kotlin.gradle.targets.js.npm.RequiresNpmDependencies
-import org.jetbrains.kotlin.gradle.targets.js.npm.npmProject
 import org.jetbrains.kotlin.gradle.targets.js.testing.karma.KotlinKarma
 import org.jetbrains.kotlin.gradle.targets.js.testing.mocha.KotlinMocha
-import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpack
-import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 import org.jetbrains.kotlin.gradle.tasks.KotlinTest
-import org.jetbrains.kotlin.gradle.utils.getValue
+import org.jetbrains.kotlin.gradle.utils.domainObjectSet
+import org.jetbrains.kotlin.gradle.utils.getFile
 import org.jetbrains.kotlin.gradle.utils.newFileProperty
 import javax.inject.Inject
 
+@DisableCachingByDefault
 abstract class KotlinJsTest
 @Inject
 constructor(
     @Transient
     @Internal
-    override var compilation: KotlinJsCompilation
+    override var compilation: KotlinJsIrCompilation,
 ) : KotlinTest(),
     RequiresNpmDependencies {
     @Transient
-    private val nodeJs = project.rootProject.kotlinNodeJsExtension
+    private val nodeJs = project.kotlinNodeJsEnvSpec
 
-    private val nodeExecutable by project.provider { nodeJs.requireConfigured().nodeExecutable }
-
-    private val npmProjectDir by project.provider { compilation.npmProject.dir }
+    private val nodeExecutable = nodeJs.executable
 
     @Input
     var environment = mutableMapOf<String, String>()
@@ -50,14 +47,13 @@ constructor(
         set(value) {
             field = value
             onTestFrameworkCallbacks.all { callback ->
-                callback.execute(value)
+                value?.let { callback.execute(it) }
             }
         }
 
-    private var onTestFrameworkCallbacks: DomainObjectSet<Action<KotlinJsTestFramework?>> =
-        project.objects.domainObjectSet(Action::class.java) as DomainObjectSet<Action<KotlinJsTestFramework?>>
+    private var onTestFrameworkCallbacks = project.objects.domainObjectSet<Action<KotlinJsTestFramework>>()
 
-    fun onTestFrameworkSet(action: Action<KotlinJsTestFramework?>) {
+    fun onTestFrameworkSet(action: Action<KotlinJsTestFramework>) {
         onTestFrameworkCallbacks.add(action)
     }
 
@@ -96,7 +92,7 @@ constructor(
     val compilationId: String by lazy {
         compilation.let {
             val target = it.target
-            target.project.path + "@" + target.name + ":" + it.compilationPurpose
+            target.project.path + "@" + target.name + ":" + it.compilationName
         }
     }
 
@@ -121,7 +117,14 @@ constructor(
     }
 
     fun useMocha() = useMocha {}
-    fun useMocha(body: KotlinMocha.() -> Unit) = use(KotlinMocha(compilation, path), body)
+    fun useMocha(body: KotlinMocha.() -> Unit) =
+        if (compilation.wasmTarget == null) {
+            use(KotlinMocha(compilation, path), body)
+        } else {
+            logger.warn("Mocha test framework for Wasm target is not supported. For KotlinWasmNode used")
+            testFramework
+        }
+
     fun useMocha(fn: Action<KotlinMocha>) {
         useMocha {
             fn.execute(this)
@@ -145,10 +148,6 @@ constructor(
     }
 
     private inline fun <T : KotlinJsTestFramework> use(runner: T, body: T.() -> Unit): T {
-        check(testFramework == null) {
-            "testFramework already configured for task ${this.path}"
-        }
-
         val testFramework = runner.also(body)
         this.testFramework = testFramework
 
@@ -157,8 +156,8 @@ constructor(
 
     override fun createTestExecutionSpec(): TCServiceMessagesTestExecutionSpec {
         val forkOptions = DefaultProcessForkOptions(fileResolver)
-        forkOptions.workingDir = npmProjectDir
-        forkOptions.executable = nodeExecutable
+        forkOptions.workingDir = testFramework!!.workingDir.getFile()
+        forkOptions.executable = testFramework!!.executable.get()
 
         environment.forEach { (key, value) ->
             forkOptions.environment(key, value)

@@ -6,8 +6,10 @@
 package org.jetbrains.kotlin.wasm.ir
 
 import org.jetbrains.kotlin.wasm.ir.WasmImmediateKind.*
+import java.util.EnumSet
 
 enum class WasmImmediateKind {
+    CONST_U8,
     CONST_I32,
     CONST_I64,
     CONST_F32,
@@ -34,10 +36,13 @@ enum class WasmImmediateKind {
     STRUCT_TYPE_IDX,
     STRUCT_FIELD_IDX,
     TYPE_IMM,
-    HEAP_TYPE
+    HEAP_TYPE,
+
+    CATCH_VECTOR
 }
 
 sealed class WasmImmediate {
+    class ConstU8(val value: UByte) : WasmImmediate()
     class ConstI32(val value: Int) : WasmImmediate()
     class ConstI64(val value: Long) : WasmImmediate()
     class ConstF32(val rawBits: UInt) : WasmImmediate()
@@ -80,7 +85,9 @@ sealed class WasmImmediate {
     }
 
     class LabelIdx(val value: Int) : WasmImmediate()
-    class TagIdx(val value: Int) : WasmImmediate()
+    class TagIdx(val value: WasmSymbol<Int>) : WasmImmediate() {
+        constructor(value: Int) : this(WasmSymbol(value))
+    }
     class LabelIdxVector(val value: List<Int>) : WasmImmediate()
     class ElemIdx(val value: WasmElement) : WasmImmediate()
 
@@ -92,6 +99,19 @@ sealed class WasmImmediate {
 
     class HeapType(val value: WasmHeapType) : WasmImmediate() {
         constructor(type: WasmType) : this(type.getHeapType())
+    }
+
+    class Catch(val type: CatchType, val immediates: List<WasmImmediate>) : WasmImmediate() {
+        init {
+            require(immediates.size == type.immediates.size) { "Immediates sizes are not equals: ${type.name} required ${type.immediates.size}, but ${immediates.size} were provided" }
+        }
+
+        enum class CatchType(val mnemonic: String, val opcode: Int, vararg val immediates: WasmImmediateKind) {
+            CATCH("catch", 0x00, TAG_IDX, LABEL_IDX),
+            CATCH_REF("catch_ref", 0x01, TAG_IDX, LABEL_IDX),
+            CATCH_ALL("catch_all", 0x02, LABEL_IDX),
+            CATCH_ALL_REF("catch_all_ref", 0x03, LABEL_IDX)
+        }
     }
 
     // Pseudo-immediates
@@ -341,54 +361,88 @@ enum class WasmOp(
     // WIP: https://github.com/WebAssembly/function-references
     CALL_REF("call_ref", 0x14, TYPE_IDX),
     RETURN_CALL_REF("return_call_ref", 0x15, TYPE_IDX),
-    REF_AS_NOT_NULL("ref.as_non_null", 0xD3),
-    BR_ON_NULL("br_on_null", 0xD4, LABEL_IDX),
+    REF_AS_NOT_NULL("ref.as_non_null", 0xD4),
+    BR_ON_NULL("br_on_null", 0xD5, LABEL_IDX),
     BR_ON_NON_NULL("br_on_non_null", 0xD6, LABEL_IDX),
 
 
     // ============================================================
     // GC
     // WIP: https://github.com/WebAssembly/gc
-    STRUCT_NEW("struct.new", 0xFB_07, STRUCT_TYPE_IDX),
-    STRUCT_NEW_DEFAULT("struct.new_default", 0xFB_08, STRUCT_TYPE_IDX),
-    STRUCT_GET("struct.get", 0xFB_03, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
-    STRUCT_GET_S("struct.get_s", 0xFB_04, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
-    STRUCT_GET_U("struct.get_u", 0xFB_05, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
-    STRUCT_SET("struct.set", 0xFB_06, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
+    STRUCT_NEW("struct.new", 0xFB_00, STRUCT_TYPE_IDX),
+    STRUCT_NEW_DEFAULT("struct.new_default", 0xFB_01, STRUCT_TYPE_IDX),
+    STRUCT_GET("struct.get", 0xFB_02, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
+    STRUCT_GET_S("struct.get_s", 0xFB_03, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
+    STRUCT_GET_U("struct.get_u", 0xFB_04, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
+    STRUCT_SET("struct.set", 0xFB_05, listOf(STRUCT_TYPE_IDX, STRUCT_FIELD_IDX)),
 
-    ARRAY_NEW("array.new", 0xFB_1B, STRUCT_TYPE_IDX),
-    ARRAY_NEW_DEFAULT("array.new_default", 0xFB_1C, STRUCT_TYPE_IDX),
-    ARRAY_GET("array.get", 0xFB_13, listOf(STRUCT_TYPE_IDX)),
-    ARRAY_GET_S("array.get_s", 0xFB_14, listOf(STRUCT_TYPE_IDX)),
-    ARRAY_GET_U("array.get_u", 0xFB_15, listOf(STRUCT_TYPE_IDX)),
-    ARRAY_SET("array.set", 0xFB_16, listOf(STRUCT_TYPE_IDX)),
-    ARRAY_LEN("array.len", 0xFB_19),
-    ARRAY_COPY("array.copy", 0xFB_18, listOf(STRUCT_TYPE_IDX, STRUCT_TYPE_IDX)),
-    ARRAY_NEW_DATA("array.new_data", 0xFB_1D, listOf(STRUCT_TYPE_IDX, DATA_IDX)),
-    ARRAY_NEW_FIXED("array.new_fixed", 0xFB_1A, listOf(STRUCT_TYPE_IDX, CONST_I32)),
-// Not yet supported by Binaryen (supported as 0xFB_10)
-//    ARRAY_NEW_ELEM("array.new_elem", 0xFB_1F, listOf(STRUCT_TYPE_IDX, DATA_IDX)),
+    ARRAY_NEW("array.new", 0xFB_06, STRUCT_TYPE_IDX),
+    ARRAY_NEW_DEFAULT("array.new_default", 0xFB_07, STRUCT_TYPE_IDX),
+    ARRAY_GET("array.get", 0xFB_0B, listOf(STRUCT_TYPE_IDX)),
+    ARRAY_GET_S("array.get_s", 0xFB_0C, listOf(STRUCT_TYPE_IDX)),
+    ARRAY_GET_U("array.get_u", 0xFB_0D, listOf(STRUCT_TYPE_IDX)),
+    ARRAY_SET("array.set", 0xFB_0E, listOf(STRUCT_TYPE_IDX)),
+    ARRAY_LEN("array.len", 0xFB_0F),
+    // ARRAY_FILL,
+    ARRAY_COPY("array.copy", 0xFB_11, listOf(STRUCT_TYPE_IDX, STRUCT_TYPE_IDX)),
+    ARRAY_NEW_DATA("array.new_data", 0xFB_09, listOf(STRUCT_TYPE_IDX, DATA_IDX)),
+    ARRAY_NEW_FIXED("array.new_fixed", 0xFB_08, listOf(STRUCT_TYPE_IDX, CONST_I32)),
+//    ARRAY_NEW_ELEM("array.new_elem", 0xFB_0A, listOf(STRUCT_TYPE_IDX, ELEM_IDX)),
 
-    I31_NEW("i31.new", 0xFB_20),
-    I31_GET_S("i31.get_s", 0xFB_21),
-    I31_GET_U("i31.get_u", 0xFB_22),
+    I31_NEW("i31.new", 0xFB_1C),
+    I31_GET_S("i31.get_s", 0xFB_1D),
+    I31_GET_U("i31.get_u", 0xFB_1E),
 
-    REF_EQ("ref.eq", 0xD5),
-    REF_TEST("ref.test", 0xFB_40, HEAP_TYPE),
-    REF_TEST_NULL("ref.test null", 0xFB_48, HEAP_TYPE),
-    REF_CAST("ref.cast", 0xFB_41, HEAP_TYPE),
-    REF_CAST_NULL("ref.cast null", 0xFB_49, HEAP_TYPE),
+    REF_EQ("ref.eq", 0xD3),
+    REF_TEST("ref.test", 0xFB_14, HEAP_TYPE),
+    REF_TEST_NULL("ref.test null", 0xFB_15, HEAP_TYPE),
+    REF_CAST("ref.cast", 0xFB_16, HEAP_TYPE),
+    REF_CAST_NULL("ref.cast null", 0xFB_17, HEAP_TYPE),
 
-    BR_ON_CAST("br_on_cast", 0xFB_42, listOf(LABEL_IDX, HEAP_TYPE)),
-    BR_ON_CAST_FAIL("br_on_cast_fail", 0xFB_43, listOf(LABEL_IDX, HEAP_TYPE)),
+    BR_ON_CAST("br_on_cast", 0xFB_18, listOf(CONST_U8, LABEL_IDX, HEAP_TYPE, HEAP_TYPE)),
+    BR_ON_CAST_FAIL("br_on_cast_fail", 0xFB_19, listOf(CONST_U8, LABEL_IDX, HEAP_TYPE, HEAP_TYPE)),
 
-    EXTERN_INTERNALIZE("extern.internalize", 0xfb70), // externref -> anyref
-    EXTERN_EXTERNALIZE("extern.externalize", 0xfb71), // anyref -> externref
+    EXTERN_INTERNALIZE("extern.internalize", 0xFB_1A), // externref -> anyref
+    EXTERN_EXTERNALIZE("extern.externalize", 0xFB_1B), // anyref -> externref
+
+    // ============================================================
+    // Exception handling
+    // WIP: https://github.com/WebAssembly/exception-handling
+    TRY_TABLE("try_table", 0x1f, listOf(BLOCK_TYPE, CONST_I32, CATCH_VECTOR)),
+    THROW_REF("throw_ref", 0x0a, LABEL_IDX),
 
     // ============================================================
     PSEUDO_COMMENT_PREVIOUS_INSTR("<comment-single>", WASM_OP_PSEUDO_OPCODE),
     PSEUDO_COMMENT_GROUP_START("<comment-group-start>", WASM_OP_PSEUDO_OPCODE),
     PSEUDO_COMMENT_GROUP_END("<comment-group-end>", WASM_OP_PSEUDO_OPCODE),
+
+    // Macro commands needed to optionally emit code (needed to support IC for ITables)
+    // Macro IF emits `then` part only if immediate linked to 1 else emits ELSE part
+    // MACRO_IF
+    // instructions1...
+    // MACRO_ELSE
+    // instructions2...
+    // MACRO_END
+    MACRO_IF("<macro-if>", WASM_OP_PSEUDO_OPCODE, listOf(CONST_I32)),
+    MACRO_ELSE("<macro-else>", WASM_OP_PSEUDO_OPCODE),
+    MACRO_END_IF("<macro-end-if>", WASM_OP_PSEUDO_OPCODE),
+
+    // Macro table emits instructions spreaded with nullrefs, like:
+    // MACRO_TABLE TableSize
+    // MACRO_TABLE_INDEX 2
+    // instructions1...
+    // MACRO_TABLE_INDEX 4
+    // instructions2...
+    // MACRO_TABLE_END
+    // emits:
+    // nullref
+    // nullref
+    // instructions1
+    // nullref
+    // instructions2
+    MACRO_TABLE("<macro-table>", WASM_OP_PSEUDO_OPCODE, listOf(CONST_I32)),
+    MACRO_TABLE_INDEX("<macro-table-index>", WASM_OP_PSEUDO_OPCODE, listOf(CONST_I32)),
+    MACRO_TABLE_END("<macro-table-end>", WASM_OP_PSEUDO_OPCODE),
     ;
 
     constructor(mnemonic: String, opcode: Int, vararg immediates: WasmImmediateKind) : this(mnemonic, opcode, immediates.toList())

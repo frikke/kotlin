@@ -79,7 +79,7 @@ private fun StatementGenerator.generateContextReceiverForDelegatingConstructorCa
     return object : ExpressionValue(irReceiverType) {
         override fun load(): IrExpression = IrGetValueImpl(
             defaultStartOffset, defaultEndOffset, irReceiverType,
-            context.symbolTable.referenceValueParameter(receiverParameter)
+            context.symbolTable.descriptorExtension.referenceValueParameter(receiverParameter)
         )
     }
 }
@@ -114,7 +114,7 @@ private fun StatementGenerator.generateReceiver(defaultStartOffset: Int, default
                     else
                         IrGetValueImpl(
                             defaultStartOffset, defaultEndOffset, irReceiverType,
-                            context.symbolTable.referenceValueParameter(receiverClassDescriptor.thisAsReceiverParameter)
+                            context.symbolTable.descriptorExtension.referenceValueParameter(receiverClassDescriptor.thisAsReceiverParameter)
                         )
                 }
                 is ContextClassReceiver -> loadContextReceiver(receiver, defaultStartOffset, defaultEndOffset)
@@ -127,7 +127,7 @@ private fun StatementGenerator.generateReceiver(defaultStartOffset: Int, default
                 is ExtensionReceiver -> {
                     IrGetValueImpl(
                         defaultStartOffset, defaultStartOffset, irReceiverType,
-                        context.symbolTable.referenceValueParameter(receiver.declarationDescriptor.extensionReceiverParameter!!)
+                        context.symbolTable.descriptorExtension.referenceValueParameter(receiver.declarationDescriptor.extensionReceiverParameter!!)
                     )
                 }
                 is ContextReceiver -> {
@@ -135,7 +135,7 @@ private fun StatementGenerator.generateReceiver(defaultStartOffset: Int, default
                         .single { it.value == receiver.original }
                     IrGetValueImpl(
                         defaultStartOffset, defaultStartOffset, irReceiverType,
-                        context.symbolTable.referenceValueParameter(receiverParameter)
+                        context.symbolTable.descriptorExtension.referenceValueParameter(receiverParameter)
                     )
                 }
                 else ->
@@ -153,7 +153,7 @@ internal fun StatementGenerator.loadContextReceiver(
     val thisReceiver = IrGetValueImpl(
         defaultStartOffset, defaultEndOffset,
         thisAsReceiverParameter.type.toIrType(),
-        context.symbolTable.referenceValue(thisAsReceiverParameter)
+        context.symbolTable.descriptorExtension.referenceValue(thisAsReceiverParameter)
     )
 
     return IrGetFieldImpl(
@@ -176,19 +176,19 @@ internal fun StatementGenerator.generateSingletonReference(
         DescriptorUtils.isObject(descriptor) ->
             IrGetObjectValueImpl(
                 startOffset, endOffset, irType,
-                context.symbolTable.referenceClass(descriptor)
+                context.symbolTable.descriptorExtension.referenceClass(descriptor)
             )
         DescriptorUtils.isEnumEntry(descriptor) ->
             IrGetEnumValueImpl(
                 startOffset, endOffset, irType,
-                context.symbolTable.referenceEnumEntry(descriptor)
+                context.symbolTable.descriptorExtension.referenceEnumEntry(descriptor)
             )
         else -> {
             val companionObjectDescriptor = descriptor.companionObjectDescriptor
                 ?: throw java.lang.AssertionError("Class value without companion object: $descriptor")
             IrGetObjectValueImpl(
                 startOffset, endOffset, irType,
-                context.symbolTable.referenceClass(companionObjectDescriptor)
+                context.symbolTable.descriptorExtension.referenceClass(companionObjectDescriptor)
             )
         }
     }
@@ -287,7 +287,7 @@ private fun StatementGenerator.generateReceiverForCalleeImportedFromObject(
     return generateExpressionValue(objectType) {
         IrGetObjectValueImpl(
             startOffset, endOffset, objectType,
-            context.symbolTable.referenceClass(objectDescriptor)
+            context.symbolTable.descriptorExtension.referenceClass(objectDescriptor)
         )
     }
 }
@@ -411,7 +411,7 @@ private fun StatementGenerator.applySuspendConversionForValueArgumentIfRequired(
             // TODO add a bound receiver property to IrFunctionExpressionImpl?
             val irAdapterRef = IrFunctionReferenceImpl(
                 startOffset, endOffset, irAdapterRefType, irAdapterFunction.symbol, irAdapterFunction.typeParameters.size,
-                irAdapterFunction.valueParameters.size, null, IrStatementOrigin.SUSPEND_CONVERSION
+                null, IrStatementOrigin.SUSPEND_CONVERSION
             )
             statements.add(irAdapterFunction)
             statements.add(irAdapterRef.apply { extensionReceiver = expression })
@@ -427,45 +427,62 @@ private fun StatementGenerator.createFunctionForSuspendConversion(
     val irFunReturnType = funType.arguments.last().type.toIrType()
     val irSuspendFunReturnType = suspendFunType.arguments.last().type.toIrType()
 
-    val irAdapterFun = context.irFactory.createFunction(
-        startOffset, endOffset,
-        IrDeclarationOrigin.ADAPTER_FOR_SUSPEND_CONVERSION,
-        IrSimpleFunctionSymbolImpl(),
-        Name.identifier(scope.inventNameForTemporary("suspendConversion")),
-        DescriptorVisibilities.LOCAL, Modality.FINAL,
-        irSuspendFunReturnType,
-        isInline = false, isExternal = false, isTailrec = false,
+    val irAdapterFun = context.irFactory.createSimpleFunction(
+        startOffset = startOffset,
+        endOffset = endOffset,
+        origin = IrDeclarationOrigin.ADAPTER_FOR_SUSPEND_CONVERSION,
+        name = Name.identifier(scope.inventNameForTemporary("suspendConversion")),
+        visibility = DescriptorVisibilities.LOCAL,
+        isInline = false,
+        isExpect = false,
+        returnType = irSuspendFunReturnType,
+        modality = Modality.FINAL,
+        symbol = IrSimpleFunctionSymbolImpl(),
+        isTailrec = false,
         isSuspend = true,
-        isOperator = false, isInfix = false, isExpect = false, isFakeOverride = false
+        isOperator = false,
+        isInfix = false,
+        isExternal = false,
     )
 
     context.symbolTable.enterScope(irAdapterFun)
 
-    fun createValueParameter(name: String, index: Int, type: IrType): IrValueParameter =
+    fun createValueParameter(name: String, type: IrType): IrValueParameter =
         context.irFactory.createValueParameter(
-            startOffset, endOffset, IrDeclarationOrigin.ADAPTER_PARAMETER_FOR_SUSPEND_CONVERSION, IrValueParameterSymbolImpl(),
-            Name.identifier(name), index, type, varargElementType = null, isCrossinline = false, isNoinline = false,
-            isHidden = false, isAssignable = false
+            startOffset = startOffset,
+            endOffset = endOffset,
+            origin = IrDeclarationOrigin.ADAPTER_PARAMETER_FOR_SUSPEND_CONVERSION,
+            name = Name.identifier(name),
+            type = type,
+            isAssignable = false,
+            symbol = IrValueParameterSymbolImpl(),
+            varargElementType = null,
+            isCrossinline = false,
+            isNoinline = false,
+            isHidden = false,
         )
 
-    irAdapterFun.extensionReceiverParameter = createValueParameter("callee", -1, funType.toIrType())
+    irAdapterFun.extensionReceiverParameter = createValueParameter("\$callee", funType.toIrType())
     irAdapterFun.valueParameters = suspendFunType.arguments
         .take(suspendFunType.arguments.size - 1)
-        .mapIndexed { index, typeProjection -> createValueParameter("p$index", index, typeProjection.type.toIrType()) }
+        .mapIndexed { index, typeProjection -> createValueParameter("p$index", typeProjection.type.toIrType()) }
 
     val valueArgumentsCount = irAdapterFun.valueParameters.size
     val invokeDescriptor = funType.memberScope
         .getContributedFunctions(OperatorNameConventions.INVOKE, NoLookupLocation.FROM_BACKEND)
         .find { it.valueParameters.size == valueArgumentsCount }
         ?: error("No matching operator fun 'invoke' for suspend conversion: funType=$funType, suspendFunType=$suspendFunType")
-    val invokeSymbol = context.symbolTable.referenceSimpleFunction(invokeDescriptor.original)
+    val invokeSymbol = context.symbolTable.descriptorExtension.referenceSimpleFunction(invokeDescriptor.original)
 
     irAdapterFun.body = irBlockBody(startOffset, endOffset) {
-        val irAdapteeCall = IrCallImpl(
+        val irAdapteeCall = IrCallImplWithShape(
             startOffset, endOffset, irFunReturnType,
             invokeSymbol,
             typeArgumentsCount = 0,
-            valueArgumentsCount = valueArgumentsCount
+            valueArgumentsCount = valueArgumentsCount,
+            contextParameterCount = 0,
+            hasDispatchReceiver = true,
+            hasExtensionReceiver = false,
         )
 
         irAdapteeCall.dispatchReceiver = irGet(irAdapterFun.extensionReceiverParameter!!)
@@ -474,7 +491,7 @@ private fun StatementGenerator.createFunctionForSuspendConversion(
             .callToSubstitutedDescriptorMap[irAdapteeCall] = invokeDescriptor
 
         for (irAdapterParameter in irAdapterFun.valueParameters) {
-            irAdapteeCall.putValueArgument(irAdapterParameter.index, irGet(irAdapterParameter))
+            irAdapteeCall.putValueArgument(irAdapterParameter.indexInOldValueParameters, irGet(irAdapterParameter))
         }
         if (suspendFunType.arguments.last().type.isUnit()) {
             +irAdapteeCall
@@ -869,6 +886,6 @@ internal inline fun IrMemberAccessExpression<*>.putTypeArguments(
 ) {
     if (typeArguments == null) return
     for ((typeParameter, typeArgument) in typeArguments) {
-        putTypeArgument(typeParameter.index, toIrType(typeArgument))
+        this.typeArguments[typeParameter.index] = toIrType(typeArgument)
     }
 }

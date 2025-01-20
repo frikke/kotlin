@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.MultifileFacadeFileEntry
 import org.jetbrains.kotlin.backend.jvm.ir.*
+import org.jetbrains.kotlin.backend.jvm.localClassType
 import org.jetbrains.kotlin.backend.jvm.mapping.IrTypeMapper
 import org.jetbrains.kotlin.backend.jvm.mapping.mapClass
 import org.jetbrains.kotlin.backend.jvm.mapping.mapSupertype
@@ -16,7 +17,6 @@ import org.jetbrains.kotlin.builtins.StandardNames.FqNames
 import org.jetbrains.kotlin.builtins.jvm.JavaToKotlinClassMap
 import org.jetbrains.kotlin.codegen.AsmUtil
 import org.jetbrains.kotlin.codegen.FrameMapBase
-import org.jetbrains.kotlin.codegen.OwnerKind
 import org.jetbrains.kotlin.codegen.SourceInfo
 import org.jetbrains.kotlin.codegen.inline.ReifiedTypeParametersUsages
 import org.jetbrains.kotlin.codegen.inline.SourceMapper
@@ -38,7 +38,7 @@ import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmClassSignature
 import org.jetbrains.kotlin.utils.addIfNotNull
 import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.Type
-import kotlin.collections.set
+import org.jetbrains.org.objectweb.asm.tree.FieldInsnNode
 
 class IrFrameMap : FrameMapBase<IrSymbol>() {
     private val typeMap = mutableMapOf<IrSymbol, Type>()
@@ -70,7 +70,7 @@ fun IrFrameMap.leave(irDeclaration: IrSymbolOwner): Int {
 
 fun JvmBackendContext.getSourceMapper(declaration: IrClass): SourceMapper {
     val irFile = declaration.fileParentBeforeInline
-    val type = declaration.getAttributeOwnerBeforeInline()?.let { getLocalClassType(it) } ?: defaultTypeMapper.mapClass(declaration)
+    val type = declaration.getAttributeOwnerBeforeInline()?.localClassType ?: defaultTypeMapper.mapClass(declaration)
 
     val fileEntry = irFile.fileEntry
     // NOTE: apparently inliner requires the source range to cover the
@@ -134,8 +134,8 @@ private fun IrClass.innerAccessFlagsForModalityAndKind(): Int {
     return 0
 }
 
-fun IrDeclarationWithVisibility.getVisibilityAccessFlag(kind: OwnerKind? = null): Int {
-    specialCaseVisibility(kind)?.let {
+fun IrDeclarationWithVisibility.getVisibilityAccessFlag(): Int {
+    specialCaseVisibility()?.let {
         return it
     }
     return when (visibility) {
@@ -152,14 +152,10 @@ fun IrDeclarationWithVisibility.getVisibilityAccessFlag(kind: OwnerKind? = null)
     }
 }
 
-private fun IrDeclarationWithVisibility.specialCaseVisibility(kind: OwnerKind?): Int? {
+private fun IrDeclarationWithVisibility.specialCaseVisibility(): Int? {
     if (this is IrClass && DescriptorVisibilities.isPrivate(visibility) && isCompanion && hasInterfaceParent()) {
         // TODO: non-intrinsic
         return Opcodes.ACC_PUBLIC
-    }
-
-    if (this is IrConstructor && parentAsClass.isSingleFieldValueClass && kind === OwnerKind.IMPLEMENTATION) {
-        return Opcodes.ACC_PRIVATE
     }
 
     if (isInlineOnlyPrivateInBytecode()) {
@@ -349,3 +345,15 @@ val IrClass.reifiedTypeParameters: ReifiedTypeParametersUsages
 
         return tempReifiedTypeParametersUsages
     }
+
+internal fun generateExternalEntriesForEnumTypeIfNeeded(type: IrType, containingCodegen: ClassCodegen): FieldInsnNode? {
+    val irClass = type.getClass()
+    if (irClass == null || !irClass.isEnumClassWhichRequiresExternalEntries()) return null
+
+    val mappingsCache = containingCodegen.context.enumEntriesIntrinsicMappingsCache
+    val field = mappingsCache.getEnumEntriesIntrinsicMappings(containingCodegen.irClass, irClass)
+    return FieldInsnNode(
+        Opcodes.GETSTATIC, containingCodegen.typeMapper.mapClass(field.parentAsClass).internalName,
+        field.name.asString(), AsmTypes.ENUM_ENTRIES.descriptor
+    )
+}

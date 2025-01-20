@@ -22,11 +22,13 @@ private class Data(var x: Int = Random.nextInt(1000) + 1)
 private class ReferenceWrapper private constructor(
     data: Data
 ) {
+    @OptIn(kotlin.experimental.ExperimentalNativeApi::class)
     private val weak = WeakReference(data)
     private val strong = StableRef.create(data)
 
     val value: Int
         get() {
+            @OptIn(kotlin.experimental.ExperimentalNativeApi::class)
             val ref: Data? = weak.value
             if (ref == null) {
                 return 0
@@ -43,12 +45,18 @@ private class ReferenceWrapper private constructor(
     }
 }
 
-private fun ReferenceWrapper.stress() = (1..REPEAT_COUNT).sumOf {
-    this.value
+private fun ReferenceWrapper.stress(): Int {
+    var sum = 0
+    for (i in 1..REPEAT_COUNT) {
+        sum += this.value
+    }
+    return sum
 }
 
 @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
 open class WeakRefBenchmark {
+    private val weight = Array(BENCHMARK_SIZE) { ReferenceWrapper.create() }
+
     private val aliveRef = ReferenceWrapper.create()
     private val deadRef = ReferenceWrapper.create().apply {
         dispose()
@@ -73,5 +81,9 @@ open class WeakRefBenchmark {
         GC.schedule()
 
         Blackhole.consume(ref.stress())
+    }
+
+    fun clean() {
+        weight.forEach { it.dispose() }
     }
 }

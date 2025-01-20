@@ -1,4 +1,5 @@
-// !LANGUAGE: +IntrinsicConstEvaluation
+// RUN_PIPELINE_TILL: BACKEND
+// LANGUAGE: +IntrinsicConstEvaluation
 
 enum class EnumClass {
     OK, VALUE, anotherValue, WITH_UNDERSCORE

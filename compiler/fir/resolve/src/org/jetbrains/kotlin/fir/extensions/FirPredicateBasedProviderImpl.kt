@@ -23,7 +23,7 @@ import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.fir.symbols.lazyResolveToPhase
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
 import org.jetbrains.kotlin.fir.types.coneTypeSafe
-import org.jetbrains.kotlin.fir.types.toRegularClassSymbol
+import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 
 @NoMutableState
 class FirPredicateBasedProviderImpl(private val session: FirSession) : FirPredicateBasedProvider() {
@@ -215,12 +215,13 @@ fun FirRegularClassSymbol?.markedWithMetaAnnotationImpl(
     session: FirSession,
     metaAnnotations: Set<AnnotationFqn>,
     includeItself: Boolean,
-    visited: MutableSet<FirRegularClassSymbol>
+    visited: MutableSet<FirRegularClassSymbol>,
+    resolvedCompilerAnnotations: (FirRegularClassSymbol) -> List<FirAnnotation> = FirBasedSymbol<*>::resolvedCompilerAnnotationsWithClassIds,
 ): Boolean {
     if (this == null) return false
     if (!visited.add(this)) return false
     if (this.classId.asSingleFqName() in metaAnnotations) return includeItself
-    return this.resolvedCompilerAnnotationsWithClassIds
+    return resolvedCompilerAnnotations(this)
         .mapNotNull { it.annotationTypeRef.coneTypeSafe<ConeKotlinType>()?.toRegularClassSymbol(session) }
-        .any { it.markedWithMetaAnnotationImpl(session, metaAnnotations, includeItself = true, visited) }
+        .any { it.markedWithMetaAnnotationImpl(session, metaAnnotations, includeItself = true, visited, resolvedCompilerAnnotations) }
 }

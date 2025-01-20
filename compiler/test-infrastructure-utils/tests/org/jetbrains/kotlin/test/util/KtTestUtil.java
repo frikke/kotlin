@@ -24,6 +24,7 @@ import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.test.KtAssert;
 import org.jetbrains.kotlin.test.TargetBackend;
 import org.jetbrains.kotlin.test.TestMetadata;
+import org.jetbrains.kotlin.utils.ExceptionUtilsKt;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -84,7 +85,7 @@ public class KtTestUtil {
         return doLoadFile(new File(fullName));
     }
 
-    public static String doLoadFile(@NotNull File file) throws IOException {
+    public static String doLoadFile(@NotNull File file) {
         try {
             return FileUtil.loadFile(file, CharsetToolkit.UTF8, true);
         }
@@ -94,11 +95,16 @@ public class KtTestUtil {
              * This clarifies the exception by showing the full path.
              */
             String messageWithFullPath = file.getAbsolutePath() + " (No such file or directory)";
-            throw new IOException(
+            throw ExceptionUtilsKt.rethrow(
+                new IOException(
                     "Ensure you have your 'Working Directory' configured correctly as the root " +
                     "Kotlin project directory in your test configuration\n\t" +
                     messageWithFullPath,
-                    fileNotFoundException);
+                    fileNotFoundException
+                )
+            );
+        } catch (IOException e) {
+            throw ExceptionUtilsKt.rethrow(e);
         }
     }
 
@@ -159,6 +165,7 @@ public class KtTestUtil {
         return getJdkHome("JDK_17_0", "JDK_17");
     }
 
+    @NotNull
     public static File getJdk21Home() {
         return getJdkHome("JDK_21_0", "JDK_21");
     }

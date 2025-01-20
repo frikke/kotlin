@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -14,14 +14,10 @@ import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
-import org.jetbrains.kotlin.ir.symbols.IrSymbol
-import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
+import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.CustomKotlinLikeDumpStrategy.Modifiers
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
-import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.ir.visitors.IrVisitor
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.utils.Printer
 
@@ -67,13 +63,24 @@ data class KotlinLikeDumpOptions(
     val labelPrintingStrategy: LabelPrintingStrategy = LabelPrintingStrategy.NEVER,
     val printFakeOverridesStrategy: FakeOverridesStrategy = FakeOverridesStrategy.ALL,
     val bodyPrintingStrategy: BodyPrintingStrategy = BodyPrintingStrategy.PRINT_BODIES,
-    val printElseAsTrue: Boolean = false,
+    val inferElseBranches: Boolean = false,
     val printUnitReturnType: Boolean = false,
     val stableOrder: Boolean = false,
+    val normalizeNames: Boolean = false,
+    val printExpectDeclarations: Boolean = true,
+
+    /**
+     * Whether to print member declarations (default: true).
+     * - For [IrDeclarationContainer]s such as [IrFile] and [IrClass] these are the direct member declarations.
+     * - For [IrProperty] these are the backing [IrField] and accessors.
+     */
+    val printMemberDeclarations: Boolean = true,
+
+    /** When exactly the declaration visibility should be printed? */
+    val visibilityPrintingStrategy: VisibilityPrintingStrategy = VisibilityPrintingStrategy.PRINT_IF_NON_PUBLIC,
+
     /*
     TODO add more options:
-     always print visibility?
-     omit local visibility?
      always print modality
      print special names as is, and other strategies?
      print body for default accessors
@@ -102,6 +109,12 @@ enum class BodyPrintingStrategy {
     PRINT_BODIES,
 }
 
+enum class VisibilityPrintingStrategy {
+    ALWAYS,
+    PRINT_IF_NON_PUBLIC,
+    // TODO: omit local visibility?
+}
+
 /**
  * An interface for customizing the Kotlin-like dump.
  * It allows to e.g. skip certain declarations or annotations from the dump, or print arbitrary text before and after each IR element.
@@ -110,7 +123,7 @@ interface CustomKotlinLikeDumpStrategy {
 
     fun shouldPrintAnnotation(annotation: IrConstructorCall, container: IrAnnotationContainer): Boolean = true
 
-    fun willPrintElement(element: IrElement, container: IrDeclaration?, printer: Printer): Boolean = true
+    fun willPrintElement(element: IrElement, container: IrDeclaration?, printer: Printer, options: KotlinLikeDumpOptions): Boolean = true
 
     fun didPrintElement(element: IrElement, container: IrDeclaration?, printer: Printer) {}
 
@@ -167,16 +180,22 @@ interface CustomKotlinLikeDumpStrategy {
         * option?
     * unique ids for symbols, or SignatureID?
         * option?
-    * "normalize" names for tmps? ^^ Could unique ids help?
     * wrap/escape invalid identifiers with "`", like "$$delegate"
  */
 
-private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOptions) : IrElementVisitor<Unit, IrDeclaration?> {
+private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOptions) : IrVisitor<Unit, IrDeclaration?>() {
+    private val variableNameData = VariableNameData(options.normalizeNames)
+    private var currentWhenStmt: IrWhen? = null
+
     private val IrSymbol.safeName
         get() = if (!isBound) {
             "/* ERROR: unbound symbol $signature */"
         } else {
-            (owner as? IrDeclarationWithName)?.name?.toString() ?: "/* ERROR: unnamed symbol $signature */"
+            when (val owner = owner) {
+                is IrVariable -> owner.normalizedName(variableNameData)
+                is IrDeclarationWithName -> owner.name.toString()
+                else -> "/* ERROR: unnamed symbol $signature */"
+            }
         }
 
     private val IrFunctionSymbol.safeValueParameters
@@ -230,7 +249,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
     }
 
     private inline fun wrap(element: IrElement, container: IrDeclaration?, block: () -> Unit) {
-        if (!options.customDumpStrategy.willPrintElement(element, container, p)) return
+        if (!options.customDumpStrategy.willPrintElement(element, container, p, options)) return
         try {
             block()
         } finally {
@@ -261,13 +280,15 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         if (options.printFileName) p.println("// FILE: ${declaration.name}")
         if (options.printFilePath) p.println("// path: ${declaration.path}")
         declaration.printlnAnnotations("file")
-        val packageFqName = declaration.packageFragmentDescriptor.fqName
+        val packageFqName = declaration.packageFqName
         if (!packageFqName.isRoot) {
             p.println("package ${packageFqName.asString()}")
         }
         if (!p.isEmpty) p.printlnWithNoIndent()
 
-        declaration.declarations.ordered().forEach { it.accept(this, null) }
+        if (options.printMemberDeclarations) {
+            declaration.declarations.ordered().forEach { it.accept(this, null) }
+        }
 
         if (options.printRegionsPerFile) p.println("//endregion")
     }
@@ -277,6 +298,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         // TODO omit Companion name for companion objects?
         // TODO do we need to print info about `thisReceiver`?
         // TODO special support for objects?
+        if (declaration.isExpect && !options.printExpectDeclarations) return
 
         declaration.printlnAnnotations()
         p.printIndent()
@@ -323,11 +345,13 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         declaration.printWhereClauseIfNeededWithNoIndent()
 
         p.printlnWithNoIndent(" {")
-        p.pushIndent()
 
-        declaration.declarations.ordered().forEach { it.accept(this, declaration) }
+        if (options.printMemberDeclarations) {
+            p.pushIndent()
+            declaration.declarations.ordered().forEach { it.accept(this, declaration) }
+            p.popIndent()
+        }
 
-        p.popIndent()
         p.println("}")
         p.printlnWithNoIndent()
     }
@@ -393,7 +417,10 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
 
     private fun printVisibility(visibility: DescriptorVisibility) {
         // TODO don't print visibility if it's not changed in override?
-        p(visibility, DescriptorVisibilities.DEFAULT_VISIBILITY) { name }
+        val shouldBePrinted = visibility != DescriptorVisibilities.DEFAULT_VISIBILITY ||
+                options.visibilityPrintingStrategy == VisibilityPrintingStrategy.ALWAYS
+
+        p(condition = shouldBePrinted, visibility.name)
     }
 
     private fun printParameterModifiersWithNoIndent(
@@ -529,8 +556,6 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
                 p.printWithNoIndent("dynamic")
             is IrErrorType ->
                 p.printWithNoIndent("ErrorType")
-            else ->
-                p.printWithNoIndent("??? /* ERROR: unknown type: ${this.javaClass.simpleName} */")
         }
     }
 
@@ -600,14 +625,22 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
     }
 
     override fun visitSimpleFunction(declaration: IrSimpleFunction, data: IrDeclaration?) {
+        if (declaration.isExpect && !options.printExpectDeclarations) return
+        val keyword = buildString {
+            if (declaration.isStatic) {
+                append(customModifier("static"))
+                append(' ')
+            }
+            append("fun ")
+        }
         declaration.printSimpleFunction(
             data,
-            "fun ",
+            keyword,
             declaration.name.asString(),
             printTypeParametersAndExtensionReceiver = true,
-            printSignatureAndBody = true
+            printSignatureAndBody = true,
+            printExtraTrailingNewLine = true,
         )
-        p.printlnWithNoIndent()
     }
 
     override fun visitConstructor(declaration: IrConstructor, data: IrDeclaration?) = wrap(declaration, data) {
@@ -645,6 +678,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
             it.accept(this, declaration)
         }
         p.printlnWithNoIndent()
+        p.printlnWithNoIndent()
     }
 
     private fun IrSimpleFunction.printSimpleFunction(
@@ -652,7 +686,9 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         keyword: String,
         name: String,
         printTypeParametersAndExtensionReceiver: Boolean,
-        printSignatureAndBody: Boolean
+        printSignatureAndBody: Boolean,
+        printExtraTrailingNewLine: Boolean,
+        finishWithNewLine: Boolean = true
     ) {
         /* TODO
             correspondingProperty
@@ -716,8 +752,13 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
             }
 
             if (!printSignatureAndBody || body == null || options.bodyPrintingStrategy != BodyPrintingStrategy.PRINT_BODIES) {
-                p.printlnWithNoIndent()
+                if (finishWithNewLine) {
+                    p.printlnWithNoIndent()
+                }
             }
+
+            if (printExtraTrailingNewLine)
+                p.printlnWithNoIndent()
         }
     }
 
@@ -804,6 +845,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         // TODO we can omit type for set parameter
 
         p(declaration.isConst, "const")
+        p(declaration.getter?.isStatic == true, customModifier("static"))
         p.printWithNoIndent(if (declaration.isVar) "var" else "val")
         p.printWithNoIndent(" ")
 
@@ -839,41 +881,45 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         }
 
         p.printlnWithNoIndent()
-        p.pushIndent()
 
-        // TODO share code with visitField?
-        // it's not valid kotlin
-        declaration.backingField?.initializer?.let {
-            if (options.bodyPrintingStrategy != BodyPrintingStrategy.NO_BODIES) {
-                // If the strategy is PRINT_ONLY_LOCAL_CLASSES_AND_FUNCTIONS, the local declarations in the backing field initializer
-                // will be printed under 'field'.
-                p.print("field")
+        if (options.printMemberDeclarations) {
+            p.pushIndent()
+
+            // TODO share code with visitField?
+            // it's not valid kotlin
+            declaration.backingField?.initializer?.let {
+                if (options.bodyPrintingStrategy != BodyPrintingStrategy.NO_BODIES) {
+                    // If the strategy is PRINT_ONLY_LOCAL_CLASSES_AND_FUNCTIONS, the local declarations in the backing field initializer
+                    // will be printed under 'field'.
+                    p.print("field")
+                }
+                if (options.bodyPrintingStrategy == BodyPrintingStrategy.PRINT_BODIES) {
+                    p.printWithNoIndent(" = ")
+                }
+                it.accept(this, declaration)
+                if (options.bodyPrintingStrategy != BodyPrintingStrategy.NO_BODIES) {
+                    p.printlnWithNoIndent()
+                }
             }
-            if (options.bodyPrintingStrategy == BodyPrintingStrategy.PRINT_BODIES) {
-                p.printWithNoIndent(" = ")
-            }
-            it.accept(this, declaration)
-            if (options.bodyPrintingStrategy != BodyPrintingStrategy.NO_BODIES) {
-                p.printlnWithNoIndent()
-            }
+
+            // TODO generate better name for set parameter `<set-?>`?
+            declaration.getter?.printAccessor("get", declaration)
+            declaration.setter?.printAccessor("set", declaration)
+
+            p.popIndent()
+            p.printlnWithNoIndent()
         }
-
-        // TODO generate better name for set parameter `<set-?>`?
-        declaration.getter?.printAccessor("get", declaration)
-        declaration.setter?.printAccessor("set", declaration)
-
-        p.popIndent()
-        p.printlnWithNoIndent()
     }
 
     private fun IrSimpleFunction.printAccessor(s: String, property: IrDeclaration) {
-        val isDefaultAccessor = origin != IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR
+        val isCustomAccessor = origin != IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR
         printSimpleFunction(
             property,
             keyword = "",
             name = s,
             printTypeParametersAndExtensionReceiver = false,
-            printSignatureAndBody = isDefaultAccessor,
+            printSignatureAndBody = isCustomAccessor,
+            printExtraTrailingNewLine = false,
         )
     }
 
@@ -901,7 +947,13 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
             p.printWithNoIndent(" ")
         }
 
-        p.printWithNoIndent(if (declaration.isFinal) "val " else "var ")
+        p.printWithNoIndent(
+            when {
+                declaration.correspondingPropertySymbol != null -> "field "
+                declaration.isFinal -> "val "
+                else -> "var "
+            }
+        )
         p.printWithNoIndent(declaration.name.asString() + ": ")
         declaration.type.printTypeWithNoIndent()
 
@@ -923,7 +975,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
 
         p(declaration.isLateinit, "lateinit")
         p(declaration.isConst, "const")
-        declaration.run { printVariable(isVar, name, type) }
+        declaration.run { printVariable(isVar, normalizedName(variableNameData), type) }
 
         declaration.initializer?.let {
             p.printWithNoIndent(" = ")
@@ -936,7 +988,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         p.printIndent()
 
         // TODO think about better rendering
-        declaration.run { printVariable(isVar, name, type) }
+        declaration.run { printVariable(isVar, name.asString(), type) }
 
         p.printlnWithNoIndent()
         p.pushIndent()
@@ -951,10 +1003,10 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         p.printlnWithNoIndent()
     }
 
-    private fun printVariable(isVar: Boolean, name: Name, type: IrType) {
+    private fun printVariable(isVar: Boolean, name: String, type: IrType) {
         p.printWithNoIndent(if (isVar) "var" else "val")
         p.printWithNoIndent(" ")
-        p.printWithNoIndent(name.asString())
+        p.printWithNoIndent(name)
         p.printWithNoIndent(": ")
         type.printTypeWithNoIndent()
     }
@@ -964,7 +1016,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
             BodyPrintingStrategy.NO_BODIES -> {}
             BodyPrintingStrategy.PRINT_ONLY_LOCAL_CLASSES_AND_FUNCTIONS -> body.acceptChildren(
                 // Don't print bodies, but print local classes and functions declared in those bodies
-                object : IrElementVisitor<Unit, IrDeclaration?> {
+                object : IrVisitor<Unit, IrDeclaration?>() {
                     override fun visitElement(element: IrElement, data: IrDeclaration?) {
                         element.acceptChildren(this, data)
                     }
@@ -1010,7 +1062,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
 
     override fun visitBlock(expression: IrBlock, data: IrDeclaration?) = wrap(expression, data) {
         // TODO special blocks using `origin`
-        // TODO inlineFunctionSymbol for IrReturnableBlock
+        // TODO inlinedFunctionSymbol for IrReturnableBlock
         // TODO no tests for IrReturnableBlock?
         val kind = when (expression) {
             is IrReturnableBlock -> "RETURNABLE BLOCK"
@@ -1120,16 +1172,16 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
             return true
         }
 
-        if (omitAllBracketsIfNoArguments && typeArgumentsCount == 0 && (valueArgumentsCount == 0 || allValueArgumentsAreNull())) return
+        if (omitAllBracketsIfNoArguments && typeArguments.isEmpty() && (valueArgumentsCount == 0 || allValueArgumentsAreNull())) return
 
         if (wrapArguments) p.printWithNoIndent("/*")
 
-        if (typeArgumentsCount > 0) {
+        if (typeArguments.isNotEmpty()) {
             p.printWithNoIndent("<")
-            repeat(typeArgumentsCount) {
+            repeat(typeArguments.size) {
                 p(it > 0, ",")
                 // TODO flag to print type param name?
-                getTypeArgument(it)?.printTypeWithNoIndent() ?: p.printWithNoIndent(commentBlock("null"))
+                this.typeArguments[it]?.printTypeWithNoIndent() ?: p.printWithNoIndent(commentBlock("null"))
             }
             p.printWithNoIndent(">")
         }
@@ -1218,8 +1270,55 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
             "fun ",
             expression.function.name.asString(),
             printTypeParametersAndExtensionReceiver = true,
-            printSignatureAndBody = true
+            printSignatureAndBody = true,
+            printExtraTrailingNewLine = false,
         )
+    }
+
+    private fun IrSimpleFunction.dumpForBoundReference(data: IrDeclaration?) = printSimpleFunction(
+        data = data,
+        keyword = "fun",
+        name = "",
+        printTypeParametersAndExtensionReceiver = true,
+        printSignatureAndBody = true,
+        printExtraTrailingNewLine = false,
+        finishWithNewLine = false
+    )
+
+    override fun visitRichFunctionReference(expression: IrRichFunctionReference, data: IrDeclaration?) = wrap(expression, data) {
+        p.printWithNoIndent(expression.type.dumpKotlinLike())
+        p.printlnWithNoIndent("(")
+        p.pushIndent()
+        p.print("/* bound = */ [")
+        expression.boundValues.forEachIndexed { index, value ->
+            if (index != 0) p.printWithNoIndent(",")
+            value.accept(this, data)
+        }
+        p.printlnWithNoIndent("],")
+        p.print("/* invoke = */")
+        expression.invokeFunction.dumpForBoundReference(data)
+        p.popIndent()
+        p.println(")")
+    }
+
+    override fun visitRichPropertyReference(expression: IrRichPropertyReference, data: IrDeclaration?) = wrap(expression, data) {
+        p.printWithNoIndent(expression.type.dumpKotlinLike())
+        p.printlnWithNoIndent("(")
+        p.pushIndent()
+        p.print("/* bound = */ [")
+        expression.boundValues.forEachIndexed { index, value ->
+            if (index != 0) p.printWithNoIndent(",")
+            value.accept(this, data)
+        }
+        p.printlnWithNoIndent("],")
+        p.print("/* getter = */")
+        expression.getterFunction.dumpForBoundReference(data)
+        expression.setterFunction?.let {
+            p.print("/* setter = */")
+            it.dumpForBoundReference(data)
+        }
+        p.popIndent()
+        p.println(")")
     }
 
     override fun visitGetField(expression: IrGetField, data: IrDeclaration?) = wrap(expression, data) {
@@ -1300,7 +1399,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         }
     }
 
-    override fun visitConst(expression: IrConst<*>, data: IrDeclaration?) = wrap(expression, data) {
+    override fun visitConst(expression: IrConst, data: IrDeclaration?) = wrap(expression, data) {
         val kind = expression.kind
 
         val (prefix, postfix) = when (kind) {
@@ -1373,7 +1472,10 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
         p.printlnWithNoIndent("when {")
         p.pushIndent()
 
+        val savedWhenStmt = currentWhenStmt
+        currentWhenStmt = expression
         expression.branches.forEach { it.accept(this, data) }
+        currentWhenStmt = savedWhenStmt
 
         p.popIndent()
         p.print("}")
@@ -1381,7 +1483,14 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
 
     override fun visitBranch(branch: IrBranch, data: IrDeclaration?) = wrap(branch, data) {
         p.printIndent()
-        branch.condition.accept(this, data)
+        branch.condition.let {
+            // Deserialized IR contains no IrElseBranch nodes. They are represented with IrBranch(condition=true)
+            // To match Kotlin-like IR dump before serialization, the following logic tried to infer IR node which was before serialization
+            if (options.inferElseBranches && it is IrConst && it.value == true && branch == currentWhenStmt?.branches?.last())
+                p.printWithNoIndent("else")
+            else
+                it.accept(this, data)
+        }
         p.printWithNoIndent(" -> ")
         branch.result.accept(this, data)
         p.println()
@@ -1389,8 +1498,8 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
 
     override fun visitElseBranch(branch: IrElseBranch, data: IrDeclaration?) = wrap(branch, data) {
         p.printIndent()
-        if ((branch.condition as? IrConst<*>)?.value == true) {
-            p.printWithNoIndent(if (options.printElseAsTrue) "true" else "else")
+        if ((branch.condition as? IrConst)?.value == true) {
+            p.printWithNoIndent("else")
         } else {
             p.printWithNoIndent("/* else */ ")
             branch.condition.accept(this, data)
@@ -1470,8 +1579,7 @@ private class KotlinLikeDumper(val p: Printer, val options: KotlinLikeDumpOption
     }
 
     override fun visitClassReference(expression: IrClassReference, data: IrDeclaration?) = wrap(expression, data) {
-        // TODO use classType
-        p.printWithNoIndent(expression.symbol.safeName)
+        expression.classType.printTypeWithNoIndent()
         p.printWithNoIndent("::class")
     }
 

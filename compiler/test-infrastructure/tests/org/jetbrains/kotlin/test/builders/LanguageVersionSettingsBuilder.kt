@@ -10,8 +10,8 @@ import org.jetbrains.kotlin.test.TargetBackend
 import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives
 import org.jetbrains.kotlin.test.directives.model.RegisteredDirectives
 import org.jetbrains.kotlin.test.directives.model.singleOrZeroValue
-import org.jetbrains.kotlin.test.services.DefaultsDsl
 import org.jetbrains.kotlin.test.services.AbstractEnvironmentConfigurator
+import org.jetbrains.kotlin.test.services.DefaultsDsl
 import org.jetbrains.kotlin.test.util.LANGUAGE_FEATURE_PATTERN
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
 
@@ -62,7 +62,9 @@ class LanguageVersionSettingsBuilder {
             val languageVersion = maxOf(LanguageVersion.LATEST_STABLE, LanguageVersion.fromVersionString(apiVersion.versionString)!!)
             this.languageVersion = languageVersion
         }
-        val languageVersionDirective = directives.singleOrZeroValue(LanguageSettingsDirectives.LANGUAGE_VERSION)
+        // We can't call singleOrZero here, as the runner can set one value in `defaultDirectives`, and one can be set directly
+        //   in the test. So in such a situation, we need to take the value from the test
+        val languageVersionDirective = directives[LanguageSettingsDirectives.LANGUAGE_VERSION].firstOrNull()
         val allowDangerousLanguageVersionTesting =
             directives.contains(LanguageSettingsDirectives.ALLOW_DANGEROUS_LANGUAGE_VERSION_TESTING)
         if (languageVersionDirective != null) {
@@ -73,7 +75,7 @@ class LanguageVersionSettingsBuilder {
                         which will become obsolete at some point and the test won't check things like feature
                         intersection with newer releases.
 
-                        For language feature testing, use `// !LANGUAGE: [+-]FeatureName` directive instead,
+                        For language feature testing, use `// LANGUAGE: [+-]FeatureName` directive instead,
                         where FeatureName is an entry of the enum `LanguageFeature`
 
                         If you are really sure you need to pin language versions, use the LANGUAGE_VERSION
@@ -93,16 +95,20 @@ class LanguageVersionSettingsBuilder {
             }
         }
         when {
-            useK2 && this.languageVersion < LanguageVersion.KOTLIN_2_0 -> this.languageVersion = LanguageVersion.KOTLIN_2_0
+            useK2 && this.languageVersion < LanguageVersion.KOTLIN_2_0 -> this.languageVersion = LanguageVersion.LATEST_STABLE
             !useK2 && this.languageVersion > LanguageVersion.KOTLIN_1_9 -> this.languageVersion = LanguageVersion.KOTLIN_1_9
         }
 
         val analysisFlags = listOfNotNull(
             analysisFlag(AnalysisFlags.optIn, directives[LanguageSettingsDirectives.OPT_IN].takeIf { it.isNotEmpty() }),
+            analysisFlag(AnalysisFlags.globallySuppressedDiagnostics, directives[LanguageSettingsDirectives.SUPPRESS_WARNINGS].takeIf { it.isNotEmpty() }),
             analysisFlag(AnalysisFlags.ignoreDataFlowInAssert, trueOrNull(LanguageSettingsDirectives.IGNORE_DATA_FLOW_IN_ASSERT in directives)),
-            analysisFlag(AnalysisFlags.allowResultReturnType, trueOrNull(LanguageSettingsDirectives.ALLOW_RESULT_RETURN_TYPE in directives)),
             analysisFlag(AnalysisFlags.explicitApiMode, directives.singleOrZeroValue(LanguageSettingsDirectives.EXPLICIT_API_MODE)),
+            analysisFlag(AnalysisFlags.explicitReturnTypes, directives.singleOrZeroValue(LanguageSettingsDirectives.EXPLICIT_RETURN_TYPES_MODE)),
             analysisFlag(AnalysisFlags.allowKotlinPackage, trueOrNull(LanguageSettingsDirectives.ALLOW_KOTLIN_PACKAGE in directives)),
+            analysisFlag(AnalysisFlags.muteExpectActualClassesWarning, trueOrNull(LanguageSettingsDirectives.ENABLE_EXPECT_ACTUAL_CLASSES_WARNING in directives) != true),
+            analysisFlag(AnalysisFlags.dontWarnOnErrorSuppression, trueOrNull(LanguageSettingsDirectives.DONT_WARN_ON_ERROR_SUPPRESSION in directives)),
+            analysisFlag(AnalysisFlags.stdlibCompilation, trueOrNull(LanguageSettingsDirectives.STDLIB_COMPILATION in directives)),
 
             analysisFlag(JvmAnalysisFlags.jvmDefaultMode, directives.singleOrZeroValue(LanguageSettingsDirectives.JVM_DEFAULT_MODE)),
             analysisFlag(JvmAnalysisFlags.inheritMultifileParts, trueOrNull(LanguageSettingsDirectives.INHERIT_MULTIFILE_PARTS in directives)),
@@ -111,8 +117,6 @@ class LanguageVersionSettingsBuilder {
             analysisFlag(JvmAnalysisFlags.useIR, targetBackend?.isIR != false),
 
             analysisFlag(AnalysisFlags.explicitApiVersion, trueOrNull(apiVersion != null)),
-
-            analysisFlag(JvmAnalysisFlags.generatePropertyAnnotationsMethods, trueOrNull(LanguageSettingsDirectives.GENERATE_PROPERTY_ANNOTATIONS_METHODS in directives)),
         )
 
         analysisFlags.forEach { withFlag(it.first, it.second) }
@@ -123,8 +127,12 @@ class LanguageVersionSettingsBuilder {
             }
         }
 
-        if (targetBackend?.isIR == true) {
+        if (targetBackend == TargetBackend.JS_IR || targetBackend == TargetBackend.JS_IR_ES6) {
             specificFeatures[LanguageFeature.JsAllowValueClassesInExternals] = LanguageFeature.State.ENABLED
+        }
+
+        if (targetBackend == TargetBackend.WASM) {
+            specificFeatures[LanguageFeature.JsAllowImplementingFunctionInterface] = LanguageFeature.State.ENABLED
         }
 
         directives[LanguageSettingsDirectives.LANGUAGE].forEach { parseLanguageFeature(it) }
@@ -134,7 +142,7 @@ class LanguageVersionSettingsBuilder {
         val matcher = LANGUAGE_FEATURE_PATTERN.matcher(featureString)
         if (!matcher.find()) {
             error(
-                """Wrong syntax in the '// !${LanguageSettingsDirectives.LANGUAGE.name}: ...' directive:
+                """Wrong syntax in the '// ${LanguageSettingsDirectives.LANGUAGE.name}: ...' directive:
                    found: '$featureString'
                    Must be '((+|-|warn:)LanguageFeatureName)+'
                    where '+' means 'enable', '-' means 'disable', 'warn:' means 'enable with warning'

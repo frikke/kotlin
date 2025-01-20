@@ -1,4 +1,5 @@
-// !LANGUAGE: -RefineTypeCheckingOnAssignmentsToJavaFields
+// RUN_PIPELINE_TILL: FRONTEND
+// LANGUAGE: -RefineTypeCheckingOnAssignmentsToJavaFields
 // WITH_STDLIB
 
 // FILE: Foo.java
@@ -44,7 +45,7 @@ public class Bar<T> {
 
 fun takeStarBar(x: Bar<*>) {
     x.value = <!ASSIGNMENT_TYPE_MISMATCH!>"test"<!>
-    x.value <!UNRESOLVED_REFERENCE!>+=<!> "test"
+    x.value <!NONE_APPLICABLE!>+=<!> "test"
 }
 
 fun main2() {
@@ -58,7 +59,7 @@ fun main2() {
 
 fun takeStarFoo2(x: Foo2<*>) {
     x.value = <!ASSIGNMENT_TYPE_MISMATCH!>"test"<!>
-    x.value <!UNRESOLVED_REFERENCE!>+=<!> "test"
+    x.value <!NONE_APPLICABLE!>+=<!> "test"
 }
 
 fun main3() {
@@ -75,7 +76,7 @@ public class Bar2<T> {
 
 fun takeStarBar2(x: Bar2<*>) {
     x.value = <!ASSIGNMENT_TYPE_MISMATCH!>"test"<!>
-    x.value <!UNRESOLVED_REFERENCE!>+=<!> "test"
+    x.value <!NONE_APPLICABLE!>+=<!> "test"
 }
 
 fun main4() {
@@ -89,7 +90,7 @@ fun main4() {
 
 fun takeStarFoo3(x: Foo3<*>) {
     x.value = <!ASSIGNMENT_TYPE_MISMATCH!>"test"<!>
-    x.value <!UNRESOLVED_REFERENCE!>+=<!> "test"
+    x.value <!NONE_APPLICABLE!>+=<!> "test"
 }
 
 fun main5() {
@@ -107,7 +108,7 @@ class Bar3<T> {
 
 fun takeStarBar3(x: Bar3<*>) {
     x.value = <!ASSIGNMENT_TYPE_MISMATCH!>"test"<!>
-    x.value <!UNRESOLVED_REFERENCE!>+=<!> "test"
+    x.value <!NONE_APPLICABLE!>+=<!> "test"
 }
 
 fun main6() {

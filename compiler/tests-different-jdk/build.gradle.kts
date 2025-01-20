@@ -4,13 +4,18 @@ plugins {
 }
 
 dependencies {
-    testApi(projectTests(":compiler"))
-    testApi(projectTests(":compiler:test-infrastructure"))
-    testApi(projectTests(":compiler:test-infrastructure-utils"))
-    testApi(projectTests(":compiler:tests-compiler-utils"))
-    testApi(projectTests(":compiler:tests-common-new"))
+    testImplementation(projectTests(":compiler:tests-common-new"))
+    testImplementation(projectTests(":compiler:fir:fir2ir"))
+    testRuntimeOnly(projectTests(":compiler"))
 
-    testApiJUnit5(vintageEngine = true, runner = true, suiteApi = true)
+    testImplementation(libs.junit4)
+    testImplementation(kotlinStdlib())
+    testImplementation(project(":libraries:tools:abi-comparator"))
+
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.platform.suite)
+    testRuntimeOnly(libs.junit.jupiter.engine)
+    testRuntimeOnly(libs.junit.vintage.engine)
 
     testImplementation(intellijCore())
 }
@@ -28,10 +33,12 @@ fun Project.codegenTest(
     body: Test.() -> Unit = {}
 ): TaskProvider<Test> = projectTest(
     taskName = "codegenTarget${targetInTestClass}Jvm${jvm}Test",
-    jUnitMode = JUnitMode.JUnit5
+    jUnitMode = JUnitMode.JUnit5,
+    maxMetaspaceSizeMb = 1024
 ) {
     dependsOn(":dist")
     workingDir = rootDir
+    useJUnitPlatform()
 
     val testName = "JvmTarget${targetInTestClass}OnJvm${jvm}"
     filter.includeTestsMatching("org.jetbrains.kotlin.codegen.jdk.$testName")

@@ -11,6 +11,7 @@ import kotlin.native.concurrent.*
 import kotlin.native.internal.*
 import kotlinx.cinterop.NativePtr
 import kotlinx.cinterop.*
+import kotlin.native.internal.escapeAnalysis.Escapes
 
 /**
  * The marker interface for objects that have a cleanup action associated with them.
@@ -92,15 +93,12 @@ public fun <T> createCleaner(resource: T, cleanupAction: (resource: T) -> Unit):
         createCleanerImpl(resource, cleanupAction)
 
 @ExperimentalNativeApi
-@OptIn(FreezingIsDeprecated::class, ObsoleteWorkersApi::class)
+@OptIn(ObsoleteWorkersApi::class)
 internal fun <T> createCleanerImpl(resource: T, cleanupAction: (T) -> Unit): Cleaner {
-    if (!resource.isShareable())
-        throw IllegalArgumentException("$resource must be shareable")
-
     val clean = {
         // TODO: Maybe if this fails with exception, it should be (optionally) reported.
         cleanupAction(resource)
-    }.freeze()
+    }
 
     // Make sure there's an extra reference to clean, so it's definitely alive when CleanerImpl is destroyed.
     val cleanPtr = createStablePointer(clean)
@@ -108,10 +106,10 @@ internal fun <T> createCleanerImpl(resource: T, cleanupAction: (T) -> Unit): Cle
     // Make sure cleaner worker is initialized.
     getCleanerWorker()
 
-    return CleanerImpl(cleanPtr).freeze()
+    return CleanerImpl(cleanPtr)
 }
 
-@Suppress("DEPRECATION")
+@Suppress("DEPRECATION_ERROR")
 @ExperimentalNativeApi
 @NoReorderFields
 @ExportTypeInfo("theCleanerImplTypeInfo")
@@ -122,5 +120,6 @@ private class CleanerImpl(
 
 
 @GCUnsafeCall("CreateStablePointer")
+@Escapes(0b01) // obj escapes into stable ref.
 external private fun createStablePointer(obj: Any): NativePtr
 

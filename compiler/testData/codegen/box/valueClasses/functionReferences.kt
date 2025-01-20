@@ -1,8 +1,7 @@
-// CHECK_BYTECODE_LISTING
+// CHECK_BYTECODE_LISTING___ // Temporary turn off the directive, revert after the next bootstrapt advance
 // WITH_STDLIB
 // WITH_COROUTINES
 // TARGET_BACKEND: JVM_IR
-// IGNORE_INLINER: IR
 // LANGUAGE: +ValueClasses
 // FIR_IDENTICAL
 

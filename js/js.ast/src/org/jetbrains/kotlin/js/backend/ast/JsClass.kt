@@ -5,19 +5,13 @@
 
 package org.jetbrains.kotlin.js.backend.ast
 
-import org.jetbrains.kotlin.js.common.Symbol
-
 class JsClass(
     private var name: JsName? = null,
-    var baseClass: JsNameRef? = null,
+    var baseClass: JsExpression? = null,
     var constructor: JsFunction? = null,
     val members: MutableList<JsFunction> = mutableListOf()
 ) : JsLiteral(), HasName {
     override fun getName(): JsName? {
-        return name
-    }
-
-    override fun getSymbol(): Symbol? {
         return name
     }
 

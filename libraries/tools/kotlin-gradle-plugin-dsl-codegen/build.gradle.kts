@@ -15,7 +15,7 @@ val generateMppTargetContainerWithPresets by generator(
     sourceSets["main"]
 ) {
     group = generateGroupName
-    setOutputSourceRoot()
+    setKGPSourceRootPaths()
 }
 
 val generateAbstractBinaryContainer by generator(
@@ -23,7 +23,7 @@ val generateAbstractBinaryContainer by generator(
     sourceSets["main"]
 ) {
     group = generateGroupName
-    setOutputSourceRoot()
+    setKGPSourceRootPaths()
 }
 
 val generateAbstractKotlinArtifactsExtensionImplementation by generator(
@@ -31,20 +31,26 @@ val generateAbstractKotlinArtifactsExtensionImplementation by generator(
     sourceSets["main"]
 ) {
     group = generateGroupName
-    setOutputSourceRoot()
+    setKGPSourceRootPaths()
 }
 
-val generateKpmNativeVariants by generator(
-    "org.jetbrains.kotlin.generators.gradle.dsl.KpmNativeVariantCodegenKt",
+val generateMppSourceSetConventions by generator(
+    "org.jetbrains.kotlin.generators.gradle.dsl.MppSourceSetConventionsCodegenKt",
     sourceSets["main"]
 ) {
     group = generateGroupName
-    setOutputSourceRoot()
+    setKGPSourceRootPaths()
 }
 
-fun JavaExec.setOutputSourceRoot() {
+
+fun JavaExec.setKGPSourceRootPaths() {
     systemProperty(
-        "org.jetbrains.kotlin.generators.gradle.dsl.outputSourceRoot",
+        "org.jetbrains.kotlin.generators.gradle.dsl.kotlinGradlePluginSourceRoot",
         project(":kotlin-gradle-plugin").projectDir.resolve("src/common/kotlin").absolutePath
+    )
+
+    systemProperty(
+        "org.jetbrains.kotlin.generators.gradle.dsl.kotlinGradlePluginApiSourceRoot",
+        project(":kotlin-gradle-plugin-api").projectDir.resolve("src/common/kotlin").absolutePath
     )
 }

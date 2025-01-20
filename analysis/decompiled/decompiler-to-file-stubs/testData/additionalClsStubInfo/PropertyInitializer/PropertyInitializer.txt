@@ -2,9 +2,9 @@ PsiJetFileStubImpl[package=test]
 KotlinStub$PACKAGE_DIRECTIVE
   KotlinStub$REFERENCE_EXPRESSION[referencedName=test]
 KotlinStub$IMPORT_LIST
-KotlinStub$CLASS[classId=test/PropertyInitializer, fqName=test.PropertyInitializer, isEnumEntry=false, isInterface=false, isLocal=false, isTopLevel=true, name=PropertyInitializer, superNames=[]]
+KotlinStub$CLASS[classId=test/PropertyInitializer, fqName=test.PropertyInitializer, isClsStubCompiledToJvmDefaultImplementation=false, isEnumEntry=false, isInterface=false, isLocal=false, isTopLevel=true, name=PropertyInitializer, superNames=[]]
   KotlinStub$MODIFIER_LIST[public final]
-  KotlinStub$PRIMARY_CONSTRUCTOR[fqName=null, hasBody=false, isDelegatedCallToThis=false, isExtension=false, isTopLevel=false, name=PropertyInitializer]
+  KotlinStub$PRIMARY_CONSTRUCTOR[fqName=null, hasBody=false, isDelegatedCallToThis=false, isExplicitDelegationCall=false, isExtension=false, isTopLevel=false, name=PropertyInitializer]
     KotlinStub$MODIFIER_LIST[public]
     KotlinStub$VALUE_PARAMETER_LIST
   KotlinStub$CLASS_BODY
@@ -146,9 +146,9 @@ KotlinStub$CLASS[classId=test/PropertyInitializer, fqName=test.PropertyInitializ
                 KotlinStub$REFERENCE_EXPRESSION[referencedName=kotlin]
               KotlinStub$REFERENCE_EXPRESSION[referencedName=String]
           KotlinStub$REFERENCE_EXPRESSION[referencedName=COMPILED_CODE]
-    KotlinStub$CLASS[classId=test/PropertyInitializer.Anno, fqName=test.PropertyInitializer.Anno, isEnumEntry=false, isInterface=false, isLocal=false, isTopLevel=false, name=Anno, superNames=[Annotation]]
+    KotlinStub$CLASS[classId=test/PropertyInitializer.Anno, fqName=test.PropertyInitializer.Anno, isClsStubCompiledToJvmDefaultImplementation=false, isEnumEntry=false, isInterface=false, isLocal=false, isTopLevel=false, name=Anno, superNames=[Annotation]]
       KotlinStub$MODIFIER_LIST[public final annotation]
-      KotlinStub$PRIMARY_CONSTRUCTOR[fqName=null, hasBody=false, isDelegatedCallToThis=false, isExtension=false, isTopLevel=false, name=Anno]
+      KotlinStub$PRIMARY_CONSTRUCTOR[fqName=null, hasBody=false, isDelegatedCallToThis=false, isExplicitDelegationCall=false, isExtension=false, isTopLevel=false, name=Anno]
         KotlinStub$MODIFIER_LIST[public]
         KotlinStub$VALUE_PARAMETER_LIST
           KotlinStub$VALUE_PARAMETER[fqName=null, hasDefaultValue=true, hasValOrVar=false, isMutable=false, name=arrayWithDefault]
@@ -287,7 +287,7 @@ KotlinStub$CLASS[classId=test/PropertyInitializer, fqName=test.PropertyInitializ
               KotlinStub$REFERENCE_EXPRESSION[referencedName=Annotation]
       KotlinStub$CLASS_BODY
         KotlinStub$PROPERTY[fqName=test.PropertyInitializer.Anno.annotationArrayWithDefault, hasDelegate=false, hasDelegateExpression=false, hasInitializer=true, hasReturnTypeRef=true, isExtension=false, isTopLevel=false, isVar=false, name=annotationArrayWithDefault]
-          initializer: [Value(type=KotlinClassTypeBean(classId=test/A1, arguments=[], nullable=false), argumentsMapping={e=E.A, e1=E.B}), Value(type=KotlinClassTypeBean(classId=test/A1, arguments=[], nullable=false), argumentsMapping={e=E.B, e1=E.A})]
+          initializer: [Value(classId=test/A1, argumentsMapping={e=E.A, e1=E.B}), Value(classId=test/A1, argumentsMapping={e=E.B, e1=E.A})]
           KotlinStub$MODIFIER_LIST[public final]
           KotlinStub$TYPE_REFERENCE
             KotlinStub$USER_TYPE
@@ -303,7 +303,7 @@ KotlinStub$CLASS[classId=test/PropertyInitializer, fqName=test.PropertyInitializ
                       KotlinStub$REFERENCE_EXPRESSION[referencedName=A1]
           KotlinStub$REFERENCE_EXPRESSION[referencedName=COMPILED_CODE]
         KotlinStub$PROPERTY[fqName=test.PropertyInitializer.Anno.annotationWithDefault, hasDelegate=false, hasDelegateExpression=false, hasInitializer=true, hasReturnTypeRef=true, isExtension=false, isTopLevel=false, isVar=false, name=annotationWithDefault]
-          initializer: Value(type=KotlinClassTypeBean(classId=test/A1, arguments=[], nullable=false), argumentsMapping={e=E.A, e1=E.B})
+          initializer: Value(classId=test/A1, argumentsMapping={e=E.A, e1=E.B})
           KotlinStub$MODIFIER_LIST[public final]
           KotlinStub$TYPE_REFERENCE
             KotlinStub$USER_TYPE

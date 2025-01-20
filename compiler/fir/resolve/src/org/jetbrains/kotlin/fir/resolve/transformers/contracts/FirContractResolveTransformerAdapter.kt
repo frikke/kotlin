@@ -25,7 +25,7 @@ import org.jetbrains.kotlin.fir.withFileAnalysisExceptionWrapping
 class FirContractResolveProcessor(session: FirSession, scopeSession: ScopeSession) : FirTransformerBasedResolveProcessor(
     session, scopeSession, FirResolvePhase.CONTRACTS
 ) {
-    override val transformer = FirContractResolveTransformerAdapter(session, scopeSession)
+    override val transformer: FirContractResolveTransformerAdapter = FirContractResolveTransformerAdapter(session, scopeSession)
 }
 
 @AdapterForResolveProcessor
@@ -49,7 +49,7 @@ fun <F : FirClassLikeDeclaration> F.runContractResolveForLocalClass(
     targetedClasses: Set<FirClassLikeDeclaration>
 ): F {
     val newContext = outerBodyResolveContext.createSnapshotForLocalClasses(
-        ReturnTypeCalculatorForFullBodyResolve,
+        ReturnTypeCalculatorForFullBodyResolve.Contract,
         targetedClasses
     )
     val transformer = FirContractResolveTransformer(session, scopeSession, newContext)

@@ -8,11 +8,12 @@ package org.jetbrains.kotlin.fir.resolve.transformers.plugin
 import org.jetbrains.kotlin.fir.FirAnnotationContainer
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.PrivateForInline
+import org.jetbrains.kotlin.util.PrivateForInline
 import org.jetbrains.kotlin.fir.SessionConfiguration
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase.COMPILER_REQUIRED_ANNOTATIONS
 import org.jetbrains.kotlin.fir.expressions.FirStatement
+import org.jetbrains.kotlin.fir.extensions.FirExtensionService
 import org.jetbrains.kotlin.fir.extensions.extensionService
 import org.jetbrains.kotlin.fir.extensions.generatedDeclarationsSymbolProvider
 import org.jetbrains.kotlin.fir.extensions.registeredPluginAnnotations
@@ -27,14 +28,61 @@ import org.jetbrains.kotlin.fir.resolve.transformers.FirAbstractPhaseTransformer
 import org.jetbrains.kotlin.fir.resolve.transformers.FirGlobalResolveProcessor
 import org.jetbrains.kotlin.fir.resolve.transformers.FirImportResolveTransformer
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
+import org.jetbrains.kotlin.fir.utils.exceptions.withFirEntry
 import org.jetbrains.kotlin.fir.visitors.transformSingle
 import org.jetbrains.kotlin.fir.withFileAnalysisExceptionWrapping
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.utils.exceptions.checkWithAttachment
 
+/**
+ * Little explanation the logic of this phase
+ *
+ * - this transformer visits all declarations and tries to resolve each annotation that looks like compiler-required by short name
+ *   - if there are any meta-annotations registered by plugins, then each annotation is considered as "potentially compiler-required"
+ * - transformer resolves:
+ *   - annotation types
+ *   - annotation call arguments, if annotation classId mentioned in FirAnnotationsPlatformSpecificSupportComponent.requiredAnnotationsWithArguments
+ * - if annotation is considered as compiler-required after the resolution, the resolved type is saved in the annotation with
+ *     FirAnnotationResolvePhase.CompilerRequiredAnnotations phase
+ * - if annotation potentially can be annotated with meta-annotation, the phase performs a designated jump to corresponding annotation class
+ *     to resolve annotations on it. This jump resolves annotations only on last declaration from designation path
+ *
+ * Example:
+ * ```
+ * // FILE: plugin.kt
+ * annotation class MetaAnnotation
+ *
+ * // FILE: a.kt
+ * @A // (1)
+ * class Some
+ *
+ * // FILE: b.kt
+ * @A.B // (2)
+ * class Other
+ *
+ * // FILE: SinceKotlin.kt
+ * @MetaAnnotation // (3)
+ * annotation class A {
+ *     @MetaAnnotation // (4)
+ *     annotation class B
+ *
+ *     @MetaAnnotation // (5)
+ *     annotation class C
+ * }
+ * ```
+ *
+ * 1. visit class `Some`, resolve (1)
+ * 2. there are meta-annotations -> jump to class `A` and resolve (3)
+ * 3. visit class `Other`, resolved (2)
+ * 4. there are meta-annotations -> jump to class `A.B` and resolve (4)
+ * 5. visit class `A`, skip annotations on `A` since they are already resolved
+ * 6. visit class `A.B`, skip annotations on `A.B` since they are already resolved
+ * 7. visit class `A.C`, resolve (5)
+ */
 class FirCompilerRequiredAnnotationsResolveProcessor(
     session: FirSession,
     scopeSession: ScopeSession
-) : FirGlobalResolveProcessor(session, scopeSession, FirResolvePhase.COMPILER_REQUIRED_ANNOTATIONS) {
+) : FirGlobalResolveProcessor(session, scopeSession, COMPILER_REQUIRED_ANNOTATIONS) {
 
     override fun process(files: Collection<FirFile>) {
         val computationSession = CompilerRequiredAnnotationsComputationSession()
@@ -77,7 +125,7 @@ abstract class AbstractFirCompilerRequiredAnnotationsResolveTransformer(
     abstract val annotationTransformer: AbstractFirSpecificAnnotationResolveTransformer
     private val importTransformer = FirPartialImportResolveTransformer(session, computationSession)
 
-    val extensionService = session.extensionService
+    val extensionService: FirExtensionService = session.extensionService
     override fun <E : FirElement> transformElement(element: E, data: Nothing?): E {
         throw IllegalStateException("Should not be here")
     }
@@ -88,12 +136,6 @@ abstract class AbstractFirCompilerRequiredAnnotationsResolveTransformer(
             file.resolveAnnotations()
         }
         return file
-    }
-
-    fun <T> withFileAndScopes(file: FirFile, f: () -> T): T {
-        annotationTransformer.withFile(file) {
-            return annotationTransformer.withFileScopes(file, f)
-        }
     }
 
     override fun transformRegularClass(regularClass: FirRegularClass, data: Nothing?): FirStatement {
@@ -144,7 +186,12 @@ open class CompilerRequiredAnnotationsComputationSession {
         }
     }
 
-    private val declarationsWithResolvedAnnotations = mutableSetOf<FirAnnotationContainer>()
+    private val declarationsWithAnnotationResolutionInProgress: MutableSet<FirClassLikeDeclaration> = mutableSetOf()
+    private val declarationsWithResolvedAnnotations: MutableSet<FirAnnotationContainer> = mutableSetOf()
+
+    fun annotationResolutionWasAlreadyStarted(klass: FirClassLikeDeclaration): Boolean {
+        return klass in declarationsWithAnnotationResolutionInProgress
+    }
 
     fun annotationsAreResolved(declaration: FirAnnotationContainer, treatNonSourceDeclarationsAsResolved: Boolean): Boolean {
         if (declaration is FirFile) return false
@@ -155,16 +202,22 @@ open class CompilerRequiredAnnotationsComputationSession {
         return declaration in declarationsWithResolvedAnnotations
     }
 
-    fun recordThatAnnotationsAreResolved(declaration: FirAnnotationContainer) {
-        if (!declarationsWithResolvedAnnotations.add(declaration)) {
-            error("Annotations are resolved twice")
+    fun recordThatAnnotationResolutionStarted(klass: FirClassLikeDeclaration) {
+        val wasNotStartedBefore = declarationsWithAnnotationResolutionInProgress.add(klass)
+        checkWithAttachment(wasNotStartedBefore, { "Annotation resolution was already started" }) {
+            withFirEntry("class", klass)
         }
+    }
+
+    fun recordThatAnnotationsAreResolved(declaration: FirAnnotationContainer) {
+        declarationsWithAnnotationResolutionInProgress.remove(declaration)
+        declarationsWithResolvedAnnotations.add(declaration)
     }
 
     fun resolveAnnotationsOnAnnotationIfNeeded(symbol: FirRegularClassSymbol, scopeSession: ScopeSession) {
         val regularClass = symbol.fir
         if (annotationsAreResolved(regularClass, treatNonSourceDeclarationsAsResolved = true)) return
-
+        if (regularClass.annotations.isEmpty()) return
         resolveAnnotationSymbol(symbol, scopeSession)
     }
 
@@ -204,6 +257,11 @@ class FirSpecificAnnotationResolveTransformer(
     computationSession: CompilerRequiredAnnotationsComputationSession
 ) : AbstractFirSpecificAnnotationResolveTransformer(session, scopeSession, computationSession) {
     override fun shouldTransformDeclaration(declaration: FirDeclaration): Boolean {
+        /*
+         * Even if annotations on class are resolved, annotations on nested declarations might be not resolved yet
+         * It may happen if we visited a top-level class with designated transformer with this class as target of designation
+         */
+        if (declaration is FirRegularClass) return true
         @OptIn(PrivateForInline::class)
         return !computationSession.annotationsAreResolved(declaration, treatNonSourceDeclarationsAsResolved = true)
     }

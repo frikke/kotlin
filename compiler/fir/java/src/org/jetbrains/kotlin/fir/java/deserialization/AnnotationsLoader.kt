@@ -7,14 +7,10 @@ package org.jetbrains.kotlin.fir.java.deserialization
 
 import org.jetbrains.kotlin.SpecialJvmAnnotations
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.deserialization.toQualifiedPropertyAccessExpression
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.expressions.builder.*
 import org.jetbrains.kotlin.fir.java.createConstantOrError
 import org.jetbrains.kotlin.fir.languageVersionSettings
-import org.jetbrains.kotlin.fir.resolve.providers.getClassDeclaredPropertySymbols
-import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
-import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTag
 import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.fir.types.builder.buildResolvedTypeRef
 import org.jetbrains.kotlin.load.java.JvmAbi
@@ -23,42 +19,43 @@ import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.StandardClassIds
 import org.jetbrains.kotlin.resolve.constants.ClassLiteralValue
-import org.jetbrains.kotlin.resolve.jvm.JvmPrimitiveType
-import org.jetbrains.kotlin.utils.toMetadataVersion
+import org.jetbrains.kotlin.util.toMetadataVersion
 
 internal class AnnotationsLoader(private val session: FirSession, private val kotlinClassFinder: KotlinClassFinder) {
-    private abstract inner class AnnotationsLoaderVisitorImpl(val enumEntryReferenceCreator: (ClassId, Name) -> FirExpression) : KotlinJvmBinaryClass.AnnotationArgumentVisitor {
+    private abstract inner class AnnotationsLoaderVisitorImpl : KotlinJvmBinaryClass.AnnotationArgumentVisitor {
         abstract fun visitExpression(name: Name?, expr: FirExpression)
 
         abstract val visitNullNames: Boolean
-
-        abstract fun guessArrayTypeIfNeeded(name: Name?, arrayOfElements: List<FirExpression>): FirTypeRef?
 
         override fun visit(name: Name?, value: Any?) {
             visitExpression(name, createConstant(value))
         }
 
-        private fun ClassLiteralValue.toFirClassReferenceExpression(): FirClassReferenceExpression {
+        private fun ClassLiteralValue.toFirClassReferenceExpression(): FirClassReferenceExpression? {
+            // toLookupTag will throw an exception if classId is local.
+            // This should only happen in annotations of local declarations, in which we aren't interested anyway, so it should be fine
+            // to just skip some of their arguments.
+            if (classId.isLocal) return null
+
             val resolvedClassTypeRef = classId.toLookupTag().toDefaultResolvedTypeRef()
             return buildClassReferenceExpression {
                 classTypeRef = resolvedClassTypeRef
-                typeRef = buildResolvedTypeRef {
-                    type = StandardClassIds.KClass.constructClassLikeType(arrayOf(resolvedClassTypeRef.type), false)
-                }
+                coneTypeOrNull = StandardClassIds.KClass.constructClassLikeType(arrayOf(resolvedClassTypeRef.coneType), false)
             }
         }
 
         override fun visitClassLiteral(name: Name?, value: ClassLiteralValue) {
+            val argument = value.toFirClassReferenceExpression() ?: return
+
             visitExpression(name, buildGetClassCall {
-                val argument = value.toFirClassReferenceExpression()
                 argumentList = buildUnaryArgumentList(argument)
-                typeRef = argument.typeRef
+                coneTypeOrNull = argument.resolvedType
             })
         }
 
         override fun visitEnum(name: Name?, enumClassId: ClassId, enumEntryName: Name) {
             if (name == null && !visitNullNames) return
-            visitExpression(name, enumEntryReferenceCreator(enumClassId, enumEntryName))
+            visitExpression(name, createEnumEntryAccess(enumClassId, enumEntryName))
         }
 
         override fun visitArray(name: Name?): KotlinJvmBinaryClass.AnnotationArrayArgumentVisitor? {
@@ -71,20 +68,20 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
                 }
 
                 override fun visitEnum(enumClassId: ClassId, enumEntryName: Name) {
-                    elements.add(enumEntryReferenceCreator(enumClassId, enumEntryName))
+                    elements.add(createEnumEntryAccess(enumClassId, enumEntryName))
                 }
 
                 override fun visitClassLiteral(value: ClassLiteralValue) {
+                    val argument = value.toFirClassReferenceExpression() ?: return
                     elements.add(buildGetClassCall {
-                        val argument = value.toFirClassReferenceExpression()
                         argumentList = buildUnaryArgumentList(argument)
-                        typeRef = argument.typeRef
+                        coneTypeOrNull = argument.resolvedType
                     })
                 }
 
                 override fun visitAnnotation(classId: ClassId): KotlinJvmBinaryClass.AnnotationArgumentVisitor {
                     val list = mutableListOf<FirAnnotation>()
-                    val visitor = loadAnnotation(classId, list, enumEntryReferenceCreator)
+                    val visitor = loadAnnotation(classId, list)
                     return object : KotlinJvmBinaryClass.AnnotationArgumentVisitor by visitor {
                         override fun visitEnd() {
                             visitor.visitEnd()
@@ -94,8 +91,13 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
                 }
 
                 override fun visitEnd() {
-                    visitExpression(name, buildArrayOfCall {
-                        guessArrayTypeIfNeeded(name, elements)?.let { typeRef = it }
+                    visitExpression(name, buildArrayLiteral {
+                        @OptIn(UnresolvedExpressionTypeAccess::class)
+                        // For the array literal type, we use Array<Any> as an approximation; later FIR2IR will calculate more precise type
+                        // See KT-62598
+                        // FIR provides no guarantees on having exact type of deserialized array literals in annotations,
+                        // including non-empty ones.
+                        coneTypeOrNull = StandardClassIds.Any.constructClassLikeType().createOutArrayType()
                         argumentList = buildArgumentList {
                             arguments += elements
                         }
@@ -107,7 +109,7 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
         override fun visitAnnotation(name: Name?, classId: ClassId): KotlinJvmBinaryClass.AnnotationArgumentVisitor? {
             if (name == null && !visitNullNames) return null
             val list = mutableListOf<FirAnnotation>()
-            val visitor = loadAnnotation(classId, list, enumEntryReferenceCreator)
+            val visitor = loadAnnotation(classId, list)
             return object : KotlinJvmBinaryClass.AnnotationArgumentVisitor by visitor {
                 override fun visitEnd() {
                     visitor.visitEnd()
@@ -122,11 +124,12 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
     }
 
     private fun loadAnnotation(
-        annotationClassId: ClassId, result: MutableList<FirAnnotation>, enumEntryReferenceCreator: (ClassId, Name) -> FirExpression
+        annotationClassId: ClassId,
+        result: MutableList<FirAnnotation>
     ): KotlinJvmBinaryClass.AnnotationArgumentVisitor {
         val lookupTag = annotationClassId.toLookupTag()
 
-        return object : AnnotationsLoaderVisitorImpl(enumEntryReferenceCreator) {
+        return object : AnnotationsLoaderVisitorImpl() {
             private val argumentMap = mutableMapOf<Name, FirExpression>()
 
             override fun visitExpression(name: Name?, expr: FirExpression) {
@@ -134,16 +137,6 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
             }
 
             override val visitNullNames: Boolean = false
-
-            override fun guessArrayTypeIfNeeded(name: Name?, arrayOfElements: List<FirExpression>): FirTypeRef? {
-                // Needed if we load a default value which is another annotation that has array value in it. e.g.:
-                // To instantiate Deprecated() we need a default value for ReplaceWith() that has imports: Array<String> with default value [].
-                if (name == null) return null
-                // Note: generally we are not allowed to resolve anything, as this is might lead to recursive resolve problems
-                // However, K1 deserializer did exactly the same and no issues were reported.
-                val propS = session.symbolProvider.getClassDeclaredPropertySymbols(annotationClassId, name).firstOrNull()
-                return propS?.resolvedReturnTypeRef
-            }
 
             override fun visitEnd() {
                 // Do not load the @java.lang.annotation.Repeatable annotation instance generated automatically by the compiler for
@@ -162,10 +155,9 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
     }
 
     internal fun loadAnnotationMethodDefaultValue(
-        methodSignature: MemberSignature,
         consumeResult: (FirExpression) -> Unit
     ): KotlinJvmBinaryClass.AnnotationArgumentVisitor {
-        return object : AnnotationsLoaderVisitorImpl(this::toEnumEntryReferenceExpressionUnresolved) {
+        return object : AnnotationsLoaderVisitorImpl() {
             var defaultValue: FirExpression? = null
 
             override fun visitExpression(name: Name?, expr: FirExpression) {
@@ -173,17 +165,6 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
             }
 
             override val visitNullNames: Boolean = true
-
-            override fun guessArrayTypeIfNeeded(name: Name?, arrayOfElements: List<FirExpression>): FirTypeRef {
-                val descName = methodSignature.signature.substringAfterLast(')').removePrefix("[")
-                val targetClassId = JvmPrimitiveType.getByDesc(descName)?.primitiveType?.typeFqName?.let { ClassId.topLevel(it) }
-                    ?: FileBasedKotlinClass.resolveNameByInternalName(
-                        descName.removePrefix("L").removeSuffix(";"),
-                        // It seems that some inner classes info is required, but so far there are no problems with them (see six() in multimoduleCreation test)
-                        FileBasedKotlinClass.InnerClassesInfo()
-                    )
-                return targetClassId.toLookupTag().constructClassType(arrayOf(), false).createOutArrayType().toFirResolvedTypeRef()
-            }
 
             override fun visitEnd() {
                 defaultValue?.let(consumeResult)
@@ -210,18 +191,15 @@ internal class AnnotationsLoader(private val session: FirSession, private val ko
     ): KotlinJvmBinaryClass.AnnotationArgumentVisitor? {
         if (annotationClassId in SpecialJvmAnnotations.SPECIAL_ANNOTATIONS) return null
         // Note: we shouldn't resolve enum entries here either: KT-58294
-        return loadAnnotation(annotationClassId, result, this::toEnumEntryReferenceExpressionWithResolve)
+        return loadAnnotation(annotationClassId, result)
     }
 
     private fun ConeClassLikeLookupTag.toDefaultResolvedTypeRef(): FirResolvedTypeRef =
         buildResolvedTypeRef {
-            type = constructClassType(emptyArray(), isNullable = false)
+            coneType = constructClassType()
         }
 
-    private fun toEnumEntryReferenceExpressionWithResolve(classId: ClassId, name: Name): FirPropertyAccessExpression =
-        toEnumEntryReferenceExpressionUnresolved(classId, name).toQualifiedPropertyAccessExpression(session)
-
-    private fun toEnumEntryReferenceExpressionUnresolved(classId: ClassId, name: Name): FirEnumEntryDeserializedAccessExpression =
+    private fun createEnumEntryAccess(classId: ClassId, name: Name): FirEnumEntryDeserializedAccessExpression =
         buildEnumEntryDeserializedAccessExpression {
             enumClassId = classId
             enumEntryName = name

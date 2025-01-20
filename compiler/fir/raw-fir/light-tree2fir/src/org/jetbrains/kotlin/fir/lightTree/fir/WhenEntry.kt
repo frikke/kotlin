@@ -14,9 +14,11 @@ import org.jetbrains.kotlin.fir.expressions.buildErrorExpression
 
 data class WhenEntry(
     val conditions: List<FirExpression>,
+    val guard: FirExpression?,
     val firBlock: FirBlock,
     val node: LighterASTNode,
-    val isElse: Boolean = false
+    val isElse: Boolean = false,
+    val shouldBindSubject: Boolean = false,
 ) {
     fun toFirWhenCondition(): FirExpression {
         require(conditions.isNotEmpty())
@@ -24,9 +26,9 @@ data class WhenEntry(
     }
 
     fun toFirWhenConditionWithoutSubject(): FirExpression {
-        return when (val condition = conditions.firstOrNull()) {
-            null -> buildErrorExpression(null, ConeSyntaxDiagnostic("No expression in condition with expression"))
-            else -> condition
+        return when (conditions.size) {
+            0 -> buildErrorExpression(null, ConeSyntaxDiagnostic("No expression in condition with expression"))
+            else -> buildBalancedOrExpressionTree(conditions)
         }
     }
 }

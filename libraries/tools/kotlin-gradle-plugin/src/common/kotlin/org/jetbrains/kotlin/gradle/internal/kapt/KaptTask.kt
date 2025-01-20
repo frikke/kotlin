@@ -13,15 +13,15 @@ import org.gradle.work.Incremental
 import org.gradle.work.InputChanges
 import org.gradle.work.NormalizeLineEndings
 import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporter
-import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporterImpl
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildPerformanceMetric
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildTime
 import org.jetbrains.kotlin.gradle.internal.kapt.incremental.ClasspathSnapshot
 import org.jetbrains.kotlin.gradle.internal.kapt.incremental.KaptClasspathChanges
 import org.jetbrains.kotlin.gradle.internal.kapt.incremental.KaptIncrementalChanges
 import org.jetbrains.kotlin.gradle.internal.kapt.incremental.UnknownSnapshot
 import org.jetbrains.kotlin.gradle.internal.tasks.TaskWithLocalState
 import org.jetbrains.kotlin.gradle.plugin.CompilerPluginConfig
-import org.jetbrains.kotlin.gradle.plugin.internal.configurationTimePropertiesAccessor
-import org.jetbrains.kotlin.gradle.plugin.internal.usedAtConfigurationTime
+import org.jetbrains.kotlin.gradle.report.GradleBuildMetricsReporter
 import org.jetbrains.kotlin.gradle.tasks.*
 import org.jetbrains.kotlin.gradle.utils.*
 import org.jetbrains.kotlin.utils.addToStdlib.cast
@@ -34,7 +34,6 @@ abstract class KaptTask @Inject constructor(
     objectFactory: ObjectFactory
 ) : DefaultTask(),
     TaskWithLocalState,
-    UsesKotlinJavaToolchain,
     BaseKapt {
 
     init {
@@ -55,7 +54,7 @@ abstract class KaptTask @Inject constructor(
     @get:InputFiles
     abstract val classpathStructure: ConfigurableFileCollection
 
-    @get:Internal
+    @get:Nested
     abstract val kaptPluginOptions: ListProperty<CompilerPluginConfig>
 
     @get:Nested
@@ -73,7 +72,7 @@ abstract class KaptTask @Inject constructor(
     internal val defaultKotlinJavaToolchain: Provider<DefaultKotlinJavaToolchain> = objectFactory
         .propertyWithNewInstance({ null })
 
-    final override val kotlinJavaToolchainProvider: Provider<KotlinJavaToolchain> = defaultKotlinJavaToolchain.cast()
+    final override val kotlinJavaToolchainProvider: Provider<out KotlinJavaToolchain> = defaultKotlinJavaToolchain
 
     @Suppress("unused", "DeprecatedCallableAddReplaceWith")
     @Deprecated(
@@ -102,8 +101,8 @@ abstract class KaptTask @Inject constructor(
     var useBuildCache: Boolean = false
 
     @get:Internal
-    override val metrics: Property<BuildMetricsReporter> = objectFactory
-        .property(BuildMetricsReporterImpl())
+    override val metrics: Property<BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric>> = project.objects
+        .property(GradleBuildMetricsReporter())
 
     @get:Input
     abstract val verbose: Property<Boolean>
@@ -268,7 +267,6 @@ abstract class KaptTask @Inject constructor(
             return project
                 .providers
                 .gradleProperty(KAPT_VERBOSE_OPTION_NAME)
-                .usedAtConfigurationTime(project.configurationTimePropertiesAccessor)
                 .map { it.toString().toBoolean() }
                 .orElse(false)
         }

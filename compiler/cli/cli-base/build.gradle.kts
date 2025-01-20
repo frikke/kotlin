@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm")
     id("jps-compatible")
+    id("generated-sources")
 }
 
 dependencies {
@@ -12,8 +13,6 @@ dependencies {
     api(project(":compiler:backend.jvm"))
     api(project(":compiler:light-classes"))
     api(project(":compiler:javac-wrapper"))
-    api(project(":compiler:ir.serialization.jvm"))
-    api(project(":js:js.translator"))
     api(project(":native:frontend.native"))
     api(project(":wasm:wasm.frontend"))
     api(project(":kotlin-util-klib"))
@@ -21,8 +20,9 @@ dependencies {
 
     compileOnly(toolsJarApi())
     compileOnly(intellijCore())
-    compileOnly(commonDependency("org.jetbrains.intellij.deps:trove4j"))
-    compileOnly(commonDependency("org.jetbrains.intellij.deps:asm-all"))
+    compileOnly(libs.intellij.fastutil)
+    compileOnly(libs.intellij.asm)
+    runtimeOnly(libs.kotlinx.coroutines.core)
 }
 
 sourceSets {
@@ -36,14 +36,10 @@ allprojects {
     optInToExperimentalCompilerApi()
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile> {
-    compilerOptions {
-        progressiveMode.set(true)
-    }
-}
-
 testsJar {}
 
 projectTest {
     workingDir = rootDir
 }
+
+generatedConfigurationKeys("CLIConfigurationKeys")

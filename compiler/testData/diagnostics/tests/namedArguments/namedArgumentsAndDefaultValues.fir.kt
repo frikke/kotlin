@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 fun foo(a : Int = 1, b : String = "abc") {
 }
 
@@ -14,8 +15,8 @@ fun test() {
     foo(1, "", <!TOO_MANY_ARGUMENTS!>""<!>)
 
     bar(z = "")
-    <!NO_VALUE_FOR_PARAMETER!>bar()<!>
-    bar(<!NO_VALUE_FOR_PARAMETER!>"")<!>
+    bar<!NO_VALUE_FOR_PARAMETER!>()<!>
+    bar(<!NO_VALUE_FOR_PARAMETER!><!ARGUMENT_TYPE_MISMATCH!>""<!>)<!>
     bar(1, 1, "")
     bar(1, 1, "")
     bar(1, z = "")

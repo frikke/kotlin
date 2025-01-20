@@ -72,12 +72,21 @@ class JsPrecedenceVisitor extends JsVisitor {
 
     @Override
     public void visitFunction(@NotNull JsFunction x) {
-        answer = 17; // primary
+        if (x.isEs6Arrow()) {
+            answer = 2;
+        } else {
+            answer = 17; // primary
+        }
     }
 
     @Override
     public void visitInvocation(@NotNull JsInvocation invocation) {
         answer = 16;
+    }
+
+    @Override
+    public void visitYield(@NotNull JsYield yield) {
+        answer = 2; // https://esdiscuss.org/topic/precedence-of-yield-operator
     }
 
     @Override

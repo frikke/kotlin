@@ -25,6 +25,15 @@ object Z {
         }
     }
 
+    fun aFun() {
+        withLambda {
+            counter = 1
+            foo()
+            Z.counter = 1
+            Z.foo()
+        }
+    }
+
     val aLambda = {
         counter = 1
         foo()
@@ -55,3 +64,5 @@ fun Z.test() {
     Z.counter = 1
     Z.foo()
 }
+
+fun withLambda(f: () -> Unit) {}

@@ -1,11 +1,9 @@
-// IGNORE_BACKEND_K1: JVM, JVM_IR, JS, JS_IR, JS_IR_ES6, NATIVE, WASM
+// LANGUAGE: +MultiPlatformProjects
 // ISSUE: KT-57250
 // WITH_STDLIB
-// !OPT_IN: kotlin.ExperimentalMultiplatform
-// !LANGUAGE: +MultiPlatformProjects
+// OPT_IN: kotlin.ExperimentalMultiplatform
 
 // MODULE: common
-// TARGET_PLATFORM: Common
 // FILE: common.kt
 
 expect class C()
@@ -18,7 +16,7 @@ expect annotation class WithoutActual(val s: String)
 
 expect fun k(): String
 
-// MODULE: platform()()(common)
+// MODULE: lib()()(common)
 // FILE: lib.kt
 
 actual class C {
@@ -29,9 +27,14 @@ actual annotation class WithActual(actual val x: Int)
 
 actual fun k() = "K"
 
-// MODULE: main(platform)
+// MODULE: common2
+// FILE: common2.kt
+
+@WithoutActual("OK")
+fun ok() = C().o() + k()
+
+// MODULE: main(lib)()(common2)
 // FILE: main.kt
 
 @WithActual(42)
-@WithoutActual("OK")
-fun box() = C().o() + k()
+fun box() = ok()

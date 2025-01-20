@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.gradle.testbase
 
+import org.jetbrains.kotlin.gradle.util.isTeamCityRun
 import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.extension.ConditionEvaluationResult
 import org.junit.jupiter.api.extension.ExecutionCondition
@@ -12,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.junit.jupiter.api.extension.ExtensionContext
 import org.junit.platform.commons.logging.LoggerFactory
 import java.lang.reflect.AnnotatedElement
-import java.util.*
 
 /**
  * An annotation that enables tests to be executed on a specific operating system within a specific environment.
@@ -43,11 +43,11 @@ internal class ExecutionOnOsCondition : ExecutionCondition {
 
     private val logger = LoggerFactory.getLogger(ExecutionOnOsCondition::class.java)
 
-    private val isUnderTeamcity = System.getenv("TEAMCITY_VERSION") != null
+    private val isUnderTeamcity = isTeamCityRun
 
-    private val enabledOnCurrentOs = "Enabled on operating system: " + System.getProperty("os.name")
-    private val notSupportedOnCurrentOs = "Test is not supported on operating system: " + System.getProperty("os.name")
-    private val disabledForCI = "Disabled for operating system: " + System.getProperty("os.name") + " on CI"
+    private val enabledOnCurrentOs = "Enabled on operating system: ${System.getProperty("os.name")}"
+    private val notSupportedOnCurrentOs = "Test is not supported on operating system: ${System.getProperty("os.name")}"
+    private val disabledForCI = "Disabled for operating system: ${System.getProperty("os.name")} on CI"
 
     override fun evaluateExecutionCondition(context: ExtensionContext): ConditionEvaluationResult {
         val annotation = findAnnotation<OsCondition>(context)

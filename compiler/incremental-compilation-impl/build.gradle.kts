@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm")
     id("jps-compatible")
+    id("d8-configuration")
 }
 
 dependencies {
@@ -19,16 +20,17 @@ dependencies {
     api(project(":kotlin-build-common"))
     api(project(":daemon-common"))
     api(project(":compiler:build-tools:kotlin-build-statistics"))
+    api(project(":compiler:build-tools:kotlin-build-tools-api"))
     compileOnly(intellijCore())
 
-    testApi(commonDependency("junit:junit"))
-    testApi(project(":kotlin-test:kotlin-test-junit"))
+    testImplementation(libs.junit4)
+    testApi(kotlinTest("junit"))
     testApi(kotlinStdlib())
     testApi(projectTests(":kotlin-build-common"))
     testApi(projectTests(":compiler:tests-common"))
     testApi(intellijCore())
     testApi(commonDependency("org.jetbrains.intellij.deps:log4j"))
-    testApi(commonDependency("org.jetbrains.intellij.deps:jdom"))
+    testApi(intellijJDom())
 
     testImplementation(commonDependency("com.google.code.gson:gson"))
     testRuntimeOnly(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
@@ -42,15 +44,15 @@ sourceSets {
 
 projectTest(parallel = true) {
     workingDir = rootDir
-    dependsOn(":kotlin-stdlib-js-ir:packFullRuntimeKLib")
-    useJsIrBoxTests(version = version, buildDir = "$buildDir/")
+    useJsIrBoxTests(version = version, buildDir = layout.buildDirectory)
 }
 
 projectTest("testJvmICWithJdk11", parallel = true) {
     workingDir = rootDir
-    useJsIrBoxTests(version = version, buildDir = "$buildDir/")
+    useJsIrBoxTests(version = version, buildDir = layout.buildDirectory)
     filter {
-        includeTestsMatching("org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunnerTestGenerated*")
+        includeTestsMatching("org.jetbrains.kotlin.incremental.IncrementalK1JvmCompilerRunnerTestGenerated*")
+        includeTestsMatching("org.jetbrains.kotlin.incremental.IncrementalK2JvmCompilerRunnerTestGenerated*")
     }
     javaLauncher.set(project.getToolchainLauncherFor(JdkMajorVersion.JDK_11_0))
 }

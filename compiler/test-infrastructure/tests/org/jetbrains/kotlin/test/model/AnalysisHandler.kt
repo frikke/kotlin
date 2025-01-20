@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.test.model
 
 import org.jetbrains.kotlin.test.Assertions
+import org.jetbrains.kotlin.test.Constructor
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.assertions
 
@@ -14,6 +15,9 @@ abstract class AnalysisHandler<A : ResultingArtifact<A>>(
     val failureDisablesNextSteps: Boolean,
     val doNotRunIfThereWerePreviousFailures: Boolean
 ) : ServicesAndDirectivesContainer {
+    open val additionalAfterAnalysisCheckers: List<Constructor<AfterAnalysisChecker>>
+        get() = emptyList()
+
     protected val assertions: Assertions
         get() = testServices.assertions
 
@@ -40,7 +44,7 @@ abstract class BackendInputHandler<I : ResultingArtifact.BackendInput<I>>(
 
 abstract class BinaryArtifactHandler<A : ResultingArtifact.Binary<A>>(
     testServices: TestServices,
-    override val artifactKind: BinaryKind<A>,
+    override val artifactKind: ArtifactKind<A>,
     failureDisablesNextSteps: Boolean,
     doNotRunIfThereWerePreviousFailures: Boolean
 ) : AnalysisHandler<A>(testServices, failureDisablesNextSteps, doNotRunIfThereWerePreviousFailures)

@@ -1,10 +1,6 @@
 FILE fqName:<root> fileName:/objectReferenceInFieldInitializer.kt
   CLASS OBJECT name:A modality:FINAL visibility:public superTypes:[kotlin.Any]
     $this: VALUE_PARAMETER INSTANCE_RECEIVER name:<this> type:<root>.A
-    CONSTRUCTOR visibility:private <> () returnType:<root>.A [primary]
-      BLOCK_BODY
-        DELEGATING_CONSTRUCTOR_CALL 'public constructor <init> () declared in kotlin.Any'
-        INSTANCE_INITIALIZER_CALL classDescriptor='CLASS OBJECT name:A modality:FINAL visibility:public superTypes:[kotlin.Any]'
     PROPERTY name:a visibility:private modality:FINAL [val]
       FIELD PROPERTY_BACKING_FIELD name:a type:kotlin.String visibility:private [final]
         EXPRESSION_BODY
@@ -22,7 +18,7 @@ FILE fqName:<root> fileName:/objectReferenceInFieldInitializer.kt
           STRING_CONCATENATION type=kotlin.String
             CONST String type=kotlin.String value="1234"
             CALL 'private final fun <get-a> (): kotlin.String declared in <root>.A' type=kotlin.String origin=GET_PROPERTY
-              $this: GET_VAR '<this>: <root>.A declared in <root>.A' type=<root>.A origin=null
+              $this: GET_VAR '<this>: <root>.A declared in <root>.A' type=<root>.A origin=IMPLICIT_ARGUMENT
       FUN DEFAULT_PROPERTY_ACCESSOR name:<get-b> visibility:private modality:FINAL <> ($this:<root>.A) returnType:kotlin.String
         correspondingProperty: PROPERTY name:b visibility:private modality:FINAL [val]
         $this: VALUE_PARAMETER name:<this> type:<root>.A
@@ -41,6 +37,10 @@ FILE fqName:<root> fileName:/objectReferenceInFieldInitializer.kt
           RETURN type=kotlin.Nothing from='private final fun <get-c> (): kotlin.Int declared in <root>.A'
             GET_FIELD 'FIELD PROPERTY_BACKING_FIELD name:c type:kotlin.Int visibility:private [final]' type=kotlin.Int origin=null
               receiver: GET_VAR '<this>: <root>.A declared in <root>.A.<get-c>' type=<root>.A origin=null
+    CONSTRUCTOR visibility:private <> () returnType:<root>.A [primary]
+      BLOCK_BODY
+        DELEGATING_CONSTRUCTOR_CALL 'public constructor <init> () declared in kotlin.Any'
+        INSTANCE_INITIALIZER_CALL classDescriptor='CLASS OBJECT name:A modality:FINAL visibility:public superTypes:[kotlin.Any]' type=kotlin.Unit
     FUN FAKE_OVERRIDE name:equals visibility:public modality:OPEN <> ($this:kotlin.Any, other:kotlin.Any?) returnType:kotlin.Boolean [fake_override,operator]
       overridden:
         public open fun equals (other: kotlin.Any?): kotlin.Boolean declared in kotlin.Any

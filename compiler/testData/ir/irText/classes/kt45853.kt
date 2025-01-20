@@ -3,9 +3,6 @@
 // DUMP_EXTERNAL_CLASS: X
 // DUMP_EXTERNAL_CLASS: AX
 
-// SKIP_SIGNATURE_DUMP
-// ^ Fake overrides have divirging @EnhancedNullability in K1 and K2
-
 // FILE: kt45853.kt
 
 abstract class A {

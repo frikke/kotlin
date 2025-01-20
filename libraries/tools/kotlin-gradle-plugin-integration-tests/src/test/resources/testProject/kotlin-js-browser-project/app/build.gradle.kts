@@ -1,6 +1,4 @@
-import org.jetbrains.kotlin.gradle.targets.js.NpmVersions
-import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrLink
-import javax.inject.Inject
+import org.jetbrains.kotlin.gradle.targets.js.npm.npmProject
 
 plugins {
     kotlin("js")
@@ -47,35 +45,35 @@ kotlin {
         binaries.executable()
 
         compilations.named("main") {
+            val nameOfModule = this@named.name
             packageJson {
                 customField("customField1", mapOf("one" to 1, "two" to 2))
                 customField("customField2", null)
                 customField("customField3" to null)
                 customField("customField4", mapOf("foo" to null))
+                customField("customField5", "@as/${nameOfModule}")
+            }
+        }
+
+        val mainCompilation = compilations["main"]
+        rootProject.plugins.withType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin> {
+            tasks.register<Exec>("runWebpackResult") {
+                val webpackTask = tasks.named<org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpack>("browserProductionWebpack")
+                dependsOn(webpackTask)
+
+                val workDir = webpackTask.flatMap { it.outputDirectory.asFile }
+
+                val npmProject = mainCompilation.npmProject
+                val projectName = project.name
+                doFirst {
+                    this as Exec
+                    npmProject.useTool(this, "webpack/bin/webpack", args = listOf())
+                    this.args = listOf("./$projectName.js")
+                    workingDir(workDir)
+                }
             }
         }
     }
-}
-
-rootProject.plugins.withType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin> {
-    val kotlinNodeJs = rootProject.extensions.getByType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootExtension>()
-
-    tasks.register<Exec>("runWebpackResult") {
-        val webpackTask = tasks.named<org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpack>("browserProductionWebpack")
-        dependsOn(webpackTask)
-
-        executable(kotlinNodeJs.requireConfigured().nodeExecutable)
-
-        workingDir(webpackTask.flatMap { it.outputDirectory.asFile })
-        args("./${project.name}.js")
-    }
-}
-
-tasks.named<org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile>("compileKotlinJs") {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
-}
-tasks.named<org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile>("compileTestKotlinJs") {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrLink>().configureEach {

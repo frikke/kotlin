@@ -10,9 +10,10 @@ import org.gradle.api.flow.*
 import org.gradle.api.provider.Property
 import org.gradle.api.services.ServiceReference
 import org.gradle.api.tasks.Input
-import org.jetbrains.kotlin.gradle.plugin.statistics.BuildFlowService
+import org.jetbrains.kotlin.gradle.fus.BuildUidService
+import org.jetbrains.kotlin.gradle.internal.report.BuildScanApi
+import org.jetbrains.kotlin.gradle.plugin.statistics.BuildFusService
 import org.jetbrains.kotlin.gradle.report.BuildMetricsService
-import org.jetbrains.kotlin.gradle.report.BuildScanExtensionHolder
 import javax.inject.Inject
 
 internal abstract class StatisticsBuildFlowManager @Inject constructor(
@@ -32,14 +33,11 @@ internal abstract class StatisticsBuildFlowManager @Inject constructor(
         }
     }
 
-    fun subscribeForBuildScan(project: Project) {
-        val buildScanExtension = project.rootProject.extensions.findByName("buildScan")
-        val buildScanHolder = buildScanExtension?.let { BuildScanExtensionHolder(it) }
-
+    fun subscribeForBuildScan(buildScan: BuildScanApi) {
         flowScope.always(
             BuildScanFlowAction::class.java
         ) { spec ->
-            spec.parameters.buildScanExtensionHolder.set(buildScanHolder)
+            spec.parameters.buildScan.set(buildScan)
         }
     }
 }
@@ -47,24 +45,24 @@ internal abstract class StatisticsBuildFlowManager @Inject constructor(
 internal class BuildScanFlowAction : FlowAction<BuildScanFlowAction.Parameters> {
     interface Parameters : FlowParameters {
         @get:ServiceReference
-        val buildMetricService: Property<BuildMetricsService?>
+        val buildMetricService: Property<BuildMetricsService>
 
-        @get: Input
-        val buildScanExtensionHolder: Property<BuildScanExtensionHolder?>
+        @get:Input
+        val buildScan: Property<BuildScanApi>
     }
 
     override fun execute(parameters: Parameters) {
-        parameters.buildMetricService.orNull?.addBuildScanReport(parameters.buildScanExtensionHolder.orNull)
+        parameters.buildMetricService.orNull?.addBuildScanReport(parameters.buildScan.orNull)
     }
 }
 
 internal class BuildFinishFlowAction : FlowAction<BuildFinishFlowAction.Parameters> {
     interface Parameters : FlowParameters {
         @get:ServiceReference
-        val buildFlowServiceProperty: Property<BuildFlowService>
+        val buildFusServiceProperty: Property<BuildFusService>
 
-        @get:Input
-        val action: Property<String?>
+        @get:ServiceReference
+        val buildUidServiceProperty: Property<BuildUidService?>
 
         @get:Input
         val buildFailed: Property<Boolean>
@@ -72,8 +70,9 @@ internal class BuildFinishFlowAction : FlowAction<BuildFinishFlowAction.Paramete
     }
 
     override fun execute(parameters: Parameters) {
-        parameters.buildFlowServiceProperty.get().recordBuildFinished(
-            parameters.action.orNull, parameters.buildFailed.get()
+        parameters.buildFusServiceProperty.orNull?.recordBuildFinished(
+            parameters.buildFailed.get(),
+            parameters.buildUidServiceProperty.orNull?.buildId ?: "unknown_id",
         )
     }
 }

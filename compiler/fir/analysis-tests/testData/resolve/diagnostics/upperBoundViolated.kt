@@ -1,4 +1,4 @@
-// COMPARE_WITH_LIGHT_TREE
+// RUN_PIPELINE_TILL: FRONTEND
 interface A
 
 class B<T> where T : A
@@ -15,7 +15,7 @@ fun test() {
     val b1 = B<<!UPPER_BOUND_VIOLATED!>Int<!>>()
     val b2 = B<C>()
     val b3 = B<<!UPPER_BOUND_VIOLATED!>Any?<!>>()
-    val b4 = B<<!UNRESOLVED_REFERENCE!>UnexistingType<!>>()<!UNRESOLVED_REFERENCE!>NL<!><!SYNTAX!><<!>Int<!SYNTAX{LT}!><!SYNTAX!>><!>()<!>NumberPhile<!SYNTAX!><!>
+    val b4 = B<<!UNRESOLVED_REFERENCE!>UnexistingType<!>>()<!UNRESOLVED_REFERENCE!>NL<!><!SYNTAX!><<!>Int<!SYNTAX!><!SYNTAX!>><!>()<!>NumberPhile<!SYNTAX!><!>
     val b5 = B<<!UPPER_BOUND_VIOLATED!>B<<!UNRESOLVED_REFERENCE!>UnexistingType<!>><!>>()
     fest<<!UPPER_BOUND_VIOLATED!>Boolean<!>>()
     fest<C>()
@@ -50,7 +50,7 @@ val test8 = <!UPPER_BOUND_VIOLATED!>NL<String>()<!>
 
 class NumberPhile<T: Number>(x: T)
 val np1 = NumberPhile(10)
-val np2 = NumberPhile(<!ARGUMENT_TYPE_MISMATCH!>"Test"<!>)
+val np2 = <!CANNOT_INFER_PARAMETER_TYPE!>NumberPhile<!>(<!ARGUMENT_TYPE_MISMATCH!>"Test"<!>)
 
 class Test1<S1 : Test1<S1, K>, K : Any>
 class Test2<S2 : Test1<S2, *>>

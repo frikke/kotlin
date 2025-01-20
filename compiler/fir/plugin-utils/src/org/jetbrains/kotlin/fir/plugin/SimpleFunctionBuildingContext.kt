@@ -6,6 +6,8 @@
 package org.jetbrains.kotlin.fir.plugin
 
 import org.jetbrains.kotlin.GeneratedDeclarationKey
+import org.jetbrains.kotlin.KtFakeSourceElementKind
+import org.jetbrains.kotlin.fakeElement
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase
 import org.jetbrains.kotlin.fir.declarations.FirSimpleFunction
@@ -13,15 +15,17 @@ import org.jetbrains.kotlin.fir.declarations.FirTypeParameter
 import org.jetbrains.kotlin.fir.declarations.builder.buildReceiverParameter
 import org.jetbrains.kotlin.fir.declarations.builder.buildSimpleFunction
 import org.jetbrains.kotlin.fir.declarations.origin
+import org.jetbrains.kotlin.fir.declarations.utils.isExpect
+import org.jetbrains.kotlin.fir.extensions.ExperimentalTopLevelDeclarationsGenerationApi
 import org.jetbrains.kotlin.fir.extensions.FirExtension
 import org.jetbrains.kotlin.fir.moduleData
 import org.jetbrains.kotlin.fir.resolve.defaultType
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirNamedFunctionSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirReceiverParameterSymbol
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
-import org.jetbrains.kotlin.fir.types.toFirResolvedTypeRef
+import org.jetbrains.kotlin.fir.toFirResolvedTypeRef
 import org.jetbrains.kotlin.name.CallableId
-import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 
 public class SimpleFunctionBuildingContext(
@@ -56,6 +60,8 @@ public class SimpleFunctionBuildingContext(
             moduleData = session.moduleData
             origin = key.origin
 
+            source = owner?.source?.fakeElement(KtFakeSourceElementKind.PluginGenerated)
+
             symbol = FirNamedFunctionSymbol(callableId)
             name = callableId.callableName
 
@@ -67,7 +73,7 @@ public class SimpleFunctionBuildingContext(
                 generateTypeParameter(it, symbol)
             }
             initTypeParameterBounds(typeParameters, typeParameters)
-            produceContextReceiversTo(contextReceivers, typeParameters)
+            produceContextReceiversTo(contextParameters, typeParameters, origin, symbol)
 
             this@SimpleFunctionBuildingContext.valueParameters.mapTo(valueParameters) {
                 generateValueParameter(it, symbol, typeParameters)
@@ -76,6 +82,10 @@ public class SimpleFunctionBuildingContext(
             extensionReceiverTypeProvider?.invoke(typeParameters)?.let {
                 receiverParameter = buildReceiverParameter {
                     typeRef = it.toFirResolvedTypeRef()
+                    symbol = FirReceiverParameterSymbol()
+                    moduleData = session.moduleData
+                    origin = key.origin
+                    containingDeclarationSymbol = this@buildSimpleFunction.symbol
                 }
             }
         }
@@ -113,7 +123,11 @@ public fun FirExtension.createMemberFunction(
     config: SimpleFunctionBuildingContext.() -> Unit = {}
 ): FirSimpleFunction {
     val callableId = CallableId(owner.classId, name)
-    return SimpleFunctionBuildingContext(session, key, owner, callableId, returnTypeProvider).apply(config).build()
+    return SimpleFunctionBuildingContext(session, key, owner, callableId, returnTypeProvider).apply(config).apply {
+        status {
+            isExpect = owner.isExpect
+        }
+    }.build()
 }
 
 /**
@@ -121,6 +135,7 @@ public fun FirExtension.createMemberFunction(
  *
  * Type and value parameters can be configured with [config] builder.
  */
+@ExperimentalTopLevelDeclarationsGenerationApi
 public fun FirExtension.createTopLevelFunction(
     key: GeneratedDeclarationKey,
     callableId: CallableId,
@@ -136,6 +151,7 @@ public fun FirExtension.createTopLevelFunction(
  *
  * Type and value parameters can be configured with [config] builder.
  */
+@ExperimentalTopLevelDeclarationsGenerationApi
 public fun FirExtension.createTopLevelFunction(
     key: GeneratedDeclarationKey,
     callableId: CallableId,

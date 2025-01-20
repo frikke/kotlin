@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm")
     id("jps-compatible")
+    id("gradle-plugin-compiler-dependency-configuration")
 }
 
 dependencies {
@@ -12,7 +13,6 @@ dependencies {
     implementation(project(":compiler:backend.jvm.entrypoint"))
     api(project(":compiler:serialization"))
     api(project(":compiler:plugin-api"))
-    api(project(":js:js.translator"))
     api(commonDependency("org.fusesource.jansi", "jansi"))
     api(project(":compiler:fir:raw-fir:psi2fir"))
     api(project(":compiler:fir:resolve"))
@@ -26,17 +26,19 @@ dependencies {
     api(project(":compiler:fir:checkers:checkers.jvm"))
     api(project(":compiler:fir:checkers:checkers.js"))
     api(project(":compiler:fir:checkers:checkers.native"))
+    api(project(":compiler:fir:checkers:checkers.wasm"))
     api(project(":compiler:fir:fir-serialization"))
+    api(project(":compiler:ir.inline"))
     api(project(":kotlin-util-io"))
 
     compileOnly(toolsJarApi())
     compileOnly(intellijCore())
-    compileOnly(commonDependency("org.jetbrains.intellij.deps:trove4j"))
+    compileOnly(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
 
     testApi(project(":compiler:backend"))
     testApi(project(":compiler:cli"))
     testApi(projectTests(":compiler:tests-common"))
-    testApi(commonDependency("junit:junit"))
+    testImplementation(libs.junit4)
 }
 
 sourceSets {
@@ -49,12 +51,6 @@ sourceSets {
 
 allprojects {
     optInToExperimentalCompilerApi()
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile> {
-    compilerOptions {
-        progressiveMode.set(true)
-    }
 }
 
 testsJar {}

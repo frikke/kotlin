@@ -35,7 +35,6 @@ enum class MangleConstant(val prefix: Char, val separator: Char, val suffix: Cha
 
         const val PLATFORM_FUNCTION_MARKER = '%'
 
-        const val CONTEXT_RECEIVER_PREFIX = '!'
         const val EXTENSION_RECEIVER_PREFIX = '@'
         const val FUNCTION_NAME_PREFIX = '#'
         const val TYPE_PARAM_INDEX_PREFIX = '@'
@@ -43,9 +42,5 @@ enum class MangleConstant(val prefix: Char, val separator: Char, val suffix: Cha
         const val LOCAL_DECLARATION_INDEX_PREFIX = '$'
 
         const val JAVA_FIELD_SUFFIX = "#jf"
-
-        const val FUN_PREFIX = "kfun"
-        const val CLASS_PREFIX = "kclass"
-        const val FIELD_PREFIX = "kfield"
     }
 }

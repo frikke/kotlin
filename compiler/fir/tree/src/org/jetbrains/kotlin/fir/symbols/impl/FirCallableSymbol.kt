@@ -5,28 +5,33 @@
 
 package org.jetbrains.kotlin.fir.symbols.impl
 
-import org.jetbrains.kotlin.config.ApiVersion
+import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.symbols.FirBasedSymbol
+import org.jetbrains.kotlin.fir.symbols.lazyDeclarationResolver
 import org.jetbrains.kotlin.fir.symbols.lazyResolveToPhase
 import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.mpp.CallableSymbolMarker
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
 
-abstract class FirCallableSymbol<D : FirCallableDeclaration> : FirBasedSymbol<D>(), CallableSymbolMarker {
+abstract class FirCallableSymbol<out D : FirCallableDeclaration> : FirBasedSymbol<D>(), CallableSymbolMarker {
     abstract val callableId: CallableId
 
     val resolvedReturnTypeRef: FirResolvedTypeRef
         get() {
-            ensureType(fir.returnTypeRef)
-            val returnTypeRef = fir.returnTypeRef
-            if (returnTypeRef !is FirResolvedTypeRef) {
-                errorInLazyResolve("returnTypeRef", returnTypeRef::class, FirResolvedTypeRef::class)
-            }
-
-            return returnTypeRef
+            calculateReturnType()
+            return fir.returnTypeRef as FirResolvedTypeRef
         }
+
+    fun calculateReturnType() {
+        ensureType(fir.returnTypeRef)
+        val returnTypeRef = fir.returnTypeRef
+        if (returnTypeRef !is FirResolvedTypeRef) {
+            errorInLazyResolve("returnTypeRef", returnTypeRef::class, FirResolvedTypeRef::class)
+        }
+    }
 
     val resolvedReturnType: ConeKotlinType
         get() = resolvedReturnTypeRef.coneType
@@ -51,11 +56,11 @@ abstract class FirCallableSymbol<D : FirCallableDeclaration> : FirBasedSymbol<D>
             return fir.receiverParameter
         }
 
-    val resolvedContextReceivers: List<FirContextReceiver>
+    val resolvedContextParameters: List<FirValueParameter>
         get() {
-            if (fir.contextReceivers.isEmpty()) return emptyList()
+            if (fir.contextParameters.isEmpty()) return emptyList()
             lazyResolveToPhase(FirResolvePhase.TYPES)
-            return fir.contextReceivers
+            return fir.contextParameters
         }
 
     val resolvedStatus: FirResolvedDeclarationStatus
@@ -73,9 +78,54 @@ abstract class FirCallableSymbol<D : FirCallableDeclaration> : FirBasedSymbol<D>
     val name: Name
         get() = callableId.callableName
 
-    fun getDeprecation(apiVersion: ApiVersion): DeprecationsPerUseSite? {
+    val containerSource: DeserializedContainerSource?
+        // This is ok, because containerSource should be set during fir creation
+        get() = fir.containerSource
+
+    fun getDeprecation(languageVersionSettings: LanguageVersionSettings): DeprecationsPerUseSite? {
+        if (deprecationsAreDefinitelyEmpty()) {
+            // here should probably be `null`, see KT-74133
+            return EmptyDeprecationsPerUseSite
+        }
+
         lazyResolveToPhase(FirResolvePhase.COMPILER_REQUIRED_ANNOTATIONS)
-        return fir.deprecationsProvider.getDeprecationsInfo(apiVersion)
+        return fir.deprecationsProvider.getDeprecationsInfo(languageVersionSettings)
+    }
+
+
+    /**
+     * Checks whether the deprecations of this declaration and of all other declarations that may affect this declaration are empty.
+     *
+     * This method may yield false negatives but guarantees no false positives.
+     *
+     * This method can traverse to parent or child declarations to perform the check.
+     * In contrast, [currentDeclarationDeprecationsAreDefinitelyEmpty] only checks the current declaration
+     * and does not traverse to other declarations.
+     */
+    protected open fun deprecationsAreDefinitelyEmpty(): Boolean {
+        return currentDeclarationDeprecationsAreDefinitelyEmpty()
+    }
+
+    /**
+     * Checks whether the deprecations of the current declaration are definitely empty.
+     *
+     * This method may yield false negatives but guarantees no false positives.
+     *
+     * Unlike [deprecationsAreDefinitelyEmpty], this method does not check other declarations
+     * such as parent or child declarations.
+     */
+    internal fun currentDeclarationDeprecationsAreDefinitelyEmpty(): Boolean {
+        moduleData.session.lazyDeclarationResolver.forbidLazyResolveInside {
+            if (origin is FirDeclarationOrigin.Java) {
+                // Java may perform lazy resolution when accessing FIR tree internals, see KT-55387
+                return false
+            }
+            if (annotations.isEmpty() && fir.versionRequirements.isNullOrEmpty() && !rawStatus.isOverride) return true
+            if (fir.deprecationsProvider == EmptyDeprecationsProvider) {
+                return true
+            }
+            return false
+        }
     }
 
     private fun ensureType(typeRef: FirTypeRef?) {

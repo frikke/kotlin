@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -UNREACHABLE_CODE
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNREACHABLE_CODE
 
 fun none() {}
 
@@ -72,7 +73,7 @@ fun blockReturnValueTypeMatch2() : Int {
     return <!INVALID_IF_AS_EXPRESSION!>if<!> (1 > 2) 1
 }
 fun blockReturnValueTypeMatch3() : Int {
-    return <!RETURN_TYPE_MISMATCH!>if (1 > 2) else 1<!>
+    return <!RETURN_TYPE_MISMATCH!><!INVALID_IF_AS_EXPRESSION!>if<!> (1 > 2) else 1<!>
 }
 fun blockReturnValueTypeMatch4() : Int {
     if (1 > 2)
@@ -158,6 +159,8 @@ fun illegalReturnIf(): Char {
 fun returnNothing(): Nothing {
     throw <!TYPE_MISMATCH!>1<!>
 }
+fun returnNothingEmpty(): Nothing {
+<!NO_RETURN_IN_FUNCTION_WITH_BLOCK_BODY!>}<!>
 fun f(): Int {
     if (1 < 2) { return 1 } else returnNothing()
 }

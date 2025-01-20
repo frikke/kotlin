@@ -1,10 +1,6 @@
 FILE fqName:<root> fileName:/independentBackingFieldType.kt
   CLASS CLASS name:A modality:FINAL visibility:public superTypes:[kotlin.Any]
     $this: VALUE_PARAMETER INSTANCE_RECEIVER name:<this> type:<root>.A
-    CONSTRUCTOR visibility:public <> () returnType:<root>.A [primary]
-      BLOCK_BODY
-        DELEGATING_CONSTRUCTOR_CALL 'public constructor <init> () declared in kotlin.Any'
-        INSTANCE_INITIALIZER_CALL classDescriptor='CLASS CLASS name:A modality:FINAL visibility:public superTypes:[kotlin.Any]'
     PROPERTY name:it visibility:public modality:FINAL [var]
       FIELD PROPERTY_BACKING_FIELD name:it type:kotlin.Double visibility:private
         EXPRESSION_BODY
@@ -16,8 +12,8 @@ FILE fqName:<root> fileName:/independentBackingFieldType.kt
           RETURN type=kotlin.Nothing from='public final fun <get-it> (): kotlin.Int declared in <root>.A'
             CALL 'public open fun toInt (): kotlin.Int declared in kotlin.Double' type=kotlin.Int origin=null
               $this: CALL 'public final fun plus (other: kotlin.Int): kotlin.Double declared in kotlin.Double' type=kotlin.Double origin=PLUS
-                $this: GET_FIELD 'FIELD PROPERTY_BACKING_FIELD name:it type:kotlin.Double visibility:private' type=kotlin.Double origin=GET_PROPERTY
-                  receiver: GET_VAR '<this>: <root>.A declared in <root>.A.<get-it>' type=<root>.A origin=null
+                $this: GET_FIELD 'FIELD PROPERTY_BACKING_FIELD name:it type:kotlin.Double visibility:private' type=kotlin.Double origin=null
+                  receiver: GET_VAR '<this>: <root>.A declared in <root>.A.<get-it>' type=<root>.A origin=IMPLICIT_ARGUMENT
                 other: CONST Int type=kotlin.Int value=10
       FUN name:<set-it> visibility:public modality:FINAL <> ($this:<root>.A, value:kotlin.Int) returnType:kotlin.Unit
         correspondingProperty: PROPERTY name:it visibility:public modality:FINAL [var]
@@ -25,11 +21,15 @@ FILE fqName:<root> fileName:/independentBackingFieldType.kt
         VALUE_PARAMETER name:value index:0 type:kotlin.Int
         BLOCK_BODY
           SET_FIELD 'FIELD PROPERTY_BACKING_FIELD name:it type:kotlin.Double visibility:private' type=kotlin.Unit origin=EQ
-            receiver: GET_VAR '<this>: <root>.A declared in <root>.A.<set-it>' type=<root>.A origin=null
+            receiver: GET_VAR '<this>: <root>.A declared in <root>.A.<set-it>' type=<root>.A origin=IMPLICIT_ARGUMENT
             value: CALL 'public open fun toDouble (): kotlin.Double declared in kotlin.Int' type=kotlin.Double origin=null
               $this: CALL 'public final fun minus (other: kotlin.Int): kotlin.Int declared in kotlin.Int' type=kotlin.Int origin=MINUS
                 $this: GET_VAR 'value: kotlin.Int declared in <root>.A.<set-it>' type=kotlin.Int origin=null
                 other: CONST Int type=kotlin.Int value=10
+    CONSTRUCTOR visibility:public <> () returnType:<root>.A [primary]
+      BLOCK_BODY
+        DELEGATING_CONSTRUCTOR_CALL 'public constructor <init> () declared in kotlin.Any'
+        INSTANCE_INITIALIZER_CALL classDescriptor='CLASS CLASS name:A modality:FINAL visibility:public superTypes:[kotlin.Any]' type=kotlin.Unit
     FUN FAKE_OVERRIDE name:equals visibility:public modality:OPEN <> ($this:kotlin.Any, other:kotlin.Any?) returnType:kotlin.Boolean [fake_override,operator]
       overridden:
         public open fun equals (other: kotlin.Any?): kotlin.Boolean declared in kotlin.Any

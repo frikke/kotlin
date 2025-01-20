@@ -15,9 +15,9 @@ import org.jetbrains.kotlin.fir.references.FirResolvedNamedReference
 open class FirAnnotationRenderer {
 
     internal lateinit var components: FirRendererComponents
-    protected val visitor get() = components.visitor
-    protected val printer get() = components.printer
-    protected val callArgumentsRenderer get() = components.callArgumentsRenderer
+    protected val visitor: FirRenderer.Visitor get() = components.visitor
+    protected val printer: FirPrinter get() = components.printer
+    protected val callArgumentsRenderer: FirCallArgumentsRenderer? get() = components.callArgumentsRenderer
 
     fun render(annotationContainer: FirAnnotationContainer, explicitAnnotationUseSiteTarget: AnnotationUseSiteTarget? = null) {
         renderAnnotations(annotationContainer.annotations, explicitAnnotationUseSiteTarget)
@@ -32,7 +32,7 @@ open class FirAnnotationRenderer {
     internal fun renderAnnotation(annotation: FirAnnotation, explicitAnnotationUseSiteTarget: AnnotationUseSiteTarget? = null) {
         printer.print("@")
         (explicitAnnotationUseSiteTarget ?: annotation.useSiteTarget)?.let {
-            printer.print(it.name)
+            renderUseSiteTarget(it)
             printer.print(":")
         }
 
@@ -55,5 +55,15 @@ open class FirAnnotationRenderer {
         } else {
             printer.print(" ")
         }
+    }
+
+    open protected fun renderUseSiteTarget(it: AnnotationUseSiteTarget) {
+        printer.print(it.name)
+    }
+}
+
+class FirAnnotationRendererForReadability : FirAnnotationRenderer() {
+    override fun renderUseSiteTarget(it: AnnotationUseSiteTarget) {
+        printer.print(it.renderName)
     }
 }

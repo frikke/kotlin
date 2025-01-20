@@ -30,7 +30,7 @@ fun mutedMessage(klass: Class<*>, methodKey: String): String = "MUTED TEST: ${te
 
 fun testKey(klass: Class<*>, methodKey: String): String = "${klass.canonicalName}.$methodKey"
 
-fun wrapWithMuteInDatabase(testClass: Class<*>, methodName: String, f: () -> Unit): (() -> Unit)? {
+fun wrapWithMuteInDatabase(testClass: Class<*>, methodName: String, f: () -> Unit): (() -> Unit) {
     val mutedTest = getMutedTest(testClass, methodName)
     val testKey = testKey(testClass, methodName)
 
@@ -40,14 +40,14 @@ fun wrapWithMuteInDatabase(testClass: Class<*>, methodName: String, f: () -> Uni
         }
     } else if (isPresentedInDatabaseWithoutFailMarker(mutedTest)) {
         if (mutedTest?.isFlaky == true) {
-            return f
+            return wrapWithAutoMute(f, testKey)
         } else {
             return {
                 invertMutedTestResultWithLog(f, testKey)
             }
         }
     } else {
-        return wrapWithAutoMute(f, testKey)
+        return f
     }
 }
 
@@ -55,7 +55,7 @@ fun invertMutedTestResultWithLog(f: () -> Unit, testKey: String) {
     var isTestGreen = true
     try {
         f()
-    } catch (e: Throwable) {
+    } catch (_: Throwable) {
         println("MUTED TEST STILL FAILS: $testKey")
         isTestGreen = false
     }

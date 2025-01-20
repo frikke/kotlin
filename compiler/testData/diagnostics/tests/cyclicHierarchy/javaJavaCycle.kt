@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FIR2IR
+// DISABLE_NEXT_PHASE_SUGGESTION: java.lang.StackOverflowError
 // FIR_IDENTICAL
 // FILE: A.java
 

@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
+// FIR_IDENTICAL
 // API_VERSION: 1.7
 
 import kotlin.io.path.<!API_NOT_AVAILABLE!>OnErrorResult<!>

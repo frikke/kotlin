@@ -1,7 +1,9 @@
+// IGNORE_FIR_DIAGNOSTICS
+// RUN_PIPELINE_TILL: BACKEND
 // MODULE: m1-common
-<!INCOMPATIBLE_MATCHING{JVM}!>expect interface Base<!>
+expect interface Base
 
 // MODULE: m1-jvm()()(m1-common)
 actual interface Base {
-    override fun equals(other: Any?): Boolean
+    override fun <!ACTUAL_WITHOUT_EXPECT!>equals<!>(other: Any?): Boolean
 }

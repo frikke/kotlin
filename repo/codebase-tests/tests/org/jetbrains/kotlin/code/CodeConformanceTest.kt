@@ -9,13 +9,12 @@ import com.intellij.openapi.util.io.FileUtil
 import junit.framework.TestCase
 import org.jetbrains.kotlin.config.LanguageFeature
 import java.io.File
-import java.util.*
 import java.util.regex.Pattern
-import kotlin.collections.HashSet
 
 class CodeConformanceTest : TestCase() {
     companion object {
         private val JAVA_FILE_PATTERN = Pattern.compile(".+\\.java")
+        private val KOTLIN_FILE_PATTERN = Pattern.compile(".+\\.kt")
         private val SOURCES_FILE_PATTERN = Pattern.compile(".+\\.(java|kt|js)")
 
         @Suppress("SpellCheckingInspection")
@@ -26,7 +25,6 @@ class CodeConformanceTest : TestCase() {
                 ".idea",
                 "build/js",
                 "build/tmp",
-                "buildSrc",
                 "compiler/build",
                 "compiler/fir/lightTree/testData",
                 "compiler/testData/psi/kdoc",
@@ -38,7 +36,6 @@ class CodeConformanceTest : TestCase() {
                 "intellij",
                 "js/js.tests/.gradle",
                 "js/js.tests/build",
-                "js/js.translator/qunit/qunit.js",
                 "js/js.translator/testData/node_modules",
                 "local",
                 "libraries/kotlin.test/js/it/.gradle",
@@ -60,9 +57,6 @@ class CodeConformanceTest : TestCase() {
                 "libraries/tools/kotlin-js-tests/src/test/web/qunit.js",
                 "libraries/tools/kotlin-maven-plugin/target",
                 "libraries/tools/kotlin-source-map-loader/.gradle",
-                "libraries/tools/kotlin-test-js-runner/.gradle",
-                "libraries/tools/kotlin-test-js-runner/lib",
-                "libraries/tools/kotlin-test-js-runner/node_modules",
                 "libraries/tools/kotlin-test-nodejs-runner/.gradle",
                 "libraries/tools/kotlin-test-nodejs-runner/node_modules",
                 "libraries/tools/kotlinp/src",
@@ -71,7 +65,9 @@ class CodeConformanceTest : TestCase() {
                 "repo/codebase-tests/tests/org/jetbrains/kotlin/code/CodeConformanceTest.kt",
                 "kotlin-native/build",
                 "kotlin-native/performance",
-                "kotlin-native/samples"
+                "kotlin-native/samples",
+                "wasm/wasm.debug.browsers/node_modules",
+                "wasm/wasm.debug.browsers/.gradle",
             )
         )
 
@@ -80,8 +76,6 @@ class CodeConformanceTest : TestCase() {
             File("."),
             listOf(
                 "build",
-                "buildSrc/build/generated-sources",
-                "buildSrc/prepare-deps/build",
                 "compiler/ir/serialization.js/build/fullRuntime",
                 "compiler/ir/serialization.js/build/reducedRuntime/src/libraries/stdlib/js-ir/runtime/longjs.kt",
                 "dependencies",
@@ -97,7 +91,12 @@ class CodeConformanceTest : TestCase() {
                 "libraries/examples/browser-example-with-library/target",
                 "libraries/examples/js-example/target",
                 "libraries/kotlin.test/js/it/.gradle",
+                "libraries/kotlin.test/js/it/build",
                 "libraries/kotlin.test/js/it/node_modules",
+                "libraries/kotlin.test/js-ir/it/.gradle",
+                "libraries/kotlin.test/js-ir/it/build",
+                "libraries/kotlin.test/js-ir/it/node_modules",
+                "libraries/stdlib/build",
                 "libraries/stdlib/common/build",
                 "libraries/stdlib/js-ir/.gradle",
                 "libraries/stdlib/js-ir/build",
@@ -108,12 +107,14 @@ class CodeConformanceTest : TestCase() {
                 "libraries/stdlib/js-v1/.gradle",
                 "libraries/stdlib/js-v1/build",
                 "libraries/stdlib/js-v1/node_modules",
+                "libraries/stdlib/jvm/build",
                 "libraries/stdlib/jvm-minimal-for-test/build",
                 "libraries/stdlib/wasm/build",
                 "libraries/tools/atomicfu/build",
                 "libraries/tools/gradle/android-test-fixes/build",
                 "libraries/tools/gradle/gradle-warnings-detector/build",
                 "libraries/tools/gradle/kotlin-compiler-args-properties/build",
+                "libraries/tools/gradle/documentation/build",
                 "libraries/tools/kotlin-allopen/build",
                 "libraries/tools/kotlin-assignment/build",
                 "libraries/tools/kotlin-gradle-build-metrics/build",
@@ -127,9 +128,6 @@ class CodeConformanceTest : TestCase() {
                 "libraries/tools/kotlin-lombok/build",
                 "libraries/tools/kotlin-maven-plugin-test/target",
                 "libraries/tools/kotlin-noarg/build",
-                "libraries/tools/kotlin-test-js-runner/.gradle",
-                "libraries/tools/kotlin-test-js-runner/lib",
-                "libraries/tools/kotlin-test-js-runner/node_modules",
                 "libraries/tools/kotlin-test-nodejs-runner/.gradle",
                 "libraries/tools/kotlin-test-nodejs-runner/node_modules",
                 "libraries/tools/kotlin-sam-with-receiver/build",
@@ -138,12 +136,59 @@ class CodeConformanceTest : TestCase() {
                 "kotlin-native", "libraries/stdlib/native-wasm", // Have a separate licences manager
                 "out",
                 "repo/codebase-tests/tests/org/jetbrains/kotlin/code/CodeConformanceTest.kt",
-                "repo/gradle-settings-conventions/build-cache/build/generated-sources",
                 "repo/gradle-settings-conventions/jvm-toolchain-provisioning/build/generated-sources",
-                "repo/gradle-settings-conventions/gradle-enterprise/build/generated-sources",
-                "repo/gradle-settings-conventions/kotlin-daemon-config/build/generated-sources"
+                "repo/gradle-settings-conventions/develocity/build/generated-sources",
+                "repo/gradle-settings-conventions/kotlin-daemon-config/build/generated-sources",
+                "repo/gradle-build-conventions/buildsrc-compat/build/generated-sources",
+                "repo/gradle-build-conventions/generators/build/generated-sources",
+                "repo/gradle-build-conventions/compiler-tests-convention/build/generated-sources",
+                "repo/gradle-build-conventions/android-sdk-provisioner/build/generated-sources",
+                "repo/gradle-build-conventions/asm-deprecating-transformer/build/generated-sources",
+                "repo/gradle-build-conventions/binaryen-configuration/build/generated-sources",
+                "repo/gradle-build-conventions/d8-configuration/build/generated-sources",
+                "repo/gradle-build-conventions/nodejs-configuration/build/generated-sources",
+                "repo/gradle-build-conventions/gradle-plugins-documentation/build/generated-sources",
+                "wasm/wasm.debug.browsers/node_modules",
+                "wasm/wasm.debug.browsers/.gradle",
+                ".gradle/expanded",
             )
         )
+    }
+
+    fun testNotUsingCanonicalFileApi() {
+        val canonicalPattern = Pattern.compile("\\.canonical(Path|File)", Pattern.MULTILINE)
+
+        // find KGP modules except the modules of internal test infrastructure
+        val kgpDirs = File("libraries/tools").walkTopDown()
+            .maxDepth(2)
+            .filter { it.isDirectory && it.name.startsWith("kotlin-gradle-") && "test" !in it.name }
+            // Check only `src` directory
+            .flatMap { it.walkTopDown().maxDepth(1).filter { file -> file.isDirectory && file.name == "src" } }
+            .map { it.path }
+            .toList()
+
+        val targetDirs = kgpDirs + listOf(
+            "build-common/src",
+            "compiler/build-tools/kotlin-build-statistics/src",
+            "compiler/build-tools/kotlin-build-tools-api/src",
+            "compiler/build-tools/kotlin-build-tools-impl/src",
+            "compiler/build-tools/kotlin-build-tools-jdk-utils/src",
+            "compiler/daemon/daemon-client/src",
+            "compiler/daemon/daemon-common/src",
+            "compiler/daemon/src",
+            "compiler/incremental-compilation-impl/src",
+            "jps/jps-common/src",
+            "jps/jps-plugin/src",
+        )
+
+        targetDirs.map {
+            FileUtil.findFilesByMask(KOTLIN_FILE_PATTERN, File(it))
+        }.flatten().forEach { sourceFile ->
+            val matcher = canonicalPattern.matcher(sourceFile.readText())
+            if (matcher.find()) {
+                fail("KT-69613 canonicalPath and canonicalFile apis should not be used: ${matcher.group()}\nin file: $sourceFile")
+            }
+        }
     }
 
     fun testParserCode() {
@@ -163,6 +208,7 @@ class CodeConformanceTest : TestCase() {
         }
 
         val atAuthorPattern = Pattern.compile("/\\*.+@author.+\\*/", Pattern.DOTALL)
+        val gradleEagerAttributeMethodRegex = "\\.attribute\\(.+,.+\\)".toRegex()
 
         @Suppress("SpellCheckingInspection") val tests = listOf(
             FileTestCase(
@@ -190,11 +236,14 @@ class CodeConformanceTest : TestCase() {
                 "org.jetbrains.jet" in source
             },
             FileTestCase(
-                "%d source files contain references to package kotlin.reflect.jvm.internal.impl.\n" +
+                message = "%d source files contain references to package kotlin.reflect.jvm.internal.impl.\n" +
                         "This package contains internal reflection implementation and is a result of a " +
                         "post-processing of kotlin-reflect.jar by jarjar.\n" +
                         "Most probably you meant to use classes from org.jetbrains.kotlin.**.\n" +
-                        "Please change references in these files or exclude them in this test:\n%s"
+                        "Please change references in these files or exclude them in this test:\n%s",
+                allowedFiles = listOf(
+                    "libraries/tools/jdk-api-validator/src/test/JdkApiUsageTest.kt"
+                )
             ) { _, source ->
                 "kotlin.reflect.jvm.internal.impl" in source
             },
@@ -209,46 +258,27 @@ class CodeConformanceTest : TestCase() {
                 message = "%d source files contain references to package gnu.trove.\n" +
                         "Please avoid using trove library in new use cases. " +
                         "These files are affected:\n%s",
-                allowedFiles = listOf(
-                    "analysis/light-classes-base/src/org/jetbrains/kotlin/asJava/classes/KotlinClassInnerStuffCache.kt",
-                    "build-common/src/org/jetbrains/kotlin/incremental/IncrementalJvmCache.kt",
-                    "compiler/backend/src/org/jetbrains/kotlin/codegen/FrameMap.kt",
-                    "compiler/backend/src/org/jetbrains/kotlin/codegen/inline/SMAP.kt",
-                    "compiler/backend/src/org/jetbrains/kotlin/codegen/optimization/common/ControlFlowGraph.kt",
-                    "compiler/cli/cli-base/src/org/jetbrains/kotlin/cli/jvm/compiler/CliVirtualFileFinder.kt",
-                    "compiler/cli/cli-base/src/org/jetbrains/kotlin/cli/jvm/compiler/KotlinCliJavaFileManagerImpl.kt",
-                    "compiler/cli/cli-base/src/org/jetbrains/kotlin/cli/jvm/index/JvmDependenciesIndexImpl.kt",
-                    "compiler/daemon/src/org/jetbrains/kotlin/daemon/RemoteLookupTrackerClient.kt",
-                    "compiler/frontend/src/org/jetbrains/kotlin/resolve/lazy/FileScopeFactory.kt",
-                    "compiler/frontend/src/org/jetbrains/kotlin/resolve/lazy/LazyImportScope.kt",
-                    "compiler/frontend/src/org/jetbrains/kotlin/types/expressions/PreliminaryLoopVisitor.kt",
-                    "compiler/ir/backend.jvm/lower/src/org/jetbrains/kotlin/backend/jvm/lower/EnumClassLowering.kt",
-                    "compiler/psi/src/org/jetbrains/kotlin/psi/KotlinStringLiteralTextEscaper.kt",
-                    "compiler/resolution.common.jvm/src/org/jetbrains/kotlin/load/java/structure/impl/classFiles/BinaryJavaClass.kt",
-                    "compiler/resolution/src/org/jetbrains/kotlin/resolve/calls/results/OverloadingConflictResolver.kt",
-                    "compiler/tests-common/tests/org/jetbrains/kotlin/test/testFramework/KtUsefulTestCase.java",
-                    "js/js.ast/src/org/jetbrains/kotlin/js/backend/JsReservedIdentifiers.java",
-                    "js/js.ast/src/org/jetbrains/kotlin/js/backend/JsToStringGenerationVisitor.java",
-                    "js/js.sourcemap/src/org/jetbrains/kotlin/js/sourceMap/SourceMap3Builder.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/TargetDependent.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/konan/NativeLibrary.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/AssociatedClassifierIdsResolver.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirClassNode.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirClassifierIndex.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirFictitiousFunctionClassifiers.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirKnownClassifiers.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirModuleNode.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirPackageNode.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirProvidedClassifiersByModules.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirRootNode.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/mergedtree/CirTypeSignature.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/metadata/CirDeserializers.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/metadata/CirTypeResolver.kt",
-                    "native/commonizer/src/org/jetbrains/kotlin/commonizer/utils/misc.kt",
-                    "native/native.tests/tests/org/jetbrains/kotlin/konan/blackboxtest/support/settings/SettingsContainers.kt"
-                )
             ) { _, source ->
                 "gnu.trove" in source
+            },
+            FileTestCase(
+                message = """
+                |KT-60644: Using Gradle 'AttributeContainer.attribute(key, value)' method leads to eager tasks creation in Kotlin
+                |Gradle plugin. Please use instead for KGP code 'HasAttributes.setAttributeProvider' or 'HasAttributes.setAttribute'
+                |(for simple values) extension methods and for other code 'AttributeContainer.attributeProvider(key, provider { value })'.
+                |
+                |%d files are affected. Please update these files or exclude them in this test:
+                |%s
+                """.trimMargin(),
+                allowedFiles = listOf(
+                    "libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/utils/gradleAttributesContainerUtils.kt",
+                    "libraries/tools/kotlin-gradle-plugin-integration-tests/src/test/kotlin/org/jetbrains/kotlin/gradle/native/GeneralNativeIT.kt",
+                    "libraries/tools/kotlin-gradle-plugin-integration-tests/src/test/kotlin/org/jetbrains/kotlin/gradle/KotlinGradlePluginIT.kt",
+                    "repo/gradle-build-conventions/buildsrc-compat/src/main/kotlin/plugins/CustomVariantPublishingDsl.kt",
+                    "libraries/tools/kotlin-gradle-plugin/src/functionalTest/kotlin/org/jetbrains/kotlin/gradle/unitTests/KotlinPublishingAdhocSoftwareComponentTest.kt"
+                )
+            ) { _, source ->
+                gradleEagerAttributeMethodRegex.containsMatchIn(source)
             }
         )
 

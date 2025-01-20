@@ -5,9 +5,6 @@
 @file:OptIn(ExperimentalForeignApi::class)
 package kotlin.native.concurrent
 
-import kotlin.experimental.ExperimentalNativeApi
-import kotlin.native.internal.ExportForCppRuntime
-import kotlin.native.internal.Frozen
 import kotlin.native.internal.VolatileLambda
 import kotlin.native.internal.IntrinsicType
 import kotlin.native.internal.TypedIntrinsic
@@ -33,10 +30,9 @@ import kotlinx.cinterop.*
  *     - It includes such things as innocuous [Worker.current] from the **current** worker.
  */
 @Suppress("NON_PUBLIC_PRIMARY_CONSTRUCTOR_OF_INLINE_CLASS")
-@OptIn(FreezingIsDeprecated::class)
 @ObsoleteWorkersApi
-public value class Worker @PublishedApi internal constructor(val id: Int) {
-    companion object {
+public value class Worker @PublishedApi internal constructor(public val id: Int) {
+    public companion object {
         /**
          * Start new scheduling primitive, such as thread, to accept new tasks via `execute` interface.
          * Typically new worker may be needed for computations offload to another core, for IO it may be
@@ -128,20 +124,14 @@ public value class Worker @PublishedApi internal constructor(val id: Int) {
     /**
      * Plan job for further execution in the worker.
      *
-     * With -Xworker-exception-handling=use-hook, if the worker was created with `errorReporting` set to true, any exception escaping from [operation] will
+     * If the worker was created with `errorReporting` set to true, any exception escaping from [operation] will
      * be handled by [processUnhandledException].
-     *
-     * Legacy MM: [operation] parameter must be either frozen, or execution to be planned on the current worker.
-     * Otherwise [IllegalStateException] will be thrown.
      *
      * @param afterMicroseconds defines after how many microseconds delay execution shall happen, 0 means immediately,
      * @throws [IllegalArgumentException] on negative values of [afterMicroseconds].
      * @throws [IllegalStateException] if [operation] parameter is not frozen and worker is not current.
      */
-    @OptIn(ExperimentalNativeApi::class)
     public fun executeAfter(afterMicroseconds: Long = 0, operation: () -> Unit): Unit {
-        val current = currentInternal()
-        if (Platform.memoryModel != MemoryModel.EXPERIMENTAL && current != id && !operation.isFrozen) throw IllegalStateException("Job for another worker must be frozen")
         if (afterMicroseconds < 0) throw IllegalArgumentException("Timeout parameter must be non-negative")
         executeAfterInternal(id, operation, afterMicroseconds)
     }

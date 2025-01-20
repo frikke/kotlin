@@ -8,16 +8,15 @@ package org.jetbrains.kotlin.gradle.testing.internal
 import org.gradle.api.GradleException
 import org.gradle.api.execution.TaskExecutionGraph
 import org.gradle.api.file.RegularFileProperty
-import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.testing.*
+import org.gradle.work.DisableCachingByDefault
 import org.jetbrains.kotlin.gradle.internal.testing.KotlinTestRunnerListener
 import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider
-import org.jetbrains.kotlin.gradle.plugin.internal.KotlinTestReportCompatibilityHelper
 import org.jetbrains.kotlin.gradle.tasks.KotlinTest
 import org.jetbrains.kotlin.gradle.utils.appendLine
 import org.jetbrains.kotlin.gradle.utils.toUri
@@ -44,6 +43,7 @@ import org.jetbrains.kotlin.gradle.utils.toUri
  * In this case, only topmost aggregate test task will override reporting,
  * event if child tasks will be executed.
  */
+@DisableCachingByDefault
 abstract class KotlinTestReport : TestReport(), UsesTestReportService {
     @Transient
     @Internal
@@ -75,9 +75,6 @@ abstract class KotlinTestReport : TestReport(), UsesTestReportService {
 
     private val hasFailedTests: Boolean
         get() = testReportService.hasFailedTests(path)
-
-    @get:Internal
-    internal abstract val testReportCompatibilityHelper: Property<KotlinTestReportCompatibilityHelper>
 
     private fun computeAllParentTasksPaths(): List<String> {
         val allParents = mutableListOf<String>()
@@ -132,7 +129,7 @@ abstract class KotlinTestReport : TestReport(), UsesTestReportService {
     }
 
     private fun reportOn(task: AbstractTestTask) {
-        testReportCompatibilityHelper.get().addTestResultsFrom(this, task)
+        testResults.from(task.binaryResultsDirectory)
     }
 
     @get:Internal

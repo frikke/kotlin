@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
 // SKIP_TXT
 
@@ -7,7 +8,7 @@ public interface JavaInterface {
     public void foo(int javaName);
 }
 
-// FILE: JavaClass.java
+// FILE: JavaSuperClass.java
 
 public class JavaSuperClass implements JavaInterface {
     @Override

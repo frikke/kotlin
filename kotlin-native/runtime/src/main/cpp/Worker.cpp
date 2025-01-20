@@ -14,33 +14,26 @@
  * limitations under the License.
  */
 
-#ifndef KONAN_NO_THREADS
-#define WITH_WORKERS 1
-#endif
-
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdlib>
+#include <deque>
+#include <set>
 #include <string.h>
 #include <stdio.h>
+#include <unordered_map>
+#include <vector>
 
-#if WITH_WORKERS
 #include <pthread.h>
 #include "PthreadUtils.h"
-#endif
 
 #include "Exceptions.h"
 #include "KAssert.h"
 #include "Memory.h"
 #include "Natives.h"
-#include "ObjCMMAPI.h"
-#include "ObjectAlloc.hpp"
 #include "Runtime.h"
 #include "Types.h"
 #include "Worker.h"
-#include "std_support/Deque.hpp"
-#include "std_support/New.hpp"
-#include "std_support/Set.hpp"
-#include "std_support/UnorderedMap.hpp"
-#include "std_support/Vector.hpp"
+#include "objc_support/AutoreleasePool.hpp"
 
 using namespace kotlin;
 
@@ -48,9 +41,7 @@ extern "C" {
 
 RUNTIME_NORETURN void ThrowWorkerAlreadyTerminated();
 RUNTIME_NORETURN void ThrowWrongWorkerOrAlreadyTerminated();
-RUNTIME_NORETURN void ThrowCannotTransferOwnership();
 RUNTIME_NORETURN void ThrowFutureInvalidState();
-RUNTIME_NORETURN void ThrowWorkerUnsupported();
 OBJ_GETTER(WorkerLaunchpad, KRef);
 
 }  // extern "C"
@@ -60,21 +51,9 @@ namespace {
 enum class WorkerExceptionHandling {
     kDefault, // Perform the default processing of unhandled exception.
     kIgnore, // Do nothing on exception escaping job unit.
-    kLog, // Deprecated.
 };
 
-WorkerExceptionHandling workerExceptionHandling() noexcept {
-    switch (compiler::workerExceptionHandling()) {
-        case compiler::WorkerExceptionHandling::kLegacy:
-            return WorkerExceptionHandling::kLog;
-        case compiler::WorkerExceptionHandling::kUseHook:
-            return WorkerExceptionHandling::kDefault;
-    }
-}
-
 } // namespace
-
-#if WITH_WORKERS
 
 namespace {
 
@@ -139,7 +118,7 @@ struct JobCompare {
 // Using multiset instead of regular set, because we compare the jobs only by `whenExecute`.
 // So if `whenExecute` of two different jobs is the same, the jobs are considered equivalent,
 // and set would simply drop one of them.
-typedef std_support::multiset<Job, JobCompare> DelayedJobSet;
+typedef std::multiset<Job, JobCompare> DelayedJobSet;
 
 }  // namespace
 
@@ -206,7 +185,7 @@ class Worker {
 
   KInt id_;
   WorkerKind kind_;
-  std_support::deque<Job> queue_;
+  std::deque<Job> queue_;
   DelayedJobSet delayed_;
   // Stable pointer with worker's name.
   KNativePtr name_;
@@ -221,20 +200,12 @@ class Worker {
   MemoryState* memoryState_ = nullptr;
 };
 
-#endif  // WITH_WORKERS
-
 namespace {
-
-#if WITH_WORKERS
 
 THREAD_LOCAL_VARIABLE Worker* g_worker = nullptr;
 
 KNativePtr transfer(ObjHolder* holder, KInt mode) {
   void* result = CreateStablePointer(holder->obj());
-  if (!ClearSubgraphReferences(holder->obj(), mode == CHECKED)) {
-    DisposeStablePointer(result);
-    ThrowCannotTransferOwnership();
-  }
   holder->clear();
   return result;
 }
@@ -378,11 +349,10 @@ class State {
     Worker* worker = nullptr;
     {
       Locker locker(&lock_);
-      worker = new (std_support::kalloc) Worker(nextWorkerId(), exceptionHandling, customName, kind);
+      worker = new Worker(nextWorkerId(), exceptionHandling, customName, kind);
       if (worker == nullptr) return nullptr;
       workers_[worker->id()] = worker;
     }
-    GC_RegisterWorker(worker);
     return worker;
   }
 
@@ -410,8 +380,7 @@ class State {
         workers_.erase(it);
       }
     }
-    GC_UnregisterWorker(worker);
-    std_support::kdelete(worker);
+    delete worker;
   }
 
   Future* addJobToWorkerUnlocked(
@@ -424,7 +393,7 @@ class State {
     if (it == workers_.end()) return nullptr;
     worker = it->second;
 
-    future = new (std_support::kalloc) Future(nextFutureId());
+    future = new Future(nextFutureId());
     futures_[future->id()] = future;
 
     Job job;
@@ -526,7 +495,7 @@ class State {
        auto it = futures_.find(id);
        if (it != futures_.end()) {
          futures_.erase(it);
-         std_support::kdelete(future);
+         delete future;
        }
     }
 
@@ -600,7 +569,7 @@ class State {
 
   template <typename F>
   void waitNativeWorkersTerminationUnlocked(bool checkLeaks, F waitForWorker) {
-      std_support::vector<std::pair<KInt, pthread_t>> workersToWait;
+      std::vector<std::pair<KInt, pthread_t>> workersToWait;
       {
           Locker locker(&lock_);
 
@@ -640,7 +609,7 @@ class State {
         "Use `Platform.isMemoryLeakCheckerActive = false` to avoid this check.\n",
         remainingNativeWorkers);
       konan::consoleFlush();
-      konan::abort();
+      std::abort();
     }
   }
 
@@ -654,7 +623,7 @@ class State {
   }
 
   OBJ_GETTER0(getActiveWorkers) {
-      std_support::vector<KInt> workers;
+      std::vector<KInt> workers;
       {
           Locker locker(&lock_);
 
@@ -672,9 +641,9 @@ class State {
  private:
   pthread_mutex_t lock_;
   pthread_cond_t cond_;
-  std_support::unordered_map<KInt, Future*> futures_;
-  std_support::unordered_map<KInt, Worker*> workers_;
-  std_support::unordered_map<KInt, pthread_t> terminating_native_workers_;
+  std::unordered_map<KInt, Future*> futures_;
+  std::unordered_map<KInt, Worker*> workers_;
+  std::unordered_map<KInt, pthread_t> terminating_native_workers_;
   KInt currentWorkerId_;
   KInt currentFutureId_;
   KInt currentVersion_;
@@ -687,11 +656,11 @@ State* theState() {
     return state;
   }
 
-  State* result = new (std_support::kalloc) State();
+  State* result = new State();
 
   State* old = __sync_val_compare_and_swap(&state, nullptr, result);
   if (old != nullptr) {
-    std_support::kdelete(result);
+    delete result;
     // Someone else inited this data.
     return old;
   }
@@ -713,7 +682,7 @@ void Future::storeResultUnlocked(KNativePtr result, bool ok) {
 }
 
 void Future::cancelUnlocked(MemoryState* memoryState) {
-  kotlin::ThreadStateGuard guard(memoryState, ThreadState::kNative);
+  kotlin::AssertThreadState(memoryState, ThreadState::kNative);
   {
     Locker locker(&lock_, memoryState);
     state_ = CANCELLED;
@@ -809,135 +778,45 @@ OBJ_GETTER0(activeWorkers) {
     RETURN_RESULT_OF0(theState()->getActiveWorkers);
 }
 
-#else
-
-KInt startWorker(WorkerExceptionHandling exceptionHandling, KRef customName) {
-  ThrowWorkerUnsupported();
-}
-
-KInt stateOfFuture(KInt id) {
-  ThrowWorkerUnsupported();
-}
-
-KInt execute(KInt id, KInt transferMode, KRef producer, KNativePtr jobFunction) {
-  ThrowWorkerUnsupported();
-}
-
-void executeAfter(KInt id, KRef job, KLong afterMicroseconds) {
-  ThrowWorkerUnsupported();
-}
-
-KBoolean processQueue(KInt id) {
-  ThrowWorkerUnsupported();
-}
-
-KBoolean park(KInt id, KLong timeoutMicroseconds, KBoolean process) {
-  ThrowWorkerUnsupported();
-}
-
-KInt currentWorker() {
-  ThrowWorkerUnsupported();
-}
-
-OBJ_GETTER(consumeFuture, KInt id) {
-  ThrowWorkerUnsupported();
-}
-
-OBJ_GETTER(getWorkerName, KInt id) {
-  ThrowWorkerUnsupported();
-}
-
-KInt requestTermination(KInt id, KBoolean processScheduledJobs) {
-  ThrowWorkerUnsupported();
-}
-
-KBoolean waitForAnyFuture(KInt versionToken, KInt millis) {
-  ThrowWorkerUnsupported();
-}
-
-KInt versionToken() {
-  ThrowWorkerUnsupported();
-}
-
-OBJ_GETTER(attachObjectGraphInternal, KNativePtr stable) {
-  ThrowWorkerUnsupported();
-}
-
-KNativePtr detachObjectGraphInternal(KInt transferMode, KRef producer) {
-  ThrowWorkerUnsupported();
-}
-
-KULong platformThreadId(KInt id) {
-    ThrowWorkerUnsupported();
-}
-
-OBJ_GETTER0(activeWorkers) {
-    ThrowWorkerUnsupported();
-}
-
-#endif  // WITH_WORKERS
-
 }  // namespace
 
 KInt GetWorkerId(Worker* worker) {
-#if WITH_WORKERS
   return worker->id();
-#else
-  return 0;
-#endif  // WITH_WORKERS
 }
 
 Worker* WorkerInit(MemoryState* memoryState) {
-#if WITH_WORKERS
   Worker* worker;
   if (::g_worker != nullptr) {
       worker = ::g_worker;
   } else {
-      worker = theState()->addWorkerUnlocked(workerExceptionHandling(), nullptr, WorkerKind::kOther);
+      worker = theState()->addWorkerUnlocked(WorkerExceptionHandling::kDefault, nullptr, WorkerKind::kOther);
       ::g_worker = worker;
   }
   worker->setThread(pthread_self());
   worker->setMemoryState(memoryState);
   return worker;
-#else
-  return nullptr;
-#endif  // WITH_WORKERS
 }
 
 void WorkerDeinit(Worker* worker) {
-#if WITH_WORKERS
   ::g_worker = nullptr;
   theState()->destroyWorkerUnlocked(worker);
-#endif  // WITH_WORKERS
 }
 
 void WorkerDestroyThreadDataIfNeeded(KInt id) {
-#if WITH_WORKERS
   theState()->destroyWorkerThreadDataUnlocked(id);
-#endif
 }
 
 void WaitNativeWorkersTermination() {
-#if WITH_WORKERS
   theState()->waitNativeWorkersTerminationUnlocked(true, [](KInt worker) { return true; });
-#endif
 }
 
 void WaitNativeWorkerTermination(KInt id) {
-#if WITH_WORKERS
     theState()->waitNativeWorkersTerminationUnlocked(false, [id](KInt worker) { return worker == id; });
-#endif
 }
 
 bool WorkerSchedule(KInt id, KNativePtr jobStablePtr) {
-#if WITH_WORKERS
     return theState()->scheduleJobInWorkerUnlocked(id, jobStablePtr);
-#else
-    return false;
-#endif // WITH_WORKERS
 }
-
-#if WITH_WORKERS
 
 Worker::~Worker() {
   RuntimeAssert(pthread_equal(thread(), pthread_self()),
@@ -946,12 +825,12 @@ Worker::~Worker() {
   for (auto job : queue_) {
       switch (job.kind) {
           case JOB_REGULAR:
-              DisposeStablePointerFor(memoryState_, job.regularJob.argument);
+              DisposeStablePointer(job.regularJob.argument);
               job.regularJob.future->cancelUnlocked(memoryState_);
               break;
           case JOB_EXECUTE_AFTER: {
               // TODO: what do we do here? Shall we execute them?
-              DisposeStablePointerFor(memoryState_, job.executeAfter.operation);
+              DisposeStablePointer(job.executeAfter.operation);
               break;
           }
           case JOB_TERMINATE: {
@@ -968,14 +847,14 @@ Worker::~Worker() {
 
   for (auto job : delayed_) {
       RuntimeAssert(job.kind == JOB_EXECUTE_AFTER, "Must be delayed");
-      DisposeStablePointerFor(memoryState_, job.executeAfter.operation);
+      DisposeStablePointer(job.executeAfter.operation);
   }
 
   if (name_ != nullptr) {
-      DisposeStablePointerFor(memoryState_, name_);
+      DisposeStablePointer(name_);
   }
 
-  kotlin::ThreadStateGuard guard(memoryState_, ThreadState::kNative);
+  kotlin::AssertThreadState(memoryState_, ThreadState::kNative);
   pthread_mutex_destroy(&lock_);
   pthread_cond_destroy(&cond_);
 }
@@ -1117,7 +996,6 @@ bool Worker::park(KLong timeoutMicroseconds, bool process) {
 }
 
 JobKind Worker::processQueueElement(bool blocking) {
-  GC_CollectorCallback(this);
   if (terminated_) return JOB_TERMINATE;
   Job job = getJob(blocking);
   switch (job.kind) {
@@ -1141,18 +1019,13 @@ JobKind Worker::processQueueElement(bool blocking) {
       ObjHolder operationHolder, dummyHolder;
       KRef obj = DerefStablePointer(job.executeAfter.operation, operationHolder.slot());
       try {
-        #if KONAN_OBJC_INTEROP
-          konan::AutoreleasePool autoreleasePool;
-        #endif
+          objc_support::AutoreleasePool autoreleasePool;
           WorkerLaunchpad(obj, dummyHolder.slot());
       } catch(ExceptionObjHolder& e) {
         switch (exceptionHandling()) {
           case WorkerExceptionHandling::kIgnore: break;
           case WorkerExceptionHandling::kDefault:
               kotlin::ProcessUnhandledException(e.GetExceptionObject());
-              break;
-          case WorkerExceptionHandling::kLog:
-              ReportUnhandledException(e.GetExceptionObject());
               break;
         }
       }
@@ -1167,9 +1040,7 @@ JobKind Worker::processQueueElement(bool blocking) {
       ObjHolder resultHolder;
       KRef argument = AdoptStablePointer(job.regularJob.argument, argumentHolder.slot());
       try {
-        #if KONAN_OBJC_INTEROP
-          konan::AutoreleasePool autoreleasePool;
-        #endif
+          objc_support::AutoreleasePool autoreleasePool;
           {
               CurrentFrameGuard guard;
               job.regularJob.function(argument, resultHolder.slot());
@@ -1183,7 +1054,6 @@ JobKind Worker::processQueueElement(bool blocking) {
             case WorkerExceptionHandling::kIgnore:
                 break;
             case WorkerExceptionHandling::kDefault: // TODO: Pass exception object into the future and do nothing in the default case.
-            case WorkerExceptionHandling::kLog:
                 ReportUnhandledException(e.GetExceptionObject());
                 break;
         }
@@ -1199,12 +1069,10 @@ JobKind Worker::processQueueElement(bool blocking) {
   return job.kind;
 }
 
-#endif  // WITH_WORKERS
-
 extern "C" {
 
 KInt Kotlin_Worker_startInternal(KBoolean errorReporting, KRef customName) {
-    return startWorker(errorReporting ? workerExceptionHandling() : WorkerExceptionHandling::kIgnore, customName);
+    return startWorker(errorReporting ? WorkerExceptionHandling::kDefault : WorkerExceptionHandling::kIgnore, customName);
 }
 
 KInt Kotlin_Worker_currentInternal() {
@@ -1257,20 +1125,6 @@ OBJ_GETTER(Kotlin_Worker_attachObjectGraphInternal, KNativePtr stable) {
 
 KNativePtr Kotlin_Worker_detachObjectGraphInternal(KInt transferMode, KRef producer) {
   return detachObjectGraphInternal(transferMode, producer);
-}
-
-void Kotlin_Worker_freezeInternal(KRef object) {
-  if (object != nullptr && compiler::freezingEnabled())
-    FreezeSubgraph(object);
-}
-
-KBoolean Kotlin_Worker_isFrozenInternal(KRef object) {
-  if (!compiler::freezingChecksEnabled()) return false;
-  return object == nullptr || isPermanentOrFrozen(object);
-}
-
-void Kotlin_Worker_ensureNeverFrozen(KRef object) {
-  EnsureNeverFrozen(object);
 }
 
 void Kotlin_Worker_waitTermination(KInt id) {

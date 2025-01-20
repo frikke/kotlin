@@ -5,35 +5,36 @@
 
 package org.jetbrains.kotlin.fir.session
 
+import org.jetbrains.kotlin.config.AnalysisFlags
 import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 import org.jetbrains.kotlin.fir.FirModuleData
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.FirVisibilityChecker
 import org.jetbrains.kotlin.fir.SessionConfiguration
-import org.jetbrains.kotlin.fir.analysis.FirDefaultOverridesBackwardCompatibilityHelper
-import org.jetbrains.kotlin.fir.analysis.FirOverridesBackwardCompatibilityHelper
 import org.jetbrains.kotlin.fir.declarations.FirDeclarationOrigin
 import org.jetbrains.kotlin.fir.deserialization.ModuleDataProvider
 import org.jetbrains.kotlin.fir.deserialization.SingleModuleDataProvider
 import org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar
 import org.jetbrains.kotlin.fir.java.FirProjectSessionProvider
-import org.jetbrains.kotlin.fir.resolve.calls.ConeCallConflictResolverFactory
-import org.jetbrains.kotlin.fir.resolve.providers.impl.FirBuiltinSymbolProvider
-import org.jetbrains.kotlin.fir.resolve.providers.impl.FirCloneableSymbolProvider
+import org.jetbrains.kotlin.fir.resolve.providers.impl.*
 import org.jetbrains.kotlin.fir.scopes.FirKotlinScopeProvider
-import org.jetbrains.kotlin.fir.scopes.FirPlatformClassMapper
 import org.jetbrains.kotlin.fir.session.environment.AbstractProjectEnvironment
 import org.jetbrains.kotlin.fir.session.environment.AbstractProjectFileSearchScope
 import org.jetbrains.kotlin.incremental.components.EnumWhenTracker
+import org.jetbrains.kotlin.incremental.components.ImportTracker
 import org.jetbrains.kotlin.incremental.components.LookupTracker
 import org.jetbrains.kotlin.library.metadata.resolver.KotlinResolvedLibrary
 import org.jetbrains.kotlin.load.kotlin.PackageAndMetadataPartProvider
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.serialization.deserialization.KotlinMetadataFinder
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
+import org.jetbrains.kotlin.utils.addToStdlib.runUnless
 
-object FirCommonSessionFactory : FirAbstractSessionFactory() {
+@OptIn(SessionConfiguration::class)
+object FirCommonSessionFactory : FirAbstractSessionFactory<Nothing?, Nothing?>() {
+
+    // ==================================== Library session ====================================
+
     fun createLibrarySession(
         mainModuleName: Name,
         sessionProvider: FirProjectSessionProvider,
@@ -44,19 +45,15 @@ object FirCommonSessionFactory : FirAbstractSessionFactory() {
         resolvedKLibs: List<KotlinResolvedLibrary>,
         packageAndMetadataPartProvider: PackageAndMetadataPartProvider,
         languageVersionSettings: LanguageVersionSettings,
-        registerExtraComponents: ((FirSession) -> Unit),
     ): FirSession {
         return createLibrarySession(
             mainModuleName,
+            context = null,
             sessionProvider,
             moduleDataProvider,
             languageVersionSettings,
             extensionRegistrars,
-            registerExtraComponents = {
-                registerExtraComponents(it)
-            },
-            createKotlinScopeProvider = { FirKotlinScopeProvider() },
-            createProviders = { session, builtinsModuleData, kotlinScopeProvider ->
+            createProviders = { session, builtinsModuleData, kotlinScopeProvider, syntheticFunctionInterfaceProvider ->
                 listOfNotNull(
                     MetadataSymbolProvider(
                         session,
@@ -73,14 +70,27 @@ object FirCommonSessionFactory : FirAbstractSessionFactory() {
                             resolvedKLibs.map { it.library }
                         )
                     },
-                    FirBuiltinSymbolProvider(session, builtinsModuleData, kotlinScopeProvider),
+                    syntheticFunctionInterfaceProvider,
+                    runUnless(languageVersionSettings.getFlag(AnalysisFlags.stdlibCompilation)) {
+                        FirFallbackBuiltinSymbolProvider(session, builtinsModuleData, kotlinScopeProvider)
+                    },
+                    FirBuiltinSyntheticFunctionInterfaceProvider(session, builtinsModuleData, kotlinScopeProvider),
                     FirCloneableSymbolProvider(session, builtinsModuleData, kotlinScopeProvider),
                 )
             }
         )
     }
 
-    @OptIn(SessionConfiguration::class)
+    override fun createKotlinScopeProviderForLibrarySession(): FirKotlinScopeProvider {
+        return FirKotlinScopeProvider()
+    }
+
+    override fun FirSession.registerLibrarySessionComponents(c: Nothing?) {
+        registerDefaultComponents()
+    }
+
+    // ==================================== Platform session ====================================
+
     fun createModuleBasedSession(
         moduleData: FirModuleData,
         sessionProvider: FirProjectSessionProvider,
@@ -90,27 +100,20 @@ object FirCommonSessionFactory : FirAbstractSessionFactory() {
         languageVersionSettings: LanguageVersionSettings = LanguageVersionSettingsImpl.DEFAULT,
         lookupTracker: LookupTracker? = null,
         enumWhenTracker: EnumWhenTracker? = null,
-        registerExtraComponents: ((FirSession) -> Unit) = {},
+        importTracker: ImportTracker? = null,
         init: FirSessionConfigurator.() -> Unit = {}
     ): FirSession {
         return createModuleBasedSession(
             moduleData,
+            context = null,
             sessionProvider,
             extensionRegistrars,
             languageVersionSettings,
             lookupTracker,
             enumWhenTracker,
+            importTracker,
             init,
-            registerExtraComponents = {
-                it.register(FirVisibilityChecker::class, FirVisibilityChecker.Default)
-                it.register(ConeCallConflictResolverFactory::class, DefaultCallConflictResolverFactory)
-                it.register(FirPlatformClassMapper::class, FirPlatformClassMapper.Default)
-                it.register(FirOverridesBackwardCompatibilityHelper::class, FirDefaultOverridesBackwardCompatibilityHelper)
-                registerExtraComponents(it)
-            },
-            registerExtraCheckers = {},
-            createKotlinScopeProvider = { FirKotlinScopeProvider() },
-            createProviders = { session, kotlinScopeProvider, symbolProvider, syntheticFunctionalInterfaceProvider, generatedSymbolsProvider, dependencies ->
+            createProviders = { session, kotlinScopeProvider, symbolProvider, generatedSymbolsProvider, dependencies ->
                 var symbolProviderForBinariesFromIncrementalCompilation: MetadataSymbolProvider? = null
                 incrementalCompilationContext?.let {
                     val precompiledBinariesPackagePartProvider = it.precompiledBinariesPackagePartProvider
@@ -133,10 +136,34 @@ object FirCommonSessionFactory : FirAbstractSessionFactory() {
                     *(incrementalCompilationContext?.previousFirSessionsSymbolProviders?.toTypedArray() ?: emptyArray()),
                     symbolProviderForBinariesFromIncrementalCompilation,
                     generatedSymbolsProvider,
-                    syntheticFunctionalInterfaceProvider,
                     *dependencies.toTypedArray(),
                 )
             }
         )
     }
+
+    override fun createKotlinScopeProviderForSourceSession(
+        moduleData: FirModuleData,
+        languageVersionSettings: LanguageVersionSettings,
+    ): FirKotlinScopeProvider {
+        return if (languageVersionSettings.getFlag(AnalysisFlags.stdlibCompilation)) {
+            /**
+             * For stdlib and builtin compilation, we don't want to hide @PlatformDependent declarations from the metadata
+             */
+            FirKotlinScopeProvider { _, declaredScope, _, _, _ -> declaredScope }
+        } else {
+            FirKotlinScopeProvider()
+        }
+    }
+
+    override fun FirSessionConfigurator.registerPlatformCheckers(c: Nothing?) {}
+
+    override fun FirSession.registerSourceSessionComponents(c: Nothing?) {
+        registerDefaultComponents()
+    }
+
+    // ==================================== Common parts ====================================
+
+    // ==================================== Utilities ====================================
+
 }

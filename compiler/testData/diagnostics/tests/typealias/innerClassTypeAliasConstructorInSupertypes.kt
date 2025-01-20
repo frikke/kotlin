@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
+
 package test
 
 typealias OI = Outer.Inner

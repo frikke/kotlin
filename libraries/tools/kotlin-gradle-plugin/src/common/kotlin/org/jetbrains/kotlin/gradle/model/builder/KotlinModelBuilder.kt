@@ -10,6 +10,7 @@ import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.SourceDirectorySet
 import org.gradle.tooling.provider.model.ToolingModelBuilder
+import org.gradle.util.GradleVersion
 import org.jetbrains.kotlin.gradle.model.CompilerArguments
 import org.jetbrains.kotlin.gradle.model.KotlinProject
 import org.jetbrains.kotlin.gradle.model.SourceSet
@@ -17,9 +18,9 @@ import org.jetbrains.kotlin.gradle.model.impl.CompilerArgumentsImpl
 import org.jetbrains.kotlin.gradle.model.impl.KotlinProjectImpl
 import org.jetbrains.kotlin.gradle.model.impl.SourceSetImpl
 import org.jetbrains.kotlin.gradle.plugin.*
-import org.jetbrains.kotlin.gradle.plugin.internal.JavaSourceSetsAccessor
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinAndroidTarget
 import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile
+import org.jetbrains.kotlin.gradle.utils.javaSourceSetsIfAvailable
 
 /**
  * [ToolingModelBuilder] for [KotlinProject] models.
@@ -69,17 +70,20 @@ class KotlinModelBuilder(private val kotlinPluginVersion: String, private val an
             return listOf("expectedBy", "implement")
                 .flatMap { project.configurations.findByName(it)?.dependencies ?: emptySet<Dependency>() }
                 .filterIsInstance<ProjectDependency>()
-                .mapNotNull { it.dependencyProject }
-                .map { it.pathOrName() }
+                .mapNotNull {
+                    if (GradleVersion.current() < GradleVersion.version("8.11")) {
+                        @Suppress("DEPRECATION")
+                        it.dependencyProject.pathOrName()
+                    } else {
+                        it.path
+                    }
+                }
         }
 
         private fun Project.pathOrName() = if (path == ":") name else path
 
         private fun AbstractKotlinCompile<*>.createSourceSet(project: Project, projectType: KotlinProject.ProjectType): SourceSet? {
-            val javaSourceSet = project
-                .variantImplementationFactory<JavaSourceSetsAccessor.JavaSourceSetsAccessorVariantFactory>()
-                .getInstance(project)
-                .sourceSetsIfAvailable
+            val javaSourceSet = project.javaSourceSetsIfAvailable
                 ?.find { it.name == sourceSetName.get() }
             @Suppress("DEPRECATION") val kotlinSourceSet: SourceDirectorySet? = javaSourceSet
                 ?.getExtension(if (projectType == KotlinProject.ProjectType.PLATFORM_JS) KOTLIN_JS_DSL_NAME else KOTLIN_DSL_NAME)

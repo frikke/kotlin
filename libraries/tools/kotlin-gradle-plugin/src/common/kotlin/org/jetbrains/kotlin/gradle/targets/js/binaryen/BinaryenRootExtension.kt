@@ -6,15 +6,18 @@
 package org.jetbrains.kotlin.gradle.targets.js.binaryen
 
 import org.gradle.api.Project
-import org.gradle.api.tasks.Copy
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.TaskProvider
-import org.jetbrains.kotlin.gradle.internal.ConfigurationPhaseAware
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.logging.kotlinInfo
-import org.jetbrains.kotlin.gradle.tasks.internal.CleanableStore
-import java.io.Serializable
-import java.net.URL
+import org.jetbrains.kotlin.gradle.targets.js.AbstractSettings
+import org.jetbrains.kotlin.gradle.utils.property
 
-open class BinaryenRootExtension(@Transient val rootProject: Project) : ConfigurationPhaseAware<BinaryenEnv>(), Serializable {
+@OptIn(ExperimentalWasmDsl::class)
+open class BinaryenRootExtension(
+    @Transient val rootProject: Project,
+    private val binaryenSpec: BinaryenRootEnvSpec,
+) : AbstractSettings<BinaryenEnv>() {
     init {
         check(rootProject.rootProject == rootProject)
     }
@@ -23,31 +26,29 @@ open class BinaryenRootExtension(@Transient val rootProject: Project) : Configur
         rootProject.logger.kotlinInfo("Storing cached files in $it")
     }
 
-    var installationPath by Property(gradleHome.resolve("binaryen"))
-    var downloadBaseUrl by Property("https://github.com/WebAssembly/binaryen/releases/download/")
-    var version by Property("112")
+    override val installationDirectory: DirectoryProperty = rootProject.objects.directoryProperty()
+        .fileValue(gradleHome.resolve("binaryen"))
 
-    val setupTaskProvider: TaskProvider<out Copy>
-        get() = rootProject.tasks.withType(Copy::class.java).named(BinaryenRootPlugin.INSTALL_TASK_NAME)
+    // value not convention because this property can be nullable to not add repository
+    override val downloadBaseUrlProperty: org.gradle.api.provider.Property<String> = rootProject.objects.property<String>()
+        .value("https://github.com/WebAssembly/binaryen/releases/download")
+
+    override val versionProperty: org.gradle.api.provider.Property<String> = rootProject.objects.property<String>()
+        .convention("120")
+
+    override val downloadProperty: org.gradle.api.provider.Property<Boolean> = rootProject.objects.property<Boolean>()
+        .convention(true)
+
+    override val commandProperty: org.gradle.api.provider.Property<String> = rootProject.objects.property<String>()
+        .convention("wasm-opt")
+
+    val setupTaskProvider: TaskProvider<BinaryenSetupTask>
+        get() = rootProject.tasks.withType(BinaryenSetupTask::class.java).named(BinaryenSetupTask.NAME)
+
+    internal val platform: org.gradle.api.provider.Property<BinaryenPlatform> = rootProject.objects.property<BinaryenPlatform>()
 
     override fun finalizeConfiguration(): BinaryenEnv {
-        val requiredVersionName = "binaryen-version_$version-${BinaryenPlatform.platform}"
-        val requiredZipName = "$requiredVersionName.tar.gz"
-        val cleanableStore = CleanableStore[installationPath.absolutePath]
-        val targetPath = cleanableStore[requiredVersionName].use()
-        val isWindows = BinaryenPlatform.name == BinaryenPlatform.WIN
-
-        return BinaryenEnv(
-            cleanableStore = cleanableStore,
-            zipPath = cleanableStore[requiredZipName].use(),
-            targetPath = targetPath,
-            executablePath = targetPath
-                .resolve("binaryen-version_$version")
-                .resolve("bin")
-                .resolve(if (isWindows) "wasm-opt.exe" else "wasm-opt"),
-            isWindows = isWindows,
-            downloadUrl = URL("${downloadBaseUrl.trimEnd('/')}/version_$version/$requiredZipName"),
-        )
+        return binaryenSpec.env.get()
     }
 
     companion object {

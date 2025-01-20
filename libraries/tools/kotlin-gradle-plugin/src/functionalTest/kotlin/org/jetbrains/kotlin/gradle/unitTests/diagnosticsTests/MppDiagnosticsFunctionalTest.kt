@@ -5,6 +5,9 @@
 
 package org.jetbrains.kotlin.gradle.unitTests.diagnosticsTests
 
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.jetbrains.kotlin.gradle.dsl.targetFromPresetInternal
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.KotlinToolingDiagnostics
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinJvmWithJavaTargetPreset
 import org.jetbrains.kotlin.gradle.util.*
 import org.junit.Test
@@ -12,39 +15,12 @@ import org.junit.Test
 class MppDiagnosticsFunctionalTest {
 
     @Test
-    fun testKmmLibrary() {
-        checkDiagnosticsWithMppProject("kmmLibrary") {
-            androidLibrary {
-                compileSdk = 32
-            }
-
-            kotlin {
-                androidTarget()
-                ios()
-            }
-        }
-    }
-
-    @Test
-    fun testKmmApplication() {
-        checkDiagnosticsWithMppProject("kmmApplication") {
-            androidApplication {
-                compileSdk = 32
-            }
-
-            kotlin {
-                androidTarget()
-                ios()
-            }
-        }
-    }
-
-    @Test
-    fun testCommonMainWithDependsOn() {
-        checkDiagnosticsWithMppProject("commonMainWithDependsOn") {
+    fun testCommonMainOrTestWithDependsOn() {
+        checkDiagnosticsWithMppProject("commonMainOrTestWithDependsOn") {
             kotlin {
                 jvm()
                 linuxX64()
+                applyDefaultHierarchyTemplate()
 
                 sourceSets.apply {
                     val myCustomCommonMain = create("myCustomCommonMain")
@@ -53,6 +29,13 @@ class MppDiagnosticsFunctionalTest {
                     commonMain {
                         dependsOn(myCustomCommonMain)
                         dependsOn(myCustomCommonMain2) // check that diagnostic isn't duplicated
+                    }
+
+                    val myCustomCommonTest = create("myCustomCommonTest")
+                    val myCustomCommonTest2 = create("myCustomCommonTest2")
+                    commonTest {
+                        dependsOn(myCustomCommonTest)
+                        dependsOn(myCustomCommonTest2) // check that diagnostic isn't duplicated
                     }
                 }
             }
@@ -63,7 +46,8 @@ class MppDiagnosticsFunctionalTest {
     fun testDeprecatedJvmWithJavaPreset() {
         checkDiagnosticsWithMppProject("deprecatedJvmWithJavaPreset") {
             kotlin {
-                targetFromPreset(presets.getByName(KotlinJvmWithJavaTargetPreset.PRESET_NAME))
+                @Suppress("DEPRECATION_ERROR")
+                targetFromPresetInternal(presets.getByName(KotlinJvmWithJavaTargetPreset.PRESET_NAME))
             }
         }
     }
@@ -74,18 +58,19 @@ class MppDiagnosticsFunctionalTest {
             kotlin {
                 jvm()
                 linuxX64()
+                applyDefaultHierarchyTemplate()
 
                 sourceSets.apply {
                     val unused1 = create("unused1")
                     // Check that dependsOn doesn't make source set "used"
                     create("unused2").dependsOn(unused1)
                     // Check that depending on used source sets doesn't make source set "used"
-                    create("unusedWithDependsOnUsed").dependsOn(commonMain)
+                    create("unusedWithDependsOnUsed").dependsOn(commonMain.get())
 
                     // Check that custom intermediate source set isn't reported as unused
                     val intermediate = create("intermediate")
-                    jvmMain.dependsOn(intermediate)
-                    intermediate.dependsOn(commonMain)
+                    jvmMain.get().dependsOn(intermediate)
+                    intermediate.dependsOn(commonMain.get())
                 }
             }
         }
@@ -113,12 +98,31 @@ class MppDiagnosticsFunctionalTest {
             kotlin {
                 androidTarget()
                 linuxX64()
+                applyDefaultHierarchyTemplate()
 
                 sourceSets.apply {
                     val intermediateBetweenAndroid = create("intermediate")
-                    androidMain.dependsOn(intermediateBetweenAndroid)
-                    intermediateBetweenAndroid.dependsOn(commonMain)
+                    androidMain.get().dependsOn(intermediateBetweenAndroid)
+                    intermediateBetweenAndroid.dependsOn(commonMain.get())
                 }
+            }
+        }
+    }
+
+    @Test
+    fun testNoTargetsDeclared() {
+        checkDiagnosticsWithMppProject("noTargetsDeclared") {
+            kotlin { }
+        }
+    }
+
+    @Test
+    fun testKotlinCompilationSourceDeprecation() {
+        checkDiagnosticsWithMppProject("kotlinCompilationSourceDeprecation") {
+            kotlin {
+                val customMain = sourceSets.create("customMain")
+                @Suppress("DEPRECATION")
+                jvm().compilations.create("custom").source(customMain)
             }
         }
     }

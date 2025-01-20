@@ -14,12 +14,13 @@ dependencies {
     compileOnly(project(":compiler:frontend"))
     compileOnly(project(":compiler:frontend.java"))
     compileOnly(project(":compiler:plugin-api"))
+    compileOnly(project(":compiler:fir:fir2ir:jvm-backend"))
     compileOnly(project(":kotlin-annotation-processing-cli"))
     compileOnly(project(":kotlin-annotation-processing-base"))
     compileOnly(project(":kotlin-annotation-processing-runtime"))
     compileOnly(intellijCore())
     compileOnly(toolsJarApi())
-    compileOnly(commonDependency("org.jetbrains.intellij.deps:asm-all"))
+    compileOnly(libs.intellij.asm)
 
     testImplementation(intellijCore())
     testRuntimeOnly(intellijResources()) { isTransitive = false }
@@ -27,7 +28,9 @@ dependencies {
     testRuntimeOnly(commonDependency("org.codehaus.woodstox:stax2-api"))
     testRuntimeOnly(commonDependency("com.fasterxml:aalto-xml"))
 
-    testApiJUnit5()
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
     testApi(projectTests(":compiler:tests-common-new"))
     testApi(projectTests(":compiler:test-infrastructure"))
     testApi(projectTests(":compiler:test-infrastructure-utils"))
@@ -42,6 +45,9 @@ dependencies {
     embedded(project(":kotlin-annotation-processing-runtime")) { isTransitive = false }
     embedded(project(":kotlin-annotation-processing-cli")) { isTransitive = false }
     embedded(project(":kotlin-annotation-processing-base")) { isTransitive = false }
+
+    testApi(project(":tools:kotlinp-jvm"))
+    testApi(project(":kotlin-metadata-jvm"))
 }
 
 optInToExperimentalCompilerApi()
@@ -59,6 +65,7 @@ testsJar {}
 kaptTestTask("test", JavaLanguageVersion.of(8))
 kaptTestTask("testJdk11", JavaLanguageVersion.of(11))
 kaptTestTask("testJdk17", JavaLanguageVersion.of(17))
+kaptTestTask("testJdk21", JavaLanguageVersion.of(21))
 
 fun Project.kaptTestTask(name: String, javaLanguageVersion: JavaLanguageVersion) {
     val service = extensions.getByType<JavaToolchainService>()

@@ -13,34 +13,43 @@ import org.jetbrains.kotlin.cli.common.fir.reportToMessageCollector
 import org.jetbrains.kotlin.cli.common.messages.AnalyzerWithCompilerReport
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.cli.jvm.compiler.*
-import org.jetbrains.kotlin.cli.jvm.compiler.pipeline.*
+import org.jetbrains.kotlin.cli.jvm.compiler.legacy.pipeline.*
 import org.jetbrains.kotlin.cli.jvm.config.JvmClasspathRoot
 import org.jetbrains.kotlin.cli.jvm.config.JvmModulePathRoot
-import org.jetbrains.kotlin.codegen.ClassBuilderFactories
-import org.jetbrains.kotlin.codegen.DefaultCodegenFactory
-import org.jetbrains.kotlin.codegen.KotlinCodegenFacade
 import org.jetbrains.kotlin.codegen.state.GenerationState
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
-import org.jetbrains.kotlin.config.JVMConfigurationKeys
 import org.jetbrains.kotlin.config.languageVersionSettings
+import org.jetbrains.kotlin.config.messageCollector
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporterFactory
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
+import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar
 import org.jetbrains.kotlin.fir.pipeline.*
+import org.jetbrains.kotlin.fir.session.IncrementalCompilationContext
+import org.jetbrains.kotlin.fir.session.environment.AbstractProjectFileSearchScope
+import org.jetbrains.kotlin.ir.declarations.IrClass
+import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
+import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
+import org.jetbrains.kotlin.ir.util.kotlinFqName
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
 import org.jetbrains.kotlin.modules.TargetId
-import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.platform.CommonPlatforms
-import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.jvm.extensions.PackageFragmentProviderExtension
 import org.jetbrains.kotlin.scripting.compiler.plugin.ScriptCompilerProxy
 import org.jetbrains.kotlin.scripting.compiler.plugin.dependencies.ScriptsCompilationDependencies
+import org.jetbrains.kotlin.scripting.compiler.plugin.irLowerings.ScriptResultFieldData
+import org.jetbrains.kotlin.scripting.compiler.plugin.irLowerings.scriptResultFieldDataAttr
 import org.jetbrains.kotlin.scripting.compiler.plugin.services.scriptDefinitionProviderService
+import org.jetbrains.kotlin.scripting.definitions.ScriptConfigurationsProvider
 import org.jetbrains.kotlin.scripting.definitions.ScriptDefinitionProvider
-import org.jetbrains.kotlin.scripting.definitions.ScriptDependenciesProvider
+import org.jetbrains.kotlin.scripting.resolve.VirtualFileScriptSource
+import org.jetbrains.kotlin.scripting.resolve.resolvedImportScripts
+import org.jetbrains.kotlin.utils.topologicalSort
 import kotlin.script.experimental.api.*
 import kotlin.script.experimental.host.ScriptingHostConfiguration
+import kotlin.script.experimental.impl._languageVersion
 import kotlin.script.experimental.jvm.JvmDependency
 import kotlin.script.experimental.jvm.JvmDependencyFromClassLoader
 import kotlin.script.experimental.jvm.compilationCache
@@ -83,14 +92,14 @@ class ScriptJvmCompilerFromEnvironment(val environment: KotlinCoreEnvironment) :
 
                 val context = createCompilationContextFromEnvironment(initialConfiguration, environment, messageCollector)
 
-                val previousMessageCollector = environment.configuration[CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY]
+                val previousMessageCollector = environment.configuration[CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY]
                 try {
-                    environment.configuration.put(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, messageCollector)
+                    environment.configuration.messageCollector = messageCollector
 
                     compileImpl(script, context, initialConfiguration, messageCollector)
                 } finally {
                     if (previousMessageCollector != null)
-                        environment.configuration.put(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, previousMessageCollector)
+                        environment.configuration.messageCollector = previousMessageCollector
                 }
             }
         }
@@ -145,12 +154,13 @@ private fun compileImpl(
         return failure(messageCollector)
     }
 
-    val dependenciesProvider = ScriptDependenciesProvider.getInstance(context.environment.project)
+    val configurationsProvider = ScriptConfigurationsProvider.getInstance(context.environment.project)
     val getScriptConfiguration = { ktFile: KtFile ->
         val refinedConfiguration =
-            dependenciesProvider?.getScriptConfigurationResult(ktFile, context.baseScriptCompilationConfiguration)
+            configurationsProvider?.getScriptConfigurationResult(ktFile, context.baseScriptCompilationConfiguration)
                 ?.valueOrNull()?.configuration ?: context.baseScriptCompilationConfiguration
         refinedConfiguration.with {
+            _languageVersion(context.environment.configuration.languageVersionSettings.languageVersion.versionString)
             // Adjust definitions so all compiler dependencies are saved in the resulting compilation configuration, so evaluation
             // performed with the expected classpath
             // TODO: make this logic obsolete by injecting classpath earlier in the pipeline
@@ -228,8 +238,25 @@ private fun doCompile(
         messageCollector
     )
 
-    val generationState =
-        generate(analysisResult, sourceFiles, context.environment.configuration, messageCollector)
+    val diagnosticsReporter = DiagnosticReporterFactory.createReporter(messageCollector)
+    val generationState = GenerationState(
+        sourceFiles.first().project,
+        analysisResult.moduleDescriptor,
+        context.environment.configuration,
+        diagnosticReporter = diagnosticsReporter,
+    )
+
+    val codegenFactory = JvmIrCodegenFactory(context.environment.configuration)
+
+    val backendInput = codegenFactory.convertToIr(generationState, sourceFiles, analysisResult.bindingContext)
+
+    codegenFactory.generateModule(generationState, backendInput)
+
+    FirDiagnosticsCompilerResultsReporter.reportToMessageCollector(
+        diagnosticsReporter,
+        messageCollector,
+        context.environment.configuration.getBoolean(CLIConfigurationKeys.RENDER_DIAGNOSTIC_INTERNAL_NAME)
+    )
 
     if (messageCollector.hasErrors()) return failure(
         messageCollector
@@ -240,14 +267,15 @@ private fun doCompile(
         script,
         sourceFiles.first(),
         sourceDependencies,
-        getScriptConfiguration
+        getScriptConfiguration,
+        extractResultFields(backendInput.irModuleFragment)
     ).onSuccess { compiledScript ->
         ResultWithDiagnostics.Success(compiledScript, messageCollector.diagnostics)
     }
 }
 
 private fun analyze(sourceFiles: Collection<KtFile>, environment: KotlinCoreEnvironment): AnalysisResult {
-    val messageCollector = environment.configuration[CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY]!!
+    val messageCollector = environment.configuration.getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY)
 
     val analyzerWithCompilerReport = AnalyzerWithCompilerReport(
         messageCollector,
@@ -260,7 +288,7 @@ private fun analyze(sourceFiles: Collection<KtFile>, environment: KotlinCoreEnvi
         TopDownAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(
             project,
             sourceFiles,
-            NoScopeRecordCliBindingTrace(),
+            NoScopeRecordCliBindingTrace(project),
             environment.configuration,
             environment::createPackagePartProvider
         )
@@ -268,37 +296,7 @@ private fun analyze(sourceFiles: Collection<KtFile>, environment: KotlinCoreEnvi
     return analyzerWithCompilerReport.analysisResult
 }
 
-private fun generate(
-    analysisResult: AnalysisResult, sourceFiles: List<KtFile>, kotlinCompilerConfiguration: CompilerConfiguration,
-    messageCollector: MessageCollector
-): GenerationState {
-    val diagnosticsReporter = DiagnosticReporterFactory.createReporter()
-    return GenerationState.Builder(
-        sourceFiles.first().project,
-        ClassBuilderFactories.BINARIES,
-        analysisResult.moduleDescriptor,
-        analysisResult.bindingContext,
-        kotlinCompilerConfiguration
-    ).diagnosticReporter(
-        diagnosticsReporter
-    ).build().also {
-        KotlinCodegenFacade.compileCorrectFiles(
-            sourceFiles,
-            it,
-            if (kotlinCompilerConfiguration.getBoolean(JVMConfigurationKeys.IR))
-                JvmIrCodegenFactory(
-                    kotlinCompilerConfiguration,
-                    kotlinCompilerConfiguration.get(CLIConfigurationKeys.PHASE_CONFIG),
-                ) else DefaultCodegenFactory
-        )
-        FirDiagnosticsCompilerResultsReporter.reportToMessageCollector(
-            diagnosticsReporter,
-            messageCollector,
-            kotlinCompilerConfiguration.getBoolean(CLIConfigurationKeys.RENDER_DIAGNOSTIC_INTERNAL_NAME)
-        )
-    }
-}
-
+@OptIn(LegacyK2CliPipeline::class)
 private fun doCompileWithK2(
     context: SharedScriptCompilationContext,
     script: SourceCode,
@@ -317,51 +315,37 @@ private fun doCompileWithK2(
 
     registerPackageFragmentProvidersIfNeeded(getScriptConfiguration(sourceFiles.first()), context.environment)
 
-    val kotlinCompilerConfiguration = context.environment.configuration
+    val configuration = context.environment.configuration
 
     val targetId = TargetId(
-        kotlinCompilerConfiguration[CommonConfigurationKeys.MODULE_NAME] ?: JvmProtoBufUtil.DEFAULT_MODULE_NAME,
+        configuration[CommonConfigurationKeys.MODULE_NAME] ?: JvmProtoBufUtil.DEFAULT_MODULE_NAME,
         "java-production"
     )
 
-    val renderDiagnosticName = kotlinCompilerConfiguration.getBoolean(CLIConfigurationKeys.RENDER_DIAGNOSTIC_INTERNAL_NAME)
-    val diagnosticsReporter = DiagnosticReporterFactory.createPendingReporter()
+    val renderDiagnosticName = configuration.getBoolean(CLIConfigurationKeys.RENDER_DIAGNOSTIC_INTERNAL_NAME)
+    val diagnosticsReporter = DiagnosticReporterFactory.createPendingReporter(messageCollector)
 
-    val sources = sourceFiles.map { KtPsiSourceFile(it) }
-
-    val compilerInput = ModuleCompilerInput(
-        targetId,
-        GroupedKtSources(platformSources = sources, commonSources = emptySet(), sourcesByModuleName = emptyMap()),
-        CommonPlatforms.defaultCommonPlatform,
-        JvmPlatforms.unspecifiedJvmPlatform,
-        kotlinCompilerConfiguration
-    )
-
-    val projectEnvironment = context.environment.toAbstractProjectEnvironment()
+    val projectEnvironment = context.environment.toVfsBasedProjectEnvironment()
     val compilerEnvironment = ModuleCompilerEnvironment(projectEnvironment, diagnosticsReporter)
 
     var librariesScope = projectEnvironment.getSearchScopeForProjectLibraries()
     val incrementalCompilationScope = createIncrementalCompilationScope(
-        compilerInput.configuration,
+        configuration,
         projectEnvironment,
         incrementalExcludesScope = null
     )?.also { librariesScope -= it }
-    val extensionRegistrars = (projectEnvironment as? VfsBasedProjectEnvironment)
-        ?.let { FirExtensionRegistrar.getInstances(it.project) }
-        .orEmpty()
 
-    val rootModuleName = targetId.name
-    val libraryList = createLibraryListForJvm(
-        rootModuleName,
-        kotlinCompilerConfiguration,
-        friendPaths = emptyList()
-    )
-    val session = prepareJvmSessions(
-        sourceFiles, kotlinCompilerConfiguration, projectEnvironment, Name.identifier(rootModuleName), extensionRegistrars,
-        librariesScope, libraryList, isCommonSourceForPsi, fileBelongsToModuleForPsi,
+    val session = prepareJvmSessionsForScripting(
+        projectEnvironment,
+        configuration,
+        sourceFiles,
+        rootModuleNameAsString = targetId.name,
+        friendPaths = emptyList(),
+        librariesScope,
+        isScript = { false },
         createProviderAndScopeForIncrementalCompilation = { files ->
             createContextForIncrementalCompilation(
-                compilerInput.configuration,
+                configuration,
                 projectEnvironment,
                 compilerEnvironment.projectEnvironment.getSearchScopeBySourceFiles(files.map { KtPsiSourceFile(it) }),
                 emptyList(),
@@ -370,16 +354,53 @@ private fun doCompileWithK2(
         }
     ).single().session
 
-    session.scriptDefinitionProviderService?.run {
+    val scriptDefinitionProviderService = session.scriptDefinitionProviderService
+
+    scriptDefinitionProviderService?.run {
         definitionProvider = ScriptDefinitionProvider.getInstance(context.environment.project)
-        configurationProvider = ScriptDependenciesProvider.getInstance(context.environment.project)
+        configurationProvider = ScriptConfigurationsProvider.getInstance(context.environment.project)
     }
 
-    val rawFir = session.buildFirFromKtFiles(sourceFiles)
+    val rawFir = session.buildFirFromKtFiles(sourceFiles) //.reversed()
 
-    val (scopeSession, fir) = session.runResolution(rawFir)
+    val orderedRawFir =
+        if (scriptDefinitionProviderService == null) rawFir
+        else {
+            val rawFirDeps = rawFir.associateWith { firFile ->
+                ((firFile.sourceFile as? KtPsiSourceFile)?.psiFile as? KtFile)?.let { ktFile ->
+                    val scriptCompilationConfiguration =
+                        scriptDefinitionProviderService.configurationProvider?.getScriptConfiguration(ktFile)?.configuration
+                    scriptCompilationConfiguration?.get(ScriptCompilationConfiguration.resolvedImportScripts)?.mapNotNull { depSource ->
+                        (depSource as? VirtualFileScriptSource)?.virtualFile?.let { depVFile ->
+                            rawFir.find { ((it.sourceFile as? KtPsiSourceFile)?.psiFile as? KtFile)?.virtualFile == depVFile }
+                        }
+                    }
+                }.orEmpty()
+            }
+
+            class CycleDetected(val node: FirFile) : Throwable()
+
+            try {
+                topologicalSort(
+                    rawFir, reportCycle = { throw CycleDetected(it) }
+                ) {
+                    rawFirDeps[this] ?: emptyList()
+                }.reversed()
+            } catch (e: CycleDetected) {
+                return ResultWithDiagnostics.Failure(
+                    ScriptDiagnostic(
+                        ScriptDiagnostic.unspecifiedError,
+                        "Unable to handle recursive script dependencies, cycle detected on file ${e.node.name}",
+                        sourcePath = e.node.sourceFile?.path
+                    )
+                )
+            }
+        }
+
+    val (scopeSession, fir) = session.runResolution(orderedRawFir)
     // checkers
-    session.runCheckers(scopeSession, fir, diagnosticsReporter)
+    session.runCheckers(scopeSession, fir, diagnosticsReporter, MppCheckerKind.Common)
+    session.runCheckers(scopeSession, fir, diagnosticsReporter, MppCheckerKind.Platform)
 
     val analysisResults = FirResult(listOf(ModuleCompilerAnalyzedOutput(session, scopeSession, fir)))
 
@@ -388,9 +409,9 @@ private fun doCompileWithK2(
         return failure(messageCollector)
     }
 
-    val irInput = convertAnalyzedFirToIr(compilerInput, analysisResults, compilerEnvironment)
+    val irInput = convertAnalyzedFirToIr(configuration, targetId, analysisResults, compilerEnvironment)
 
-    val codegenOutput = generateCodeFromIr(irInput, compilerEnvironment, null)
+    val codegenOutput = generateCodeFromIr(irInput, compilerEnvironment)
 
     diagnosticsReporter.reportToMessageCollector(messageCollector, renderDiagnosticName)
 
@@ -403,8 +424,40 @@ private fun doCompileWithK2(
         script,
         sourceFiles.first(),
         sourceDependencies,
-        getScriptConfiguration
+        getScriptConfiguration,
+        extractResultFields(irInput.irModuleFragment)
     ).onSuccess { compiledScript ->
         ResultWithDiagnostics.Success(compiledScript, messageCollector.diagnostics)
     }
+}
+
+@OptIn(UnsafeDuringIrConstructionAPI::class)
+internal fun extractResultFields(irModule: IrModuleFragment): MutableMap<FqName, ScriptResultFieldData> {
+    val resultFields = mutableMapOf<FqName, ScriptResultFieldData>()
+    irModule.files.forEach { file ->
+        file.declarations.forEach { declaration ->
+            (declaration as? IrClass)?.scriptResultFieldDataAttr?.let {
+                resultFields[declaration.kotlinFqName] = it
+            }
+        }
+    }
+    return resultFields
+}
+
+@LegacyK2CliPipeline
+private fun prepareJvmSessionsForScripting(
+    projectEnvironment: VfsBasedProjectEnvironment,
+    configuration: CompilerConfiguration,
+    files: List<KtFile>,
+    rootModuleNameAsString: String,
+    friendPaths: List<String>,
+    librariesScope: AbstractProjectFileSearchScope,
+    isScript: (KtFile) -> Boolean,
+    createProviderAndScopeForIncrementalCompilation: (List<KtFile>) -> IncrementalCompilationContext?,
+): List<SessionWithSources<KtFile>> {
+    val extensionRegistrars = FirExtensionRegistrar.getInstances(projectEnvironment.project)
+    return MinimizedFrontendContext(projectEnvironment, MessageCollector.NONE, extensionRegistrars, configuration).prepareJvmSessions(
+        files, rootModuleNameAsString, friendPaths, librariesScope, isCommonSourceForPsi, isScript,
+        fileBelongsToModuleForPsi, createProviderAndScopeForIncrementalCompilation
+    )
 }

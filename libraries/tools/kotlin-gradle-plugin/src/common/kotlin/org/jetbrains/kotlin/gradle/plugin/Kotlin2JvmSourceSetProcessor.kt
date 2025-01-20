@@ -6,13 +6,11 @@
 package org.jetbrains.kotlin.gradle.plugin
 
 import org.gradle.api.Project
-import org.gradle.api.file.Directory
-import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.compile.AbstractCompile
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompilerOptions
 import org.jetbrains.kotlin.gradle.internal.Kapt3GradleSubplugin
+import org.jetbrains.kotlin.gradle.plugin.KotlinPluginLifecycle.Stage.AfterEvaluateBuildscript
 import org.jetbrains.kotlin.gradle.scripting.internal.ScriptingGradleSubplugin
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinTasksProvider
@@ -52,14 +50,14 @@ internal class Kotlin2JvmSourceSetProcessor(
 
         ScriptingGradleSubplugin.configureForSourceSet(project, compilationInfo.compilationName)
 
-        project.whenEvaluated {
+        project.launchInStage(AfterEvaluateBuildscript) {
             val subpluginEnvironment = SubpluginEnvironment.loadSubplugins(project)
             /* Not supported in KPM yet */
-            compilationInfo.tcsOrNull?.compilation?.let { compilation ->
+            compilationInfo.tcs.compilation.let { compilation ->
                 subpluginEnvironment.addSubpluginOptions(project, compilation)
             }
 
-            javaSourceSet?.let { java ->
+            javaSourceSet.await()?.let { java ->
                 val javaTask = project.tasks.withType<AbstractCompile>().named(java.compileJavaTaskName)
                 javaTask.configure { javaCompile ->
                     javaCompile.classpath += project.files(kotlinTask.flatMap { it.destinationDirectory })
@@ -74,19 +72,6 @@ internal class Kotlin2JvmSourceSetProcessor(
                     kotlinTask
                 )
             }
-
-            if (sourceSetName == SourceSet.MAIN_SOURCE_SET_NAME) {
-                project.pluginManager.withPlugin("java-library") {
-                    registerKotlinOutputForJavaLibrary(kotlinTask.flatMap { it.destinationDirectory })
-                }
-            }
-        }
-    }
-
-    private fun registerKotlinOutputForJavaLibrary(outputDir: Provider<Directory>) {
-        val configuration = project.configurations.getByName("apiElements")
-        configuration.outgoing.variants.getByName("classes").artifact(outputDir) {
-            it.type = "java-classes-directory"
         }
     }
 }

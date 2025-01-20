@@ -1,4 +1,5 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: BACKEND
+// LANGUAGE: +AllowSuperCallToJavaInterface
 // FILE: JavaInterface.java
 
 public interface JavaInterface {

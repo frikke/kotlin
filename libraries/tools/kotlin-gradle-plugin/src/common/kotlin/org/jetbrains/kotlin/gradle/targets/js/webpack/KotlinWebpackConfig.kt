@@ -41,7 +41,6 @@ data class KotlinWebpackConfig(
     var sourceMaps: Boolean = false,
     var export: Boolean = true,
     var progressReporter: Boolean = false,
-    var progressReporterPathFilter: File? = null,
     var resolveFromModulesFirst: Boolean = false
 ) : WebpackRulesDsl {
 
@@ -51,9 +50,6 @@ data class KotlinWebpackConfig(
     val outputPathInput: String?
         get() = npmProjectDir?.get()?.let { npmProjectDir -> outputPath?.relativeOrAbsolute(npmProjectDir) }
 
-    val progressReporterPathFilterInput: String?
-        get() = npmProjectDir?.get()?.let { npmProjectDir -> progressReporterPathFilter?.relativeOrAbsolute(npmProjectDir) }
-
     fun getRequiredDependencies(versions: NpmVersions) =
         mutableSetOf<RequiredKotlinJsDependency>().also {
             it.add(
@@ -61,6 +57,10 @@ data class KotlinWebpackConfig(
             )
             it.add(
                 versions.webpackCli
+            )
+
+            it.add(
+                versions.kotlinWebHelpers
             )
 
             if (sourceMaps) {
@@ -91,7 +91,7 @@ data class KotlinWebpackConfig(
     data class DevServer(
         var open: Any = true,
         var port: Int? = null,
-        var proxy: MutableMap<String, Any>? = null,
+        var proxy: MutableList<Proxy>? = null,
         var static: MutableList<String>? = null,
         var contentBase: MutableList<String>? = null,
         var client: Client? = null
@@ -104,12 +104,20 @@ data class KotlinWebpackConfig(
                 var warnings: Boolean
             ) : Serializable
         }
+
+        data class Proxy(
+            val context: MutableList<String>,
+            val target: String,
+            val pathRewrite: MutableMap<String, String>? = null,
+            val secure: Boolean? = null,
+            val changeOrigin: Boolean? = null
+        ) : Serializable
     }
 
     @Suppress("unused")
     data class Optimization(
-        var runtimeChunk: Any,
-        var splitChunks: Any
+        var runtimeChunk: Any?,
+        var splitChunks: Any?
     ) : Serializable
 
     @Suppress("unused")
@@ -150,7 +158,6 @@ data class KotlinWebpackConfig(
             appendSourceMaps()
             appendOptimization()
             appendDevServer()
-            appendProgressReporter()
             rules.forEach { rule ->
                 if (rule.active) {
                     with(rule) { appendToWebpackConfig() }
@@ -211,14 +218,15 @@ data class KotlinWebpackConfig(
             """
                 // source maps
                 config.module.rules.push({
-                        test: /\.js${'$'}/,
+                        test: /\.m?js${'$'}/,
                         use: ["source-map-loader"],
                         enforce: "pre"
                 });
                 config.devtool = ${devtool?.let { "'$it'" } ?: false};
-            ${
-                "config.ignoreWarnings = [/Failed to parse source map/]"
-            }
+                config.ignoreWarnings = [
+                    /Failed to parse source map/,
+                    /Accessing import\.meta directly is unsupported \(only property access or destructuring is supported\)/
+                ]
                 
             """.trimIndent()
         )
@@ -263,6 +271,7 @@ data class KotlinWebpackConfig(
                     },
                     ${output!!.library?.let { "library: ${it.jsQuoted()}," } ?: ""}
                     ${output!!.libraryTarget?.let { "libraryTarget: ${it.jsQuoted()}," } ?: ""}
+                    ${output!!.clean?.let { "clean: $it," } ?: ""}
                     globalObject: "${output!!.globalObject}"
                 };
                 """.trimIndent()
@@ -288,7 +297,7 @@ data class KotlinWebpackConfig(
             """
                 // noinspection JSUnnecessarySemicolon
                 ;(function(config) {
-                    const tcErrorPlugin = require('kotlin-test-js-runner/tc-log-error-webpack');
+                    const tcErrorPlugin = require('kotlin-web-helpers/dist/tc-log-error-webpack');
                     config.plugins.push(new tcErrorPlugin())
                     config.stats = config.stats || {}
                     Object.assign(config.stats, config.stats, {
@@ -308,34 +317,6 @@ data class KotlinWebpackConfig(
             """
                 // resolve modules
                 config.resolve.modules.unshift(${entry!!.parent.jsQuoted()})
-                
-            """.trimIndent()
-        )
-    }
-
-    private fun Appendable.appendProgressReporter() {
-        if (!progressReporter) return
-
-        //language=ES6
-        appendLine(
-            """
-                // Report progress to console
-                // noinspection JSUnnecessarySemicolon
-                ;(function(config) {
-                    const webpack = require('webpack');
-                    const handler = (percentage, message, ...args) => {
-                        const p = percentage * 100;
-                        let msg = `${"$"}{Math.trunc(p / 10)}${"$"}{Math.trunc(p % 10)}% ${"$"}{message} ${"$"}{args.join(' ')}`;
-                        ${
-                if (progressReporterPathFilterInput == null) "" else """
-                            msg = msg.replace(require('path').resolve(__dirname, ${progressReporterPathFilterInput!!.jsQuoted()}), '');
-                        """.trimIndent()
-            };
-                        console.log(msg);
-                    };
-            
-                    config.plugins.push(new webpack.ProgressPlugin(handler))
-                })(config);
                 
             """.trimIndent()
         )

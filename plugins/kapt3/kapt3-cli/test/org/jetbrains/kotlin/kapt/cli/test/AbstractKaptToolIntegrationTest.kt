@@ -6,10 +6,10 @@
 package org.jetbrains.kotlin.kapt.cli.test
 
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.util.text.StringUtil.convertLineSeparators
 import org.jetbrains.kotlin.cli.common.arguments.readArgumentsFromArgFile
 import org.jetbrains.kotlin.test.services.JUnit5Assertions
 import org.jetbrains.kotlin.test.util.KtTestUtil
-import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.TestInfo
 import java.io.File
@@ -54,13 +54,14 @@ abstract class AbstractKaptToolIntegrationTest {
                     "javac" -> runJavac(section.args)
                     "java" -> runJava(section.args)
                     "output" -> {
-                        val output = File(tmpdir, "processOutput.txt").readText()
-                        val expected = section.content.trim()
-                        JUnit5Assertions.assertTrue(output.contains(expected)) {
-                            "Output\"$output\" doesn't contain the expected string \"$expected\""
+                        val output = convertLineSeparators(File(tmpdir, "processOutput.txt").readText().trim())
+                        val expected = convertLineSeparators(section.content.trim())
+                        JUnit5Assertions.assertEquals(expected, output) {
+                            "Output\"$output\" is different from the expected string \"$expected\""
                         }
                     }
                     "after" -> {}
+                    "check-file-is-absent" -> checkFileIsAbsent(section.args)
                     else -> error("Unknown section name ${section.name}")
                 }
             } catch (e: GotResult) {
@@ -71,6 +72,11 @@ abstract class AbstractKaptToolIntegrationTest {
                 throw RuntimeException("Section ${section.name} failed:\n${section.content}", e)
             }
         }
+    }
+
+    private fun checkFileIsAbsent(args: List<String>) {
+        assert(args.size == 1)
+        assert(!File(tmpdir, args[0]).exists()) { "File ${args[0]} should not exist" }
     }
 
     private fun copyFile(testDir: File, args: List<String>) {
@@ -88,7 +94,7 @@ abstract class AbstractKaptToolIntegrationTest {
 
     private fun runJavac(args: List<String>) {
         val executableName = if (SystemInfo.isWindows) "javac.exe" else "javac"
-        val executablePath = File(getJdk8Home(), "bin/" + executableName).absolutePath
+        val executablePath = File(KtTestUtil.getJdk8Home(), "bin/" + executableName).absolutePath
         runProcess(executablePath, args)
     }
 
@@ -96,7 +102,7 @@ abstract class AbstractKaptToolIntegrationTest {
         val outputFile = File(tmpdir, "javaOutput.txt")
 
         val executableName = if (SystemInfo.isWindows) "java.exe" else "java"
-        val executablePath = File(getJdk8Home(), "bin/" + executableName).absolutePath
+        val executablePath = File(KtTestUtil.getJdk8Home(), "bin/" + executableName).absolutePath
         runProcess(executablePath, args, outputFile)
 
         throw GotResult(outputFile.takeIf { it.isFile }?.readText() ?: "")
@@ -125,18 +131,15 @@ abstract class AbstractKaptToolIntegrationTest {
 
     private fun transformArguments(args: List<String>): List<String> {
         return args.map {
-            val arg = it.replace("%KOTLIN_STDLIB%", File("dist/kotlinc/lib/kotlin-stdlib.jar").absolutePath)
-            if (SystemInfo.isWindows && (arg.contains("=") || arg.contains(":"))) {
+            val arg = it
+                .replace("%KOTLIN_STDLIB%", File("dist/kotlinc/lib/kotlin-stdlib.jar").absolutePath)
+                .replace("%KOTLIN_COMPILER%", File("dist/kotlinc/lib/kotlin-compiler.jar").absolutePath)
+            if (SystemInfo.isWindows && (arg.contains("=") || arg.contains(":") || arg.contains(";"))) {
                 "\"" + arg + "\""
             } else {
                 arg
             }
         }
-    }
-
-    private fun getJdk8Home(): File {
-        val homePath = System.getenv()["JDK_1_8"] ?: System.getenv()["JDK_18"] ?: error("Can't find JDK 1.8 home, please define JDK_1_8 variable")
-        return File(homePath)
     }
 }
 

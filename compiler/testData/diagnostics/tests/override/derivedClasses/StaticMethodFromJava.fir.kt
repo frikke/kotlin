@@ -1,5 +1,8 @@
+// RUN_PIPELINE_TILL: FIR2IR
+// DISABLE_NEXT_PHASE_SUGGESTION: Unexpected IR element found during code generation. Either code generation for it is not implemented, or it should have been lowered: ERROR_CALL 'Unresolved reference: <Unresolved name: getValue>#' type=IrErrorType([Error type: Unresolved type for getValue])
 // MODULE: lib
-// FILE: test/J.java
+
+// FILE: test/Foo.java
 package test;
 
 class Foo<T> {
@@ -7,6 +10,9 @@ class Foo<T> {
         return null;
     }
 }
+
+// FILE: test/Bar.java
+package test;
 
 public class Bar extends Foo<String> {}
 

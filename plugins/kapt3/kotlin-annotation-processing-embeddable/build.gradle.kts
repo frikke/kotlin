@@ -1,7 +1,7 @@
 import org.gradle.api.publish.internal.PublicationInternal
-import org.jetbrains.kotlin.util.capitalizeDecapitalize.capitalizeAsciiOnly
 import plugins.KotlinBuildPublishingPlugin.Companion.ADHOC_COMPONENT_NAME
 import plugins.configureKotlinPomAttributes
+import plugins.signLibraryPublication
 
 description = "Annotation Processor for Kotlin (for using with embeddable compiler)"
 
@@ -26,7 +26,22 @@ val gradleCompatPublication = publications.register<MavenPublication>("gradleCom
     (this as PublicationInternal<*>).isAlias = true
     configureKotlinPomAttributes(project)
 }
-val targetName = "${gradleCompatPublication.name.capitalizeAsciiOnly()}Publication"
+if (signLibraryPublication) {
+    tasks.named("publishGradleCompatPublicationToMavenLocal").configure {
+        dependsOn("signMainPublication")
+    }
+    tasks.named("publishGradleCompatPublicationToMavenRepository").configure {
+        dependsOn("signMainPublication")
+    }
+    tasks.named("publishMainPublicationToMavenLocal").configure {
+        dependsOn("signGradleCompatPublication")
+    }
+    tasks.named("publishMainPublicationToMavenRepository").configure {
+        dependsOn("signGradleCompatPublication")
+    }
+}
+
+val targetName = "${gradleCompatPublication.name.capitalize()}Publication"
 configureSbom(
     target = targetName,
     documentName = "kotlin-annotation-processing-gradle",

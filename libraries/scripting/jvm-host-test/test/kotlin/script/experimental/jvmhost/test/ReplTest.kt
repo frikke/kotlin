@@ -7,6 +7,8 @@ package kotlin.script.experimental.jvmhost.test
 
 import junit.framework.TestCase
 import kotlinx.coroutines.runBlocking
+import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
+import org.jetbrains.kotlin.cli.common.arguments.cliArgument
 import org.jetbrains.kotlin.scripting.compiler.plugin.impl.KJvmReplCompilerBase
 import org.jetbrains.kotlin.scripting.compiler.plugin.repl.ReplCodeAnalyzerBase
 import org.junit.Assert
@@ -264,13 +266,13 @@ class ReplTest : TestCase() {
                     errorMessage.asErrorDiagnostics(
                         location = SourceCode.Location(
                             SourceCode.Position(2, 1),
-                            SourceCode.Position(2, 6)
+                            SourceCode.Position(2, 10)
                         )
                     ),
                     errorMessage.asErrorDiagnostics(
                         location = SourceCode.Location(
                             SourceCode.Position(3, 1),
-                            SourceCode.Position(3, 6)
+                            SourceCode.Position(3, 20)
                         )
                     )
                 ),
@@ -400,7 +402,7 @@ class ReplTest : TestCase() {
             sequenceOf(script),
             sequenceOf(greeting),
             simpleScriptCompilationConfiguration.with {
-                compilerOptions("-Xallow-kotlin-package")
+                compilerOptions(K2JVMCompilerArguments::allowKotlinPackage.cliArgument)
             }
         )
     }
@@ -463,12 +465,12 @@ class ReplTest : TestCase() {
                 compiledSnippetChecker
             ).forEachIndexed { index, res ->
                 val expectedRes = expectedIter.next()
+                val resReports = res.reports.filter {
+                    it.code != ScriptDiagnostic.incompleteCode && it.severity != ScriptDiagnostic.Severity.DEBUG
+                }
                 when {
                     res is ResultWithDiagnostics.Failure && expectedRes is ResultWithDiagnostics.Failure -> {
 
-                        val resReports = res.reports.filter {
-                            it.code != ScriptDiagnostic.incompleteCode
-                        }
                         Assert.assertTrue(
                             "#$index: Expected $expectedRes, got $res. Messages are different",
                             resReports.map { it.message } == expectedRes.reports.map { it.message }
@@ -501,11 +503,10 @@ class ReplTest : TestCase() {
                                 "#$index: Expected $expectedVal, got NotEvaluated",
                                 expectedVal, actualVal
                             )
-                            else -> Assert.assertTrue("#$index: Expected $expectedVal, got unknown result $actualVal", expectedVal == null)
                         }
                         if (!ignoreDiagnostics) {
                             val expectedDiag = expectedRes.reports
-                            val actualDiag = res.reports
+                            val actualDiag = resReports
                             Assert.assertEquals(
                                 "Diagnostics should be same",
                                 expectedDiag.map { it.toString() },

@@ -23,13 +23,16 @@ import java.util.stream.Collectors;
 
 public final class InTextDirectivesUtils {
 
-    private static final String DIRECTIVES_FILE_NAME = "directives.txt";
+    public static final String DIRECTIVES_FILE_NAME = "directives.txt";
 
     public static final String IGNORE_BACKEND_DIRECTIVE_PREFIX = "// IGNORE_BACKEND: ";
     public static final String IGNORE_BACKEND_K1_DIRECTIVE_PREFIX = "// IGNORE_BACKEND_K1: ";
     public static final String IGNORE_BACKEND_K2_DIRECTIVE_PREFIX = "// IGNORE_BACKEND_K2: ";
 
     public static final String[] IGNORE_BACKEND_DIRECTIVE_PREFIXES = { IGNORE_BACKEND_DIRECTIVE_PREFIX, IGNORE_BACKEND_K1_DIRECTIVE_PREFIX };
+
+    public static final String TARGET_BACKEND_DIRECTIVE_PREFIX = "// TARGET_BACKEND: ";
+    public static final String DORT_TARGET_EXACT_BACKEND_DIRECTIVE_PREFIX = "// DONT_TARGET_EXACT_BACKEND: ";
 
     private InTextDirectivesUtils() {
     }
@@ -109,15 +112,25 @@ public final class InTextDirectivesUtils {
 
     @NotNull
     public static List<String> findLinesWithPrefixesRemoved(@NotNull String fileText, @NotNull String... prefixes) {
-        return findLinesWithPrefixesRemoved(fileText, true, true, prefixes);
+        return findLinesByPrefixRemoved(fileText, true, true, prefixes).values().stream().flatMap(Collection::stream).collect(Collectors.toList());
     }
 
     @NotNull
-    public static List<String> findLinesWithPrefixesRemoved(@NotNull String fileText, boolean trim, boolean strict, @NotNull String... prefixes) {
+    public static Map<String, List<String>> findLinesByPrefixRemoved(@NotNull String fileText, @NotNull String... prefixes) {
+        return findLinesByPrefixRemoved(fileText, true, true, prefixes);
+    }
+
+    @NotNull
+    public static Map<String, List<String>> findLinesByPrefixRemoved(@NotNull String fileText, boolean trim, boolean strict, @NotNull String... prefixes) {
+        return findLinesByPrefixRemoved(fileText, true, strict, false, prefixes);
+    }
+
+    @NotNull
+    public static Map<String, List<String>> findLinesByPrefixRemoved(@NotNull String fileText, boolean trim, boolean strict, boolean separatedValues, @NotNull String... prefixes) {
         if (prefixes.length == 0) {
             throw new IllegalArgumentException("Please specify the prefixes to check");
         }
-        List<String> result = new ArrayList<>();
+        Map<String, List<String>> result = new HashMap<>();
         List<String> cleanedPrefixes = cleanDirectivesFromComments(Arrays.asList(prefixes));
 
         for (String line : fileNonEmptyCommentedLines(fileText)) {
@@ -128,7 +141,15 @@ public final class InTextDirectivesUtils {
                     if (noPrefixLine.isEmpty() ||
                             Character.isWhitespace(noPrefixLine.charAt(0)) ||
                             Character.isWhitespace(prefix.charAt(prefix.length() - 1))) {
-                        result.add(trim ? noPrefixLine.trim() : StringUtil.trimTrailing(StringsKt.drop(noPrefixLine, 1)));
+
+                        List<String> resultList = result.computeIfAbsent(prefix, s -> new ArrayList<>());
+                        String notSplit = trim ? noPrefixLine.trim() : StringUtil.trimTrailing(StringsKt.drop(noPrefixLine, 1));
+                        if (separatedValues) {
+                            List<String> split = Arrays.asList(notSplit.split(", *"));
+                            resultList.addAll(split);
+                        } else {
+                            resultList.add(notSplit);
+                        }
                         break;
                     } else if (strict) {
                         throw new AssertionError(
@@ -209,7 +230,7 @@ public final class InTextDirectivesUtils {
         return result;
     }
 
-    private static String textWithDirectives(@NotNull File file) {
+    public static String textWithDirectives(@NotNull File file) {
         try {
             String fileText;
             if (file.isDirectory()) {
@@ -228,14 +249,33 @@ public final class InTextDirectivesUtils {
     }
 
     public static boolean isCompatibleTarget(@NotNull TargetBackend targetBackend, @NotNull File file) {
+        return isCompatibleTarget(targetBackend, file, /*separatedDirectiveValues=*/false);
+    }
+
+    public static boolean isCompatibleTarget(@NotNull TargetBackend targetBackend, @NotNull File file, boolean separatedDirectiveValues) {
+        if (targetBackend == TargetBackend.ANY) return true;
+        String textWithDirectives = textWithDirectives(file);
+        Map<String, List<String>> byPrefixRemoved =
+                findLinesByPrefixRemoved(
+                        textWithDirectives,
+                        /*trim=*/true,
+                        /*strcit=*/true,
+                        separatedDirectiveValues,
+                        DORT_TARGET_EXACT_BACKEND_DIRECTIVE_PREFIX,
+                        TARGET_BACKEND_DIRECTIVE_PREFIX
+                );
+        return isCompatibleTarget(targetBackend, byPrefixRemoved);
+    }
+
+    public static boolean isCompatibleTarget(@NotNull TargetBackend targetBackend, Map<String, List<String>> directives) {
         if (targetBackend == TargetBackend.ANY) return true;
 
-        List<String> doNotTarget = findLinesWithPrefixesRemoved(textWithDirectives(file), "// DONT_TARGET_EXACT_BACKEND: ");
+        List<String> doNotTarget = directives.getOrDefault("DONT_TARGET_EXACT_BACKEND: ", Collections.emptyList());
         doNotTarget = doNotTarget.stream().flatMap((s) -> Arrays.stream(s.split(" "))).collect(Collectors.toList());
         if (doNotTarget.contains(targetBackend.name()))
             return false;
 
-        List<String> backends = findLinesWithPrefixesRemoved(textWithDirectives(file), "// TARGET_BACKEND: ");
+        List<String> backends = directives.getOrDefault("TARGET_BACKEND: ", Collections.emptyList());
         return isCompatibleTargetExceptAny(targetBackend, backends);
     }
 
@@ -250,6 +290,31 @@ public final class InTextDirectivesUtils {
 
     public static boolean isIgnoredTarget(@NotNull TargetBackend targetBackend, @NotNull File file, boolean includeAny, String... ignoreBackendDirectivePrefixes) {
         List<String> ignoredBackends = findListWithPrefixes(textWithDirectives(file), ignoreBackendDirectivePrefixes);
+        return isIgnoredTarget(targetBackend, includeAny, ignoredBackends);
+    }
+
+    public static boolean isIgnoredTarget(
+            @NotNull TargetBackend targetBackend,
+            @NotNull Map<String, List<String>> directives,
+            boolean includeAny,
+            String... ignoreBackendDirectivePrefixes
+    ) {
+        List<String> result = new ArrayList<>();
+        directives
+                .entrySet()
+                .stream()
+                .filter(entry -> entry.getKey().startsWith("IGNORE_BACKEND"))
+                .forEach(entry ->
+                         {
+                             for (String s : entry.getValue()) {
+                                 splitValues(result, s);
+                             }
+                         }
+                );
+        return isIgnoredTarget(targetBackend, includeAny, result);
+    }
+
+    private static boolean isIgnoredTarget(@NotNull TargetBackend targetBackend, boolean includeAny, List<String> ignoredBackends) {
         if (ignoredBackends.contains(targetBackend.name())) return true;
         if (includeAny && ignoredBackends.contains("ANY")) return true;
         return false;

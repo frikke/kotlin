@@ -37,17 +37,18 @@ class CompatibilityMode(val abiVersion: KotlinAbiVersion) {
         }
     }
 
-    val oldSignatures: Boolean
-        get() {
-            if (abiVersion.minor == LAST_PRIVATE_SIG_ABI_VERSION.minor) {
-                return abiVersion.patch <= LAST_PRIVATE_SIG_ABI_VERSION.patch
-            }
-            return abiVersion.minor < LAST_PRIVATE_SIG_ABI_VERSION.minor
-        }
+    /** See comments for [LAST_WITH_LEGACY_SIGNATURES_FOR_PRIVATE_AND_LOCAL_DECLARATIONS]. */
+    val legacySignaturesForPrivateAndLocalDeclarations: Boolean
+        get() = abiVersion.isAtMost(LAST_WITH_LEGACY_SIGNATURES_FOR_PRIVATE_AND_LOCAL_DECLARATIONS)
 
     companion object {
-        val LAST_PRIVATE_SIG_ABI_VERSION = KotlinAbiVersion(1, 5, 0)
         val CURRENT = CompatibilityMode(KotlinAbiVersion.CURRENT)
+
+        /**
+         * KLIBs with ABI version <= 1.5.0 had different rules for computing signatures for private and local declarations.
+         * See also [org.jetbrains.kotlin.backend.common.serialization.mangle.ir.IrExportCheckerVisitor.CompatibleChecker].
+         */
+        val LAST_WITH_LEGACY_SIGNATURES_FOR_PRIVATE_AND_LOCAL_DECLARATIONS = KotlinAbiVersion(1, 5, 0)
     }
 }
 
@@ -83,10 +84,16 @@ abstract class IrModuleDeserializer(private val _moduleDescriptor: ModuleDescrip
 
     open fun init(delegate: IrModuleDeserializer) {}
 
-    open fun addModuleReachableTopLevel(idSig: IdSignature) {
-        error("Unsupported Operation (sig: $idSig")
+    /**
+     * Schedule deserialization of the top-level declaration with the given signature in the given file.
+     */
+    open fun addModuleReachableTopLevel(topLevelDeclarationSignature: IdSignature) {
+        error("Unsupported Operation (sig: $topLevelDeclarationSignature")
     }
 
+    /**
+     * Run deserialization of top-level declarations previously scheduled for deserialization in the current module.
+     */
     open fun deserializeReachableDeclarations() { error("Unsupported Operation") }
 
     abstract val moduleFragment: IrModuleFragment
@@ -222,8 +229,8 @@ class IrModuleDeserializerWithBuiltIns(
     override val strategyResolver: (String) -> DeserializationStrategy
         get() = delegate.strategyResolver
 
-    override fun addModuleReachableTopLevel(idSig: IdSignature) {
-        delegate.addModuleReachableTopLevel(idSig)
+    override fun addModuleReachableTopLevel(topLevelDeclarationSignature: IdSignature) {
+        delegate.addModuleReachableTopLevel(topLevelDeclarationSignature)
     }
 
     override val moduleFragment: IrModuleFragment get() = delegate.moduleFragment

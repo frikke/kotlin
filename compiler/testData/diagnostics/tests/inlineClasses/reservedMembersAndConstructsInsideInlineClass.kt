@@ -1,7 +1,8 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
 // WITH_STDLIB
-// !LANGUAGE: +CustomEqualsInValueClasses
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// LANGUAGE: +CustomEqualsInValueClasses
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 @JvmInline
 value class IC1(val x: Any) {

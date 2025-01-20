@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
-// !LANGUAGE: +FunctionalInterfaceConversion
+// LANGUAGE: +FunctionalInterfaceConversion
 
 fun interface Good {
     fun invoke()

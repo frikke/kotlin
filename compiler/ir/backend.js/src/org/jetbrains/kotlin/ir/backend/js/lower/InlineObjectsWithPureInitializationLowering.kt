@@ -15,9 +15,13 @@ import org.jetbrains.kotlin.ir.expressions.IrBody
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.types.classOrNull
+import org.jetbrains.kotlin.ir.util.irError
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 
+/**
+ * Optimization: inlines object instance fields getters whenever it's possible.
+ */
 class InlineObjectsWithPureInitializationLowering(val context: JsCommonBackendContext) : BodyLoweringPass {
     private val IrClass.instanceField by context.mapping.objectToInstanceField
     private val IrClass.hasPureInitialization by context.mapping.objectsWithPureInitialization
@@ -26,9 +30,16 @@ class InlineObjectsWithPureInitializationLowering(val context: JsCommonBackendCo
         irBody.transformChildrenVoid(object : IrElementTransformerVoid() {
             override fun visitCall(expression: IrCall): IrExpression {
                 if (!expression.symbol.owner.isObjectInstanceGetter()) return super.visitCall(expression)
-                val objectToCreate = expression.symbol.owner.returnType.classOrNull?.owner ?: error("Expect return type of an object getter is an object type")
+                val objectToCreate = expression.symbol.owner.returnType.classOrNull?.owner
+                    ?: irError("Expect return type of an object getter is an object type") {
+                        withIrEntry("expression", expression)
+                    }
                 if (objectToCreate.hasPureInitialization != true) return super.visitCall(expression)
-                val instanceFieldForObject = objectToCreate.instanceField ?: error("An instance field for an object should exist")
+                val instanceFieldForObject = objectToCreate.instanceField
+                    ?: irError("An instance field for an object should exist") {
+                        withIrEntry("objectToCreate", objectToCreate)
+                        withIrEntry("expression", expression)
+                    }
                 return JsIrBuilder.buildGetField(
                     instanceFieldForObject.symbol,
                     startOffset = expression.startOffset,

@@ -11,7 +11,7 @@ import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.ir.Symbols
 import org.jetbrains.kotlin.backend.common.lower.loops.*
 import org.jetbrains.kotlin.backend.common.lower.loops.handlers.*
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.builtins.PrimitiveType
 import org.jetbrains.kotlin.builtins.UnsignedType
 import org.jetbrains.kotlin.ir.IrStatement
@@ -21,6 +21,7 @@ import org.jetbrains.kotlin.ir.builders.irCall
 import org.jetbrains.kotlin.ir.builders.irInt
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclaration
+import org.jetbrains.kotlin.ir.declarations.IrParameterKind
 import org.jetbrains.kotlin.ir.declarations.IrSymbolOwner
 import org.jetbrains.kotlin.ir.expressions.IrBody
 import org.jetbrains.kotlin.ir.expressions.IrCall
@@ -29,22 +30,19 @@ import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isSubtypeOfClass
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.addIfNotNull
 
-val rangeContainsLoweringPhase = makeIrFilePhase(
-    ::RangeContainsLowering,
-    name = "RangeContainsLowering",
-    description = "Optimizes calls to contains() for ClosedRanges"
-)
-
 /**
- * This lowering pass optimizes calls to contains() (`in` operator) for ClosedRanges.
+ * Optimizes calls to `contains` (`in` operator) for [ClosedRange]s.
  *
  * For example, the expression `X in A..B` is transformed into `A <= X && X <= B`.
  */
+@PhaseDescription(name = "RangeContainsLowering")
 class RangeContainsLowering(val context: CommonBackendContext) : BodyLoweringPass {
     override fun lower(irBody: IrBody, container: IrDeclaration) {
         val transformer = Transformer(context, container as IrSymbolOwner)
@@ -61,8 +59,8 @@ private class Transformer(
 
     private fun matchStdlibExtensionContainsCall(expression: IrCall): Boolean {
         val callee = expression.symbol.owner
-        return callee.valueParameters.size == 1 &&
-                callee.extensionReceiverParameter?.type?.isSubtypeOfClass(context.ir.symbols.closedRange) == true &&
+        return callee.hasShape(extensionReceiver = true, regularParameters = 1) &&
+                callee.parameters[0].type.isSubtypeOfClass(context.ir.symbols.closedRange) &&
                 callee.kotlinFqName == FqName("kotlin.ranges.${OperatorNameConventions.CONTAINS}")
     }
 
@@ -85,7 +83,8 @@ private class Transformer(
             return super.visitCall(expression)  // Preserve the call to not().
         }
 
-        if (expression.extensionReceiver != null && !matchStdlibExtensionContainsCall(expression)) {
+        val hasExtensionReceiver = expression.symbol.owner.parameters.any { it.kind == IrParameterKind.ExtensionReceiver }
+        if (hasExtensionReceiver && !matchStdlibExtensionContainsCall(expression)) {
             // We can only optimize calls to the stdlib extension functions and not a user-defined extension.
             // TODO: This breaks the optimization for *Range.reversed().contains(). The function called there is the extension function
             // Iterable.contains(). Figure out if we can safely match on that as well.
@@ -94,11 +93,11 @@ private class Transformer(
 
         // The HeaderInfoBuilder extracts information (e.g., lower/upper bounds, direction) from the range expression, which is the
         // receiver for the contains() call.
-        val receiver = expression.dispatchReceiver ?: expression.extensionReceiver
+        val receiver = expression.arguments[0]
         val headerInfo = receiver?.accept(headerInfoBuilder, expression)
             ?: return super.visitCall(expression)  // The receiver is not a supported range (or not a range at all).
 
-        val argument = expression.getValueArgument(0)!!
+        val argument = expression.arguments[1]!!
         if (argument.type.isNullable()) {
             // There are stdlib extension functions that return false for null arguments, e.g., IntRange.contains(Int?). We currently
             // do not optimize such calls.
@@ -296,8 +295,8 @@ private class Transformer(
         }.getValue(if (useCompareTo) builtIns.intClass else comparisonClass.symbol)
         val compareToFun = comparisonClass.functions.singleOrNull {
             it.name == OperatorNameConventions.COMPARE_TO &&
-                    it.dispatchReceiverParameter != null && it.extensionReceiverParameter == null &&
-                    it.valueParameters.size == 1 && (!isNumericRange || it.valueParameters[0].type == comparisonClass.defaultType)
+                    it.hasShape(dispatchReceiver = true, regularParameters = 1) &&
+                    (!isNumericRange || it.parameters[1].type == comparisonClass.defaultType)
         } ?: return null
 
         // contains() function for ComparableRange is implemented as `value >= start && value <= endInclusive` (`value` is the argument).
@@ -306,30 +305,30 @@ private class Transformer(
         // (see evaluationOrderForComparableRange.kt test).
         val lowerClause = if (useCompareTo) {
             irCall(lowerCompFun).apply {
-                putValueArgument(0, irInt(0))
-                putValueArgument(1, irCall(compareToFun).apply {
-                    dispatchReceiver = argExpression.shallowCopy()
-                    putValueArgument(0, lowerExpression)
-                })
+                arguments[0] = irInt(0)
+                arguments[1] = irCall(compareToFun).apply {
+                    arguments[0] = argExpression.shallowCopy()
+                    arguments[1] = lowerExpression
+                }
             }
         } else {
             irCall(lowerCompFun).apply {
-                putValueArgument(0, lowerExpression)
-                putValueArgument(1, argExpression.shallowCopy())
+                arguments[0] = lowerExpression
+                arguments[1] = argExpression.shallowCopy()
             }
         }
         val upperClause = if (useCompareTo) {
             irCall(upperCompFun).apply {
-                putValueArgument(0, irCall(compareToFun).apply {
-                    dispatchReceiver = argExpression.shallowCopy()
-                    putValueArgument(0, upperExpression)
-                })
-                putValueArgument(1, irInt(0))
+                arguments[0] = irCall(compareToFun).apply {
+                    arguments[0] = argExpression.shallowCopy()
+                    arguments[1] = upperExpression
+                }
+                arguments[1] = irInt(0)
             }
         } else {
             irCall(upperCompFun).apply {
-                putValueArgument(0, argExpression.shallowCopy())
-                putValueArgument(1, upperExpression)
+                arguments[0] = argExpression.shallowCopy()
+                arguments[1] = upperExpression
             }
         }
 
@@ -360,7 +359,10 @@ private class Transformer(
         return leastCommonPrimitiveNumericType(symbols, argumentType, commonBoundType)?.getClass()
     }
 
-    private fun leastCommonPrimitiveNumericType(symbols: Symbols, t1: IrType, t2: IrType): IrType? {
+    private fun leastCommonPrimitiveNumericType(symbols: Symbols, type1: IrType, type2: IrType): IrType? {
+        // In case of type parameters, use their upper bounds instead
+        val t1 = (type1 as IrSimpleType).classifier.closestSuperClass()!!.defaultType
+        val t2 = (type2 as IrSimpleType).classifier.closestSuperClass()!!.defaultType
         val primitive1 = t1.getPrimitiveType()
         val primitive2 = t2.getPrimitiveType()
         val unsigned1 = t1.getUnsignedType()
@@ -411,15 +413,16 @@ internal open class RangeHeaderInfoBuilder(context: CommonBackendContext, scopeO
 internal object FloatingPointRangeToHandler : HeaderInfoHandler<IrCall, Nothing?> {
     override fun matchIterable(expression: IrCall): Boolean {
         val callee = expression.symbol.owner
-        return callee.valueParameters.singleOrNull()?.type?.let { it.isFloat() || it.isDouble() } == true &&
-                callee.extensionReceiverParameter?.type?.let { it.isFloat() || it.isDouble() } == true &&
+        return callee.hasShape(extensionReceiver = true, regularParameters = 1) &&
+                callee.parameters[0].let { it.type.isFloat() || it.type.isDouble() } &&
+                callee.parameters[1].let { it.type.isFloat() || it.type.isDouble() } &&
                 callee.kotlinFqName == FqName("kotlin.ranges.${OperatorNameConventions.RANGE_TO}")
     }
 
     override fun build(expression: IrCall, data: Nothing?, scopeOwner: IrSymbol) =
         FloatingPointRangeHeaderInfo(
-            start = expression.extensionReceiver!!,
-            endInclusive = expression.getValueArgument(0)!!
+            start = expression.arguments[0]!!,
+            endInclusive = expression.arguments[1]!!
         )
 }
 
@@ -427,14 +430,14 @@ internal object FloatingPointRangeToHandler : HeaderInfoHandler<IrCall, Nothing?
 internal class ComparableRangeToHandler(private val context: CommonBackendContext) : HeaderInfoHandler<IrCall, Nothing?> {
     override fun matchIterable(expression: IrCall): Boolean {
         val callee = expression.symbol.owner
-        return callee.valueParameters.size == 1 &&
-                callee.extensionReceiverParameter?.type?.isSubtypeOfClass(context.ir.symbols.comparable) == true &&
+        return callee.hasShape(extensionReceiver = true, regularParameters = 1) &&
+                callee.parameters[0].type.isSubtypeOfClass(context.ir.symbols.comparable) &&
                 callee.kotlinFqName == FqName("kotlin.ranges.${OperatorNameConventions.RANGE_TO}")
     }
 
     override fun build(expression: IrCall, data: Nothing?, scopeOwner: IrSymbol) =
         ComparableRangeInfo(
-            start = expression.extensionReceiver!!,
-            endInclusive = expression.getValueArgument(0)!!
+            start = expression.arguments[0]!!,
+            endInclusive = expression.arguments[1]!!
         )
 }

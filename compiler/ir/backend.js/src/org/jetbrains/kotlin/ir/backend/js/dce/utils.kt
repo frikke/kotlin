@@ -10,7 +10,8 @@ import org.jetbrains.kotlin.ir.backend.js.lower.PrimaryConstructorLowering
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.util.dumpKotlinLike
 import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
+import org.jetbrains.kotlin.ir.util.nonDispatchParameters
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import java.io.File
 
@@ -18,7 +19,7 @@ internal fun IrDeclaration.fqNameForDceDump(): String {
     // TODO: sanitize names
     val fqn = (this as? IrDeclarationWithName)?.fqNameWhenAvailable?.asString() ?: "<unknown>"
     val signature = when (this is IrFunction) {
-        true -> this.valueParameters.joinToString(prefix = "(", postfix = ")") { it.type.dumpKotlinLike() }
+        true -> this.nonDispatchParameters.joinToString(prefix = "(", postfix = ")") { it.type.dumpKotlinLike() }
         else -> ""
     }
     val synthetic = when (this.origin == PrimaryConstructorLowering.SYNTHETIC_PRIMARY_CONSTRUCTOR) {
@@ -29,25 +30,35 @@ internal fun IrDeclaration.fqNameForDceDump(): String {
     return (fqn + signature + synthetic)
 }
 
-fun dumpDeclarationIrSizesIfNeed(path: String?, allModules: List<IrModuleFragment>) {
+private data class IrDeclarationDumpInfo(val fqName: String, val type: String, val size: Int)
+
+fun dumpDeclarationIrSizesIfNeed(path: String?, allModules: List<IrModuleFragment>, dceDumpNameCache: DceDumpNameCache) {
     if (path == null) return
 
-    val declarations = linkedSetOf<IrDeclaration>()
+    val declarations = linkedSetOf<IrDeclarationDumpInfo>()
 
     allModules.forEach {
-        it.acceptChildrenVoid(object : IrElementVisitorVoid {
+        it.acceptChildrenVoid(object : IrVisitorVoid() {
             override fun visitElement(element: IrElement) {
                 element.acceptChildrenVoid(this)
             }
 
             override fun visitDeclaration(declaration: IrDeclarationBase) {
-                when (declaration) {
-                    is IrFunction,
-                    is IrProperty,
-                    is IrField,
-                    is IrAnonymousInitializer -> {
-                        declarations.add(declaration)
-                    }
+                val type = when (declaration) {
+                    is IrFunction -> "function"
+                    is IrProperty -> "property"
+                    is IrField -> "field"
+                    is IrAnonymousInitializer -> "anonymous initializer"
+                    else -> null
+                }
+                type?.let {
+                    declarations.add(
+                        IrDeclarationDumpInfo(
+                            fqName = dceDumpNameCache.getOrPut(declaration).removeQuotes(),
+                            type = it,
+                            size = declaration.dumpKotlinLike().length
+                        )
+                    )
                 }
 
                 super.visitDeclaration(declaration)
@@ -58,15 +69,21 @@ fun dumpDeclarationIrSizesIfNeed(path: String?, allModules: List<IrModuleFragmen
     val out = File(path)
     val (prefix, postfix, separator, indent) = when (out.extension) {
         "json" -> listOf("{\n", "\n}", ",\n", "    ")
-        "js" -> listOf("const kotlinDeclarationsSize = {\n", "\n};\n", ",\n", "    ")
+        "js" -> listOf("export const kotlinDeclarationsSize = {\n", "\n};\n", ",\n", "    ")
         else -> listOf("", "", "\n", "")
     }
 
-    val value = declarations.joinToString(separator, prefix, postfix) {
-        val fqn = it.fqNameForDceDump()
-        val size = it.dumpKotlinLike().length
-        "$indent\"$fqn\" : $size"
+    val value = declarations.joinToString(separator, prefix, postfix) { declaration ->
+        """$indent"${declaration.fqName}": {
+                |$indent$indent"size": ${declaration.size},
+                |$indent$indent"type": "${declaration.type}"
+                |$indent}
+            """.trimMargin()
     }
 
     out.writeText(value)
 }
+
+internal fun String.removeQuotes() = replace('"'.toString(), "")
+    .replace("'", "")
+    .replace("\\", "\\\\")

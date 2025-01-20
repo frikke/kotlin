@@ -18,6 +18,10 @@ package org.jetbrains.kotlin.native.interop.indexer
 
 import clang.*
 import kotlinx.cinterop.*
+import org.jetbrains.kotlin.konan.exec.Command
+import org.jetbrains.kotlin.konan.target.Distribution
+import org.jetbrains.kotlin.konan.target.HostManager
+import org.jetbrains.kotlin.konan.target.PlatformManager
 import java.io.Closeable
 import java.io.File
 import java.nio.file.Files
@@ -39,44 +43,8 @@ internal val CXTypeKind.spelling: String get() = clang_getTypeKindSpelling(this)
 internal val CXCursorKind.spelling: String get() = clang_getCursorKindSpelling(this).convertAndDispose()
 
 internal val CValue<CXCursor>.isCxxPublic: Boolean get() {
-    val access = clang_getCXXAccessSpecifier(this)
-    return access != CX_CXXAccessSpecifier.CX_CXXProtected && access != CX_CXXAccessSpecifier.CX_CXXPrivate
+   return false
 }
-
-
-/**
- * TODO Accessibility needs better support
- * Currently we provide binding (access) to static vars (= internal linkage)
- * (i.e. following C policy, as the C header would be included into kotlin impl file
- * Consistent approach to C++ would be:
- *  - Kotlin class inherits from C++ allowing overriding and protected access
- *  - namespace mapped to package
- *  - anon namespace members mapped to "internal" allowing access from the current translation unit
- *  To make this working we have to derive a complete C++ "proxy" class for each original one and declare C wrappers as friends
- *  BTW Such derived C++ proxy class is the only way to allow Kotlin to override the private virtual C++ methods (which is OK in C++)
- *  Without that C++ style callbacks via overriding would be limited or not supported
- */
-internal fun CValue<CXCursor>.isRecursivelyCxxPublic(): Boolean {
-    when {
-        clang_isDeclaration(kind) == 0 ->
-            return true  // got the topmost declaration already
-        !isCxxPublic ->
-            return false
-        kind == CXCursorKind.CXCursor_Namespace && getCursorSpelling(this).isEmpty() ->
-            return false
-
-        /*
-         * TODO FIXME In the current design we allow binding to static vars, but this won't work for anon namespaces and private members
-         * Need better (consistent( decision wrt accessibility.
-         */
-     //   clang_getCursorLinkage(this) == CXLinkageKind.CXLinkage_Internal ->
-            // return false;  // check disabled for a while
-
-        else ->
-            return clang_getCursorSemanticParent(this).isRecursivelyCxxPublic()
-    }
-}
-
 
 internal fun CValue<CXString>.convertAndDispose(): String {
     try {
@@ -142,18 +110,67 @@ internal fun parseTranslationUnit(
         )
 
         if (errorCode != CXErrorCode.CXError_Success) {
-            val copiedSourceFile = sourceFile.copyTo(Files.createTempFile(null, sourceFile.name).toFile(), overwrite = true)
-
-            error("""
-                clang_parseTranslationUnit2 failed with $errorCode;
-                sourceFile = ${copiedSourceFile.absolutePath}
-                arguments = ${compilerArgs.joinToString(" ")}
-                """.trimIndent())
+            reportParseTranslationUnitError(sourceFile, errorCode, compilerArgs)
         }
 
         return resultVar.value!!
     }
 }
+
+private fun reportParseTranslationUnitError(sourceFile: File, errorCode: CXErrorCode, originalCompilerArgs: List<String>): Nothing {
+    val message = buildString {
+        appendLine("clang_parseTranslationUnit2 failed with $errorCode;")
+        appendLine("Arguments:")
+
+        // sourceFile is typically a temporary file to be removed after the process exit;
+        // rescue it by copying to a longer-living temporary file:
+        val copiedSourceFile = sourceFile.copyTo(Files.createTempFile(null, sourceFile.name).toFile(), overwrite = true)
+
+        // Include the source file to arguments for simplicity, to mimic the clang behavior.
+        val compilerArgs = mutableListOf(copiedSourceFile.absolutePath)
+        compilerArgs.addAll(originalCompilerArgs)
+
+        // Included .pch file is typically a temporary file to be removed after the process exit;
+        // rescue it the same way:
+        val indexOfIncludePch = compilerArgs.indexOf("-include-pch")
+        if (indexOfIncludePch != -1 && indexOfIncludePch + 1 < compilerArgs.size) {
+            val pch = File(compilerArgs[indexOfIncludePch + 1])
+            val copiedPch = pch.copyTo(Files.createTempFile(null, pch.name).toFile(), overwrite = true)
+            compilerArgs[indexOfIncludePch + 1] = copiedPch.absolutePath
+        }
+
+        appendLine(compilerArgs.joinToString(" "))
+
+        // At least for CXError_ASTReadError libclang doesn't provide any useful diagnostics.
+        // We have to actually run clang to provide a more detailed error message:
+        tryGetClangInvocationResultMessage(listOf(sourceFile.absolutePath) + originalCompilerArgs)?.let {
+            appendLine()
+            appendLine("clang invocation details:")
+            appendLine(it)
+        }
+    }
+
+    error(message)
+}
+
+private fun tryGetClangInvocationResultMessage(compilerArgs: List<String>): String? = runCatching {
+    // The code below is basically a quick hack, so let's use it only for tests so far:
+    val nativeHome = System.getProperty("kotlin.internal.native.test.nativeHome") ?: return null
+
+    val platform = PlatformManager(Distribution(nativeHome)).platform(HostManager.host)
+    val llvmHome = File(platform.absoluteLlvmHome)
+    val clang = llvmHome.resolve("bin/clang")
+
+    val command = listOf(clang.absolutePath) + compilerArgs
+    val result = Command(command).getResult(withErrors = true)
+
+    buildString {
+        appendLine(command.joinToString(" "))
+        appendLine("Exit code: ${result.exitCode}")
+        appendLine("Output:")
+        result.outputLines.forEach(::appendLine)
+    }
+}.getOrNull()
 
 internal fun Compilation.parse(
         index: CXIndex,

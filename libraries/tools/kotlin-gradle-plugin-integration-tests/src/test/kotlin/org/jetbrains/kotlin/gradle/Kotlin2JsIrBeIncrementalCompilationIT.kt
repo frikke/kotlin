@@ -6,7 +6,6 @@
 package org.jetbrains.kotlin.gradle
 
 import org.gradle.util.GradleVersion
-import org.jetbrains.kotlin.gradle.plugin.KotlinJsCompilerType
 import org.jetbrains.kotlin.gradle.testbase.*
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.DisplayName
@@ -19,15 +18,21 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
-@DisplayName("Incremental compilation tests for Kotlin JS IR backend with 2.0")
+@DisplayName("Incremental compilation tests for Kotlin JS IR backend with K1")
 @JsGradlePluginTests
-class Kotlin2FirJsIrBeIncrementalCompilationIT : Kotlin2JsIrBeIncrementalCompilationIT() {
+class Kotlin2JsK1IrBeIncrementalCompilationIT : Kotlin2JsIrBeIncrementalCompilationIT() {
     override val defaultBuildOptions: BuildOptions
-        get() = super.defaultBuildOptions.copy(
-            languageVersion = "2.0"
-        )
+        get() = super.defaultBuildOptions.copyEnsuringK1()
+}
+
+@DisplayName("Incremental compilation tests for Kotlin JS IR backend with K2")
+@JsGradlePluginTests
+class Kotlin2JsK2IrBeIncrementalCompilationIT : Kotlin2JsIrBeIncrementalCompilationIT() {
+    override val defaultBuildOptions: BuildOptions
+        get() = super.defaultBuildOptions.copyEnsuringK2()
 
     @Disabled("Not found way to fail BE compilation with successful FE 2.0 compilation")
+    @GradleTest
     override fun testRebuildAfterError(gradleVersion: GradleVersion) {
         super.testRebuildAfterError(gradleVersion)
     }
@@ -35,10 +40,9 @@ class Kotlin2FirJsIrBeIncrementalCompilationIT : Kotlin2JsIrBeIncrementalCompila
 
 @DisplayName("Incremental compilation tests for Kotlin JS IR backend")
 @JsGradlePluginTests
-open class Kotlin2JsIrBeIncrementalCompilationIT : KGPBaseTest() {
+abstract class Kotlin2JsIrBeIncrementalCompilationIT : KGPBaseTest() {
     override val defaultBuildOptions = BuildOptions(
         jsOptions = BuildOptions.JsOptions(
-            jsCompilerType = KotlinJsCompilerType.IR,
             incrementalJsKlib = true,
             incrementalJsIr = true
         ),
@@ -118,19 +122,19 @@ open class Kotlin2JsIrBeIncrementalCompilationIT : KGPBaseTest() {
             }
 
             // -Xir-property-lazy-initialization default is true
-            build("nodeRun") {
+            build("nodeDevelopmentRun") {
                 assertTasksExecuted(":compileDevelopmentExecutableKotlinJs")
                 assertEquals(listOf("Hello, Gradle."), output.testScriptOutLines())
             }
 
             setLazyInitializationArg(false)
-            build("nodeRun") {
+            build("nodeDevelopmentRun") {
                 assertTasksExecuted(":compileDevelopmentExecutableKotlinJs")
                 assertEquals(listOf("TOP LEVEL!", "Hello, Gradle."), output.testScriptOutLines())
             }
 
             setLazyInitializationArg(true)
-            build("nodeRun") {
+            build("nodeDevelopmentRun") {
                 assertTasksExecuted(":compileDevelopmentExecutableKotlinJs")
                 assertEquals(listOf("Hello, Gradle."), output.testScriptOutLines())
             }
@@ -153,7 +157,9 @@ open class Kotlin2JsIrBeIncrementalCompilationIT : KGPBaseTest() {
                 assertEquals(5, klibCacheDirs?.size, "cache should contain 5 dirs")
 
                 val libKlibCacheDirs = klibCacheDirs?.filter { dir -> dir.startsWith("lib.klib.") }
-                assertEquals(2, libKlibCacheDirs?.size, "cache should contain 2 dirs for lib.klib")
+                assertEquals(1, libKlibCacheDirs?.size, "cache should contain 1 dirs for lib.klib")
+                val mainKlibCacheDirs = klibCacheDirs?.filter { dir -> dir.startsWith("main") }
+                assertEquals(2, mainKlibCacheDirs?.size, "cache should contain 2 dirs starting from main (1 for main of lib + 1 main of app)")
 
                 var lib = false
                 var libOther = false
@@ -165,14 +171,14 @@ open class Kotlin2JsIrBeIncrementalCompilationIT : KGPBaseTest() {
                             .forEach {
                                 val text = it.readText()
                                 // cache keeps the js code of compiled module, this substring from that js code
-                                if (text.contains("root['kotlin-js-ir-ic-multiple-artifacts-lib']")) {
+                                if (text.contains("globalThis['kotlin-js-ir-ic-multiple-artifacts-lib'] = ")) {
                                     if (lib) {
                                         error("lib should be only once in cache")
                                     }
                                     lib = true
                                 }
                                 // cache keeps the js code of compiled module, this substring from that js code
-                                if (text.contains("root['kotlin-js-ir-ic-multiple-artifacts-lib-other']")) {
+                                if (text.contains("globalThis['kotlin-js-ir-ic-multiple-artifacts-lib-other'] = ")) {
                                     if (libOther) {
                                         error("libOther should be only once in cache")
                                     }

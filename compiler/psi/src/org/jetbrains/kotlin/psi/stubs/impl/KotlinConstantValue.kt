@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -14,8 +14,6 @@ import org.jetbrains.kotlin.metadata.deserialization.NameResolver
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.stubs.StubUtils
-import org.jetbrains.kotlin.types.*
-import org.jetbrains.kotlin.types.model.KotlinTypeMarker
 
 enum class KotlinConstantValueKind {
     NULL, BOOLEAN, CHAR, BYTE, SHORT, INT, LONG, DOUBLE, FLOAT, ENUM, KCLASS, STRING, ARRAY, UBYTE, USHORT, UINT, ULONG, ANNO;
@@ -24,7 +22,7 @@ enum class KotlinConstantValueKind {
 fun createConstantValue(dataStream: StubInputStream): ConstantValue<*>? {
     val kind = dataStream.readInt()
     if (kind == -1) return null
-    return when (KotlinConstantValueKind.values()[kind]) {
+    return when (KotlinConstantValueKind.entries[kind]) {
         KotlinConstantValueKind.NULL -> NullValue
         KotlinConstantValueKind.BOOLEAN -> BooleanValue(dataStream.readBoolean())
         KotlinConstantValueKind.CHAR -> CharValue(dataStream.readChar())
@@ -53,7 +51,7 @@ fun createConstantValue(dataStream: StubInputStream): ConstantValue<*>? {
         KotlinConstantValueKind.ANNO -> {
             val classId = StubUtils.deserializeClassId(dataStream)!!
             val numberOfArgs = dataStream.readInt() - 1
-            AnnotationValue.create(KotlinClassTypeBean(classId, emptyList(), false), (0..numberOfArgs).associate {
+            AnnotationValue.create(classId, (0..numberOfArgs).associate {
                 Name.identifier(dataStream.readNameString()!!) to createConstantValue(dataStream)!!
             })
         }
@@ -158,7 +156,7 @@ class KotlinConstantValueSerializationVisitor(private val dataStream: StubOutput
 
     override fun visitAnnotationValue(value: AnnotationValue, data: Nothing?) {
         dataStream.writeInt(KotlinConstantValueKind.ANNO.ordinal)
-        StubUtils.serializeClassId(dataStream, (value.value.type as KotlinClassTypeBean).classId)
+        StubUtils.serializeClassId(dataStream, value.value.classId)
         val args = value.value.argumentsMapping
         dataStream.writeInt(args.size)
         for (arg in args) {
@@ -197,7 +195,7 @@ fun createConstantValue(value: Any?): ConstantValue<*> {
         is Array<*> -> ArrayValue(value.map { createConstantValue(it) }.toList())
         is EnumData -> EnumValue(value.enumClassId, value.enumEntryName)
         is KClassData -> KClassValue(value.classId, value.arrayNestedness)
-        is AnnotationData -> AnnotationValue.create(KotlinClassTypeBean(value.annoClassId, emptyList(), false), value.args)
+        is AnnotationData -> AnnotationValue.create(value.annoClassId, value.args)
         null -> NullValue
         else -> error("Unsupported value $value")
     }
@@ -227,7 +225,7 @@ fun createConstantValue(value: ProtoBuf.Annotation.Argument.Value, nameResolver:
         ProtoBuf.Annotation.Argument.Value.Type.ANNOTATION -> {
             val args =
                 value.annotation.argumentList.associate { nameResolver.getName(it.nameId) to createConstantValue(it.value, nameResolver) }
-            AnnotationValue.create(KotlinClassTypeBean(nameResolver.getClassId(value.annotation.id), emptyList(), false), args)
+            AnnotationValue.create(nameResolver.getClassId(value.annotation.id), args)
         }
         ProtoBuf.Annotation.Argument.Value.Type.ARRAY -> ArrayValue(
             value.arrayElementList.map { createConstantValue(it, nameResolver) }

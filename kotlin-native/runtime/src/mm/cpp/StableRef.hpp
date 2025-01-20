@@ -14,6 +14,8 @@ namespace kotlin::mm {
 
 class ThreadData;
 
+// TODO(KT-67741): Unify different SpecialRefs
+
 // Stable reference to a Kotlin object.
 // Every stable reference makes Kotlin object be in the root set.
 // Use `create` and `dispose` to create and destroy the stable reference.
@@ -36,16 +38,7 @@ public:
 
     // Dispose stable reference.
     void dispose() && noexcept {
-        auto node = std::move(*this).disposeImpl();
-        tryToDeleteImmediately(std::move(node));
-    }
-
-    // Dispose stable reference using `thread` for opportunistic deletion.
-    // Note: `thread` should still be the current thread, and it's used
-    // when the thread is being destroyed and its TLS deallocating.
-    void disposeOn(mm::ThreadData& thread) && noexcept {
-        auto node = std::move(*this).disposeImpl();
-        tryToDeleteImmediately(thread, std::move(node));
+        std::move(*this).disposeImpl();
     }
 
     // Get the underlying object.
@@ -53,6 +46,12 @@ public:
     [[nodiscard("expensive pure function")]] ObjHeader* operator*() const noexcept {
         RuntimeAssert(node_, "operator* on null StableRef");
         return node_->ref();
+    }
+
+    // Get the type of underlying object.
+    [[nodiscard("expensive pure function")]] const TypeInfo* typeInfo() const noexcept {
+        RuntimeAssert(node_, "typeInfo on null StableRef");
+        return node_->typeInfo();
     }
 
     static StableRef& reinterpret(RawSpecialRef*& raw) noexcept { return reinterpret_cast<StableRef&>(raw); }
@@ -70,9 +69,6 @@ private:
         node->dispose();
         return node;
     }
-
-    static void tryToDeleteImmediately(raw_ptr<SpecialRefRegistry::Node> node) noexcept;
-    static void tryToDeleteImmediately(mm::ThreadData& thread, raw_ptr<SpecialRefRegistry::Node> node) noexcept;
 
     raw_ptr<SpecialRefRegistry::Node> node_;
 };

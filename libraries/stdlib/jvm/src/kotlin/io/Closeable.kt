@@ -29,17 +29,7 @@ public inline fun <T : Closeable?, R> T.use(block: (T) -> R): R {
         exception = e
         throw e
     } finally {
-        when {
-            apiVersionIsAtLeast(1, 1, 0) -> this.closeFinally(exception)
-            this == null -> {}
-            exception == null -> close()
-            else ->
-                try {
-                    close()
-                } catch (closeException: Throwable) {
-                    // cause.addSuppressed(closeException) // ignored here
-                }
-        }
+        this.closeFinally(exception)
     }
 }
 
@@ -51,7 +41,7 @@ public inline fun <T : Closeable?, R> T.use(block: (T) -> R): R {
  */
 @SinceKotlin("1.1")
 @PublishedApi
-internal fun Closeable?.closeFinally(cause: Throwable?) = when {
+internal fun Closeable?.closeFinally(cause: Throwable?): Unit = when {
     this == null -> {}
     cause == null -> close()
     else ->

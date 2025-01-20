@@ -12,9 +12,9 @@ import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.superTypes
 import org.jetbrains.kotlin.ir.backend.js.utils.isJsImplicitExport
 import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.types.superTypes
 
 private typealias SubstitutionMap = Map<IrTypeParameterSymbol, IrType>
 
@@ -70,7 +70,10 @@ class TransitiveExportCollector(val context: JsIrBackendContext) {
     }
 
     private fun IrSimpleType.calculateTypeSubstitutionMap(typeSubstitutionMap: SubstitutionMap): SubstitutionMap {
-        val classifier = classOrNull ?: error("Unexpected classifier $classifier for collecting transitive hierarchy")
+        val classifier = classOrNull
+            ?: irError("Unexpected classifier for collecting transitive hierarchy") {
+                withIrEntry("classifier.owner", classifier.owner)
+            }
 
         return typeSubstitutionMap + classifier.owner.typeParameters.zip(arguments).associate {
             it.first.symbol to it.second.getSubstitution(typeSubstitutionMap)

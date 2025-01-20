@@ -29,8 +29,6 @@ object TestFirJsSessionFactory {
         testServices: TestServices,
         configuration: CompilerConfiguration,
         extensionRegistrars: List<FirExtensionRegistrar>,
-        languageVersionSettings: LanguageVersionSettings,
-        registerExtraComponents: ((FirSession) -> Unit),
     ): FirSession {
         val resolvedLibraries = resolveLibraries(configuration, getAllJsDependenciesPaths(module, testServices))
 
@@ -40,28 +38,29 @@ object TestFirJsSessionFactory {
             sessionProvider,
             moduleDataProvider,
             extensionRegistrars,
-            languageVersionSettings,
-            registerExtraComponents,
+            configuration,
         )
     }
 
     fun createModuleBasedSession(
-        mainModuleData: FirModuleData, sessionProvider: FirProjectSessionProvider, extensionRegistrars: List<FirExtensionRegistrar>,
-        languageVersionSettings: LanguageVersionSettings, lookupTracker: LookupTracker?,
-        registerExtraComponents: ((FirSession) -> Unit),
+        mainModuleData: FirModuleData,
+        sessionProvider: FirProjectSessionProvider,
+        extensionRegistrars: List<FirExtensionRegistrar>,
+        configuration: CompilerConfiguration,
+        lookupTracker: LookupTracker?,
         sessionConfigurator: FirSessionConfigurator.() -> Unit,
     ): FirSession =
         FirJsSessionFactory.createModuleBasedSession(
             mainModuleData,
             sessionProvider,
             extensionRegistrars,
-            languageVersionSettings,
+            configuration,
             lookupTracker,
             icData = null,
-            registerExtraComponents,
             sessionConfigurator
         )
 }
 
-fun getAllJsDependenciesPaths(module: TestModule, testServices: TestServices) =
-    JsEnvironmentConfigurator.getRuntimePathsForModule(module, testServices) + getTransitivesAndFriendsPaths(module, testServices)
+fun getAllJsDependenciesPaths(module: TestModule, testServices: TestServices): List<String> {
+    return JsEnvironmentConfigurator.getRuntimePathsForModule(module, testServices) + getTransitivesAndFriendsPaths(module, testServices)
+}

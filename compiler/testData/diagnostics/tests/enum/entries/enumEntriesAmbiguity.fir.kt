@@ -1,9 +1,10 @@
-// !LANGUAGE: +EnumEntries
+// RUN_PIPELINE_TILL: BACKEND
+// LANGUAGE: +EnumEntries -PrioritizedEnumEntries
 // WITH_STDLIB
 // FIR_DUMP
 
 enum class Ambiguous {
-    first, entries;
+    first, <!DEPRECATED_DECLARATION_OF_ENUM_ENTRY!>entries<!>;
 }
 
 val e = Ambiguous.entries.ordinal

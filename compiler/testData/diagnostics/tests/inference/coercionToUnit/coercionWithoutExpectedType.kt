@@ -1,4 +1,4 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: FRONTEND
 fun <T> materialize(): T = TODO()
 
 fun implicitCoercion() {

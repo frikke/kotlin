@@ -1,10 +1,11 @@
 /*
- * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.js.test.utils
 
+import com.intellij.openapi.util.text.StringUtil
 import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.TranslationMode
 import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.extension
 import org.jetbrains.kotlin.js.JavaScript
@@ -33,7 +34,7 @@ import java.io.File
 const val MODULE_EMULATION_FILE = "${JsEnvironmentConfigurator.TEST_DATA_DIR_PATH}/moduleEmulation.js"
 
 fun TestModule.getNameFor(filePath: String, testServices: TestServices): String {
-    return JsEnvironmentConfigurator.getJsArtifactSimpleName(testServices, name) + "-js-" + filePath
+    return JsEnvironmentConfigurator.getKlibArtifactSimpleName(testServices, name) + "-js-" + filePath
 }
 
 fun TestModule.getNameFor(file: TestFile, testServices: TestServices): String {
@@ -50,7 +51,7 @@ private fun extractJsFiles(
     fun copyInputJsFile(module: TestModule, inputJsFile: TestFile): String {
         val newName = module.getNameFor(inputJsFile, testServices)
         val targetFile = File(outputDir, newName)
-        targetFile.writeText(inputJsFile.originalContent)
+        targetFile.writeText(inputJsFile.originalContent.trim())
         return targetFile.absolutePath
     }
 
@@ -68,7 +69,7 @@ private fun extractJsFiles(
     return before to after
 }
 
-fun getAdditionalFilePathes(testServices: TestServices, mode: TranslationMode = TranslationMode.FULL_DEV): List<String> {
+fun getAdditionalFilePaths(testServices: TestServices, mode: TranslationMode = TranslationMode.FULL_DEV): List<String> {
     return getAdditionalFiles(testServices, mode, true).map { it.absolutePath }
 }
 
@@ -100,7 +101,7 @@ fun getAdditionalFiles(
     return additionalFiles
 }
 
-fun getAdditionalMainFilePathes(testServices: TestServices, mode: TranslationMode = TranslationMode.FULL_DEV): List<String> {
+fun getAdditionalMainFilePaths(testServices: TestServices, mode: TranslationMode = TranslationMode.FULL_DEV): List<String> {
     return getAdditionalMainFiles(testServices, mode, shouldCopyFiles = true).map { it.absolutePath }
 }
 
@@ -157,12 +158,13 @@ fun getAllFilesForRunner(
 
             val outputFile = getModeOutputFilePath(testServices, module, mode)
             val (inputJsFilesBefore, inputJsFilesAfter) = extractJsFiles(testServices, testServices.moduleStructure.modules, mode)
-            val additionalFiles = getAdditionalFilePathes(testServices, mode)
-            val additionalMainFiles = getAdditionalMainFilePathes(testServices, mode)
+            val additionalFiles = getAdditionalFilePaths(testServices, mode)
+            val additionalMainFiles = getAdditionalMainFilePaths(testServices, mode)
 
             outputs.dependencies.forEach { (moduleId, _) ->
                 paths += outputFile.augmentWithModuleName(moduleId)
             }
+
             paths += outputFile
 
             result[mode] = additionalFiles + inputJsFilesBefore + paths + commonFiles + additionalMainFiles + inputJsFilesAfter
@@ -171,8 +173,8 @@ fun getAllFilesForRunner(
         return result
     } else {
         val (inputJsFilesBefore, inputJsFilesAfter) = extractJsFiles(testServices, testServices.moduleStructure.modules)
-        val additionalFiles = getAdditionalFilePathes(testServices)
-        val additionalMainFiles = getAdditionalMainFilePathes(testServices)
+        val additionalFiles = getAdditionalFilePaths(testServices)
+        val additionalMainFiles = getAdditionalMainFilePaths(testServices)
         // Old BE
         val outputDir = JsEnvironmentConfigurator.getJsArtifactsOutputDir(testServices)
         val dceOutputDir = JsEnvironmentConfigurator.getJsArtifactsOutputDir(testServices, TranslationMode.FULL_PROD_MINIMIZED_NAMES)
@@ -270,13 +272,21 @@ fun extractEntryModulePath(
             ?.let { getModeOutputFilePath(testServices, it, mode) }
     }
 
+internal const val KOTLIN_TEST_INTERNAL = "\$kotlin_test_internal\$"
 
-fun getTestChecker(testServices: TestServices): AbstractJsTestChecker {
-    val runTestInNashorn = java.lang.Boolean.getBoolean("kotlin.js.useNashorn")
-    val targetBackend = testServices.defaultsProvider.defaultTargetBackend ?: TargetBackend.JS
-    return if (targetBackend.isIR) {
-        if (runTestInNashorn) NashornIrJsTestChecker else V8IrJsTestChecker
-    } else {
-        if (runTestInNashorn) NashornJsTestChecker else V8JsTestChecker
+internal fun wrapWithModuleEmulationMarkers(content: String, moduleKind: ModuleKind, moduleId: String): String {
+    val escapedModuleId = StringUtil.escapeStringCharacters(moduleId)
+
+    return when (moduleKind) {
+        ModuleKind.COMMON_JS -> "$KOTLIN_TEST_INTERNAL.beginModule();\n" +
+                "$content\n" +
+                "$KOTLIN_TEST_INTERNAL.endModule(\"$escapedModuleId\");"
+
+        ModuleKind.AMD, ModuleKind.UMD ->
+            "if (typeof $KOTLIN_TEST_INTERNAL !== \"undefined\") { " +
+                    "$KOTLIN_TEST_INTERNAL.setModuleId(\"$escapedModuleId\"); }\n" +
+                    "$content\n"
+
+        ModuleKind.PLAIN, ModuleKind.ES -> content
     }
 }

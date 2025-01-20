@@ -7,21 +7,19 @@ package org.jetbrains.kotlin.backend.wasm.dce
 
 import org.jetbrains.kotlin.backend.wasm.WasmBackendContext
 import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.backend.js.utils.isObjectInstanceField
-import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.expressions.IrBlockBody
-import org.jetbrains.kotlin.ir.expressions.IrSetField
-import org.jetbrains.kotlin.ir.types.classOrFail
-import org.jetbrains.kotlin.ir.util.primaryConstructor
+import org.jetbrains.kotlin.ir.declarations.IrClass
+import org.jetbrains.kotlin.ir.declarations.IrDeclaration
+import org.jetbrains.kotlin.ir.declarations.IrDeclarationContainer
+import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.util.transformFlat
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
 
 class WasmUselessDeclarationsRemover(
     private val context: WasmBackendContext,
     private val usefulDeclarations: Set<IrDeclaration>
-) : IrElementVisitorVoid {
+) : IrVisitorVoid() {
     override fun visitElement(element: IrElement) {
         element.acceptChildrenVoid(this)
     }
@@ -34,14 +32,6 @@ class WasmUselessDeclarationsRemover(
         process(declaration)
     }
 
-    override fun visitSimpleFunction(declaration: IrSimpleFunction) {
-        if (declaration == context.fieldInitFunction) {
-            declaration.removeUnusedObjectsInitializers()
-        }
-
-        super.visitSimpleFunction(declaration)
-    }
-
     // TODO bring back the primary constructor fix
     private fun process(container: IrDeclarationContainer) {
         container.declarations.transformFlat { member ->
@@ -51,12 +41,6 @@ class WasmUselessDeclarationsRemover(
                 member.acceptVoid(this)
                 null
             }
-        }
-    }
-
-    private fun IrSimpleFunction.removeUnusedObjectsInitializers() {
-        (body as? IrBlockBody)?.statements?.removeIf {
-            it is IrSetField && it.symbol.owner.isObjectInstanceField() && it.symbol.owner !in usefulDeclarations
         }
     }
 }

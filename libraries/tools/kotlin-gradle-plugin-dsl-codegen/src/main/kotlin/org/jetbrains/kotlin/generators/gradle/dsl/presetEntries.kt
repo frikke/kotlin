@@ -91,7 +91,6 @@ private val nativeTargetsWithSimulatorTests =
         KonanTarget.IOS_X64,
         KonanTarget.IOS_SIMULATOR_ARM64,
 
-        KonanTarget.WATCHOS_X86,
         KonanTarget.WATCHOS_X64,
         KonanTarget.WATCHOS_SIMULATOR_ARM64,
 
@@ -113,7 +112,7 @@ internal val nativePresetEntries = HostManager().targets
 
         val deprecation = KotlinPresetEntry.Deprecation(
             message = "DEPRECATED_TARGET_MESSAGE",
-            level = DeprecationLevel.ERROR
+            level = if (target in KonanTarget.toleratedDeprecatedTargets) DeprecationLevel.WARNING else DeprecationLevel.ERROR
         ).takeIf { target in KonanTarget.deprecatedTargets }
         KotlinPresetEntry(target.presetName, typeName(presetType), typeName(targetType), deprecation)
     }

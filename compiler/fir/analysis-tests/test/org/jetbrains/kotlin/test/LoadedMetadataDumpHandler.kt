@@ -8,10 +8,14 @@ package org.jetbrains.kotlin.test
 import com.intellij.openapi.vfs.StandardFileSystems
 import com.intellij.openapi.vfs.VirtualFileManager
 import org.jetbrains.kotlin.backend.common.CommonKLibResolver
+import org.jetbrains.kotlin.cli.common.LegacyK2CliPipeline
 import org.jetbrains.kotlin.cli.common.SessionWithSources
+import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import org.jetbrains.kotlin.cli.common.messages.getLogger
 import org.jetbrains.kotlin.cli.common.prepareJsSessions
 import org.jetbrains.kotlin.cli.common.prepareJvmSessions
 import org.jetbrains.kotlin.cli.jvm.compiler.VfsBasedProjectEnvironment
+import org.jetbrains.kotlin.cli.jvm.compiler.legacy.pipeline.MinimizedFrontendContext
 import org.jetbrains.kotlin.config.ApiVersion
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
@@ -20,6 +24,8 @@ import org.jetbrains.kotlin.fir.DependencyListForCliModule
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.FirMemberDeclaration
 import org.jetbrains.kotlin.fir.declarations.utils.nameOrSpecialName
+import org.jetbrains.kotlin.fir.renderer.FirDeclarationRenderer
+import org.jetbrains.kotlin.fir.renderer.FirDeclarationRendererWithFilteredAttributes
 import org.jetbrains.kotlin.fir.renderer.FirRenderer
 import org.jetbrains.kotlin.fir.resolve.providers.firProvider
 import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
@@ -51,7 +57,6 @@ import org.jetbrains.kotlin.test.services.*
 import org.jetbrains.kotlin.test.util.trimTrailingWhitespacesAndRemoveRedundantEmptyLinesAtTheEnd
 import org.jetbrains.kotlin.test.utils.MultiModuleInfoDumper
 import org.jetbrains.kotlin.test.utils.withExtension
-import org.jetbrains.kotlin.util.DummyLogger
 import org.jetbrains.kotlin.utils.addToStdlib.shouldNotBeCalled
 import java.io.File
 
@@ -66,6 +71,7 @@ class JvmLoadedMetadataDumpHandler(testServices: TestServices) : AbstractLoadedM
     override val dependencyKind: DependencyKind
         get() = DependencyKind.Binary
 
+    @OptIn(LegacyK2CliPipeline::class)
     override fun prepareSessions(
         module: TestModule,
         configuration: CompilerConfiguration,
@@ -73,17 +79,28 @@ class JvmLoadedMetadataDumpHandler(testServices: TestServices) : AbstractLoadedM
         moduleName: Name,
         libraryList: DependencyListForCliModule,
     ): List<SessionWithSources<KtFile>> {
-        return prepareJvmSessions(
+        return prepareJvmSessionsWithoutFiles(configuration, environment, moduleName, libraryList)
+    }
+
+    @LegacyK2CliPipeline
+    private fun prepareJvmSessionsWithoutFiles(
+        configuration: CompilerConfiguration,
+        environment: VfsBasedProjectEnvironment,
+        moduleName: Name,
+        libraryList: DependencyListForCliModule
+    ): List<SessionWithSources<KtFile>> {
+        return MinimizedFrontendContext(environment, MessageCollector.NONE, emptyList(), configuration).prepareJvmSessions(
             files = emptyList(),
-            configuration, environment, moduleName,
-            extensionRegistrars = emptyList(),
+            moduleName,
             environment.getSearchScopeForProjectLibraries(),
             libraryList,
             isCommonSource = { false },
+            isScript = { false },
             fileBelongsToModule = { _, _ -> false },
             createProviderAndScopeForIncrementalCompilation = { null }
         )
     }
+
 }
 
 class KlibLoadedMetadataDumpHandler(testServices: TestServices) : AbstractLoadedMetadataDumpHandler<BinaryArtifacts.KLib>(
@@ -105,7 +122,11 @@ class KlibLoadedMetadataDumpHandler(testServices: TestServices) : AbstractLoaded
         libraryList: DependencyListForCliModule,
     ): List<SessionWithSources<KtFile>> {
         val libraries = getAllJsDependenciesPaths(module, testServices)
-        val resolvedLibraries = CommonKLibResolver.resolve(libraries, DummyLogger).getFullResolvedList()
+        val resolvedLibraries = CommonKLibResolver.resolve(
+            libraries,
+            configuration.getLogger(treatWarningsAsErrors = true)
+        ).getFullResolvedList()
+
         return prepareJsSessions(
             files = emptyList(),
             configuration,
@@ -123,7 +144,7 @@ class KlibLoadedMetadataDumpHandler(testServices: TestServices) : AbstractLoaded
 
 abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>>(
     testServices: TestServices,
-    override val artifactKind: BinaryKind<A>
+    override val artifactKind: ArtifactKind<A>
 ) : BinaryArtifactHandler<A>(
     testServices,
     artifactKind,
@@ -145,9 +166,8 @@ abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>
         }
 
         val emptyModule = TestModule(
-            name = "empty", module.targetPlatform, module.targetBackend, FrontendKinds.FIR,
-            BackendKinds.IrBackend, module.binaryKind, files = emptyList(),
-            allDependencies = listOf(DependencyDescription(module.name, dependencyKind, DependencyRelation.RegularDependency)),
+            name = "dump-${module.name}", files = emptyList(),
+            allDependencies = listOf(DependencyDescription(module, dependencyKind, DependencyRelation.RegularDependency)),
             RegisteredDirectives.Empty, languageVersionSettings
         )
         val configuration = testServices.compilerConfigurationProvider.getCompilerConfiguration(emptyModule)
@@ -160,7 +180,6 @@ abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>
         val binaryModuleData = BinaryModuleData.initialize(
             moduleName,
             targetPlatform,
-            platformAnalyzerServices
         )
         val libraryList = FirFrontendFacade.initializeLibraryList(
             emptyModule, binaryModuleData, targetPlatform, configuration, testServices
@@ -175,8 +194,9 @@ abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>
         ).single().session
 
         val packageFqName = FqName("test")
+        val printAttributes = FirDiagnosticsDirectives.RENDER_FIR_DECLARATION_ATTRIBUTES in module.directives
         dumper.builderForModule(module)
-            .append(collectPackageContent(session, packageFqName, extractNames(module, packageFqName)))
+            .append(collectPackageContent(session, packageFqName, extractNames(module, packageFqName), printAttributes))
     }
 
     protected abstract val targetPlatform: TargetPlatform
@@ -195,7 +215,7 @@ abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>
         if (dumper.isEmpty()) return
         val testDataFile = testServices.moduleStructure.originalTestDataFiles.first()
 
-        val frontendKind = testServices.defaultsProvider.defaultFrontend
+        val frontendKind = testServices.defaultsProvider.frontendKind
 
         val commonExtension = ".fir.txt"
         val (specificExtension, otherSpecificExtension) = when (frontendKind) {
@@ -204,7 +224,7 @@ abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>
             else -> shouldNotBeCalled()
         }
 
-        val targetPlatform = testServices.defaultsProvider.defaultPlatform
+        val targetPlatform = testServices.moduleStructure.modules.last().targetPlatform(testServices)
         if (PLATFORM_DEPENDANT_METADATA in testServices.moduleStructure.allDirectives) {
             val platformExtension = specificExtension.replace(".txt", "${targetPlatform.suffix}.txt")
             val otherPlatformExtension = specificExtension.replace(".txt", "${targetPlatform.oppositeSuffix}.txt")
@@ -296,11 +316,18 @@ abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>
         }
     }
 
-    private fun collectPackageContent(session: FirSession, packageFqName: FqName, declarationNames: Collection<Name>): String {
+    private fun collectPackageContent(session: FirSession, packageFqName: FqName, declarationNames: Collection<Name>, printAttributes: Boolean): String {
         val provider = session.symbolProvider
 
         val builder = StringBuilder()
-        val firRenderer = FirRenderer(builder)
+        val firRenderer = FirRenderer(
+            builder,
+            declarationRenderer = if (printAttributes) {
+                FirDeclarationRendererWithFilteredAttributes()
+            } else {
+                FirDeclarationRenderer()
+            }
+        )
 
         for (name in declarationNames) {
             for (symbol in provider.getTopLevelCallableSymbols(packageFqName, name)) {
@@ -319,9 +346,9 @@ abstract class AbstractLoadedMetadataDumpHandler<A : ResultingArtifact.Binary<A>
     }
 
     private fun extractNames(module: TestModule, packageFqName: FqName): Collection<Name> {
-        testServices.dependencyProvider.getArtifactSafe(module, FrontendKinds.ClassicFrontend)
+        testServices.artifactsProvider.getArtifactSafe(module, FrontendKinds.ClassicFrontend)
             ?.let { return extractNames(it, packageFqName) }
-        testServices.dependencyProvider.getArtifactSafe(module, FrontendKinds.FIR)
+        testServices.artifactsProvider.getArtifactSafe(module, FrontendKinds.FIR)
             ?.let { return extractNames(it, packageFqName) }
         error("Frontend artifact for module $module not found")
     }

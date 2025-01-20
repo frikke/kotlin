@@ -71,7 +71,7 @@ internal class SymbolPsiClassObjectAccessExpression(
 ) : SymbolPsiAnnotationMemberValue(kotlinOrigin, lightParent), PsiClassObjectAccessExpression {
     override fun getType(): PsiType = psiType
     override fun getOperand(): PsiTypeElement = LightTypeElementWithParent(this, type)
-    override fun getText(): String = type.getCanonicalText(false) + ".class"
+    override fun getText(): String = kotlinOrigin?.text ?: (type.getCanonicalText(false) + ".class")
 }
 
 private class LightTypeElementWithParent(private val lightParent: PsiElement, type: PsiType) : LightTypeElement(lightParent.manager, type) {
@@ -109,8 +109,11 @@ internal class SymbolPsiReference(
 internal class SymbolPsiLiteral(
     override val kotlinOrigin: KtElement?,
     lightParent: PsiElement,
-    private val psiLiteral: PsiLiteral,
-) : SymbolPsiAnnotationMemberValue(kotlinOrigin, lightParent), PsiLiteral {
+    private val psiLiteral: PsiLiteralExpression,
+) : SymbolPsiAnnotationMemberValue(kotlinOrigin, lightParent), PsiLiteralExpression {
     override fun getValue(): Any? = psiLiteral.value
     override fun getText(): String = psiLiteral.text
+    override fun getType(): PsiType? = psiLiteral.type
+    override fun getReference(): PsiReference? = references.firstOrNull()
+    override fun getReferences(): Array<out PsiReference> = kotlinOrigin?.references ?: PsiReference.EMPTY_ARRAY
 }

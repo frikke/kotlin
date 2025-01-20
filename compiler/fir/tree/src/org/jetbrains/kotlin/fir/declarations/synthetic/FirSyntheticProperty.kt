@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.fir.declarations.synthetic
 
 import org.jetbrains.kotlin.KtSourceElement
+import org.jetbrains.kotlin.fir.FirImplementationDetail
 import org.jetbrains.kotlin.fir.FirModuleData
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.expressions.FirAnnotation
@@ -20,38 +21,32 @@ import org.jetbrains.kotlin.fir.visitors.FirVisitor
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
 
-class FirSyntheticProperty(
+class FirSyntheticProperty @FirImplementationDetail internal constructor(
     override val moduleData: FirModuleData,
     override val name: Name,
     override val isVar: Boolean,
     override val symbol: FirSyntheticPropertySymbol,
     override val status: FirDeclarationStatus,
-    resolvePhase: FirResolvePhase,
     override val getter: FirSyntheticPropertyAccessor,
+    override val dispatchReceiverType: ConeSimpleKotlinType?,
     override val setter: FirSyntheticPropertyAccessor? = null,
-    override val backingField: FirBackingField? = null,
-    override val deprecationsProvider: DeprecationsProvider = UnresolvedDeprecationProvider
+    override val deprecationsProvider: DeprecationsProvider = UnresolvedDeprecationProvider,
 ) : FirProperty() {
     init {
+        @OptIn(FirImplementationDetail::class)
         symbol.bind(this)
     }
 
-    init {
-        @OptIn(ResolveStateAccess::class)
-        this.resolveState = resolvePhase.asResolveState()
-    }
+    override val backingField: FirBackingField? get() = null
 
     override val returnTypeRef: FirTypeRef
         get() = getter.returnTypeRef
-
-    override val dispatchReceiverType: ConeSimpleKotlinType?
-        get() = getter.dispatchReceiverType
 
     override val source: KtSourceElement?
         get() = null
 
     override val origin: FirDeclarationOrigin
-        get() = FirDeclarationOrigin.Synthetic
+        get() = FirDeclarationOrigin.Synthetic.JavaProperty
 
     override val initializer: FirExpression?
         get() = null
@@ -66,7 +61,7 @@ class FirSyntheticProperty(
         get() = false
 
     override val receiverParameter: FirReceiverParameter?
-        get() = null
+        get() = getter.receiverParameter
 
     override val isVal: Boolean
         get() = !isVar
@@ -85,10 +80,10 @@ class FirSyntheticProperty(
     override val attributes: FirDeclarationAttributes = FirDeclarationAttributes()
 
     override val bodyResolveState: FirPropertyBodyResolveState
-        get() = FirPropertyBodyResolveState.EVERYTHING_RESOLVED
+        get() = FirPropertyBodyResolveState.ALL_BODIES_RESOLVED
 
-    override val contextReceivers: List<FirContextReceiver>
-        get() = emptyList()
+    override val contextParameters: List<FirValueParameter>
+        get() = getter.contextParameters
 
     override fun <R, D> acceptChildren(visitor: FirVisitor<R, D>, data: D) {
         returnTypeRef.accept(visitor, data)
@@ -143,7 +138,7 @@ class FirSyntheticProperty(
         notSupported()
     }
 
-    override fun <D> transformContextReceivers(transformer: FirTransformer<D>, data: D): FirProperty {
+    override fun <D> transformContextParameters(transformer: FirTransformer<D>, data: D): FirProperty {
         notSupported()
     }
 
@@ -167,6 +162,10 @@ class FirSyntheticProperty(
         notSupported()
     }
 
+    override fun replaceDelegate(newDelegate: FirExpression?) {
+        notSupported()
+    }
+
     override fun replaceBodyResolveState(newBodyResolveState: FirPropertyBodyResolveState) {
         notSupported()
     }
@@ -179,7 +178,7 @@ class FirSyntheticProperty(
         notSupported()
     }
 
-    override fun replaceContextReceivers(newContextReceivers: List<FirContextReceiver>) {
+    override fun replaceContextParameters(newContextParameters: List<FirValueParameter>) {
         notSupported()
     }
 

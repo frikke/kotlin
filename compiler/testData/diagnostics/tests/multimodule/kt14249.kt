@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: BACKEND
 // FIR_IDENTICAL
 // MODULE: m1
 // FILE: test/Foo.java
@@ -5,7 +6,7 @@
 package test;
 
 class Foo {
-    static Foo create() { return Foo(); }
+    static Foo create() { return new Foo(); }
     void takeFoo(Foo f) {}
 }
 

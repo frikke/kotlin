@@ -7,11 +7,7 @@
 
 package test.text
 
-import test.regexSplitUnicodeCodePointHandling
-import test.supportsOctalLiteralInRegex
-import test.supportsEscapeAnyCharInRegex
-import test.BackReferenceHandling
-import test.HandlingOption
+import test.*
 import kotlin.test.*
 
 class RegexTest {
@@ -188,7 +184,9 @@ class RegexTest {
 
     @Test fun matchDuplicateGroupName() {
         // should fail with IllegalArgumentException, but JS fails with SyntaxError
-        assertFails { "(?<hi>hi)|(?<hi>bye)".toRegex() }
+        testExceptOn(TestPlatform.Js) {
+            assertFails { "(?<hi>hi)|(?<hi>bye)".toRegex() }
+        }
         assertFails { "(?<first>\\d+)-(?<first>\\d+)".toRegex() }
     }
 
@@ -529,17 +527,19 @@ class RegexTest {
     @Test fun splitByEmptyMatch() {
         val input = "test"
 
-        val emptyMatch = "".toRegex()
+        for (pattern in listOf("", "(?<=)")) {
+            val emptyMatch = pattern.toRegex()
 
-        testSplitEquals(listOf("", "t", "e", "s", "t", ""), input, emptyMatch)
-        testSplitEquals(listOf("", "t", "est"), input, emptyMatch, limit = 3)
+            testSplitEquals(listOf("", "t", "e", "s", "t", ""), input, emptyMatch)
+            testSplitEquals(listOf("", "t", "est"), input, emptyMatch, limit = 3)
 
-        testSplitEquals("".split(""), "", emptyMatch)
+            testSplitEquals("".split(""), "", emptyMatch)
 
-        testSplitEquals(
-            if (regexSplitUnicodeCodePointHandling) listOf("", "\uD83D\uDE04", "\uD801", "") else listOf("", "\uD83D", "\uDE04", "\uD801", ""),
-            "\uD83D\uDE04\uD801", emptyMatch
-        )
+            testSplitEquals(
+                if (regexSplitUnicodeCodePointHandling) listOf("", "\uD83D\uDE04", "\uD801", "") else listOf("", "\uD83D", "\uDE04", "\uD801", ""),
+                "\uD83D\uDE04\uD801", emptyMatch
+            )
+        }
 
         val emptyMatchBeforeT = "(?=t)".toRegex()
 

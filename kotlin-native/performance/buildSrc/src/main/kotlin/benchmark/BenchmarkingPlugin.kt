@@ -9,7 +9,6 @@ import org.gradle.api.artifacts.Dependency
 import org.jetbrains.kotlin.*
 import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
-import org.jetbrains.kotlin.gradle.plugin.mpp.AbstractKotlinNativeTargetPreset
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 import org.jetbrains.kotlin.konan.target.HostManager
 import javax.inject.Inject
@@ -112,11 +111,11 @@ abstract class BenchmarkingPlugin: Plugin<Project> {
 
     protected val mingwPath: String = System.getenv("MINGW64_DIR") ?: "c:/msys64/mingw64"
 
-    protected open fun Project.determinePreset(): AbstractKotlinNativeTargetPreset<*> =
+    protected open fun Project.determinePreset(): TargetPreset =
             (crossTarget?.let { targetHostPreset(this, it) } ?:
             defaultHostPreset(this).also { preset ->
-                logger.quiet("$project has been configured for ${preset.name} platform.")
-            }) as AbstractKotlinNativeTargetPreset<*>
+                logger.quiet("$project has been configured for ${preset} platform.")
+            })
 
     protected abstract fun NamedDomainObjectContainer<KotlinSourceSet>.configureSources(project: Project)
 
@@ -160,11 +159,14 @@ abstract class BenchmarkingPlugin: Plugin<Project> {
         }
     }
 
-    protected fun Project.configureNativeTarget(hostPreset: AbstractKotlinNativeTargetPreset<*>) {
-        kotlin.targetFromPreset(hostPreset, NATIVE_TARGET_NAME) {
+    protected fun Project.configureNativeTarget(
+            targetPreset: TargetPreset
+    ) {
+        targetPreset(NATIVE_TARGET_NAME) {
             compilations.named("main").configure {
-                @Suppress("DEPRECATION")
-                kotlinOptions.freeCompilerArgs = benchmark.compilerOpts + project.compilerArgs
+                compileTaskProvider.configure {
+                    compilerOptions.freeCompilerArgs.addAll(benchmark.compilerOpts + project.compilerArgs)
+                }
                 dependencies {
                     implementation("org.jetbrains.kotlinx:kotlinx-cli:0.3.5")
                 }
@@ -180,7 +182,7 @@ abstract class BenchmarkingPlugin: Plugin<Project> {
 
     protected open fun Project.configureNativeTask(nativeTarget: KotlinNativeTarget): Task {
         val konanRun = createRunTask(this, "konanRun", nativeLinkTask,
-                nativeExecutable, buildDir.resolve(nativeBenchResults).absolutePath).apply {
+                nativeExecutable, layout.buildDirectory.file(nativeBenchResults).get().asFile.absolutePath).apply {
             group = BENCHMARKING_GROUP
             description = "Runs the benchmark for Kotlin/Native."
         }
@@ -222,7 +224,7 @@ abstract class BenchmarkingPlugin: Plugin<Project> {
 
             doLast {
                 val applicationName = benchmark.applicationName
-                val benchContents = buildDir.resolve(nativeBenchResults).readText()
+                val benchContents = layout.buildDirectory.file(nativeBenchResults).get().asFile.readText()
                 val nativeCompileTasks = if (benchmark.compileTasks.isEmpty()) {
                    listOf("linkBenchmark${benchmark.buildType.name.lowercase().replaceFirstChar { it.uppercase() }}ExecutableNative")
                 } else benchmark.compileTasks
@@ -239,7 +241,7 @@ abstract class BenchmarkingPlugin: Plugin<Project> {
                 )
 
                 val output = createJsonReport(properties)
-                buildDir.resolve(nativeJson).writeText(output)
+                layout.buildDirectory.file(nativeJson).get().asFile.writeText(output)
             }
         }
     }

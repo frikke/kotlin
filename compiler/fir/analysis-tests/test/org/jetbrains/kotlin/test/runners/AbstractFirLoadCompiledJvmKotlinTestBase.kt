@@ -7,7 +7,6 @@ package org.jetbrains.kotlin.test.runners
 
 import org.jetbrains.kotlin.test.*
 import org.jetbrains.kotlin.test.backend.ir.IrBackendInput
-import org.jetbrains.kotlin.test.backend.ir.JvmIrBackendFacade
 import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
 import org.jetbrains.kotlin.test.builders.configureJvmArtifactsHandlersStep
 import org.jetbrains.kotlin.test.directives.ConfigurationDirectives.WITH_STDLIB
@@ -19,7 +18,7 @@ import org.jetbrains.kotlin.test.frontend.fir.Fir2IrResultsConverter
 import org.jetbrains.kotlin.test.frontend.fir.FirFrontendFacade
 import org.jetbrains.kotlin.test.frontend.fir.FirOutputArtifact
 import org.jetbrains.kotlin.test.model.*
-import org.jetbrains.kotlin.test.runners.codegen.commonConfigurationForTest
+import org.jetbrains.kotlin.test.configuration.commonConfigurationForTest
 
 abstract class AbstractFirLoadCompiledJvmKotlinTestBase<F : ResultingArtifact.FrontendOutput<F>> :
     AbstractKotlinCompilerWithTargetBackendTest(TargetBackend.JVM_IR)
@@ -28,13 +27,8 @@ abstract class AbstractFirLoadCompiledJvmKotlinTestBase<F : ResultingArtifact.Fr
     protected abstract val frontendFacade: Constructor<FrontendFacade<F>>
     protected abstract val frontendToBackendConverter: Constructor<Frontend2BackendConverter<F, IrBackendInput>>
 
-    override fun TestConfigurationBuilder.configuration() {
-        commonConfigurationForTest(
-            frontendKind,
-            frontendFacade,
-            frontendToBackendConverter,
-            ::JvmIrBackendFacade
-        )
+    override fun configure(builder: TestConfigurationBuilder): Unit = with(builder) {
+        commonConfigurationForTest(frontendKind, frontendFacade, frontendToBackendConverter)
 
         configureJvmArtifactsHandlersStep {
             useHandlers(::JvmLoadedMetadataDumpHandler)

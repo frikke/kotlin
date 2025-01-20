@@ -1,121 +1,186 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.analysis.api.impl.base.test.cases.components.scopeProvider
 
-import org.jetbrains.kotlin.analysis.api.KtAnalysisSession
-import org.jetbrains.kotlin.analysis.api.components.KtScopeContext
-import org.jetbrains.kotlin.analysis.api.components.KtScopeKind
-import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.KtRendererAnnotationsFilter
-import org.jetbrains.kotlin.analysis.api.renderer.declarations.impl.KtDeclarationRendererForSource
-import org.jetbrains.kotlin.analysis.api.renderer.declarations.modifiers.renderers.KtRendererModifierFilter
-import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KtTypeRendererForSource
-import org.jetbrains.kotlin.analysis.api.renderer.types.renderers.KtTypeErrorTypeRenderer
-import org.jetbrains.kotlin.analysis.api.scopes.KtScope
+import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.components.KaScopeContext
+import org.jetbrains.kotlin.analysis.api.components.KaScopeKind
+import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.KaRendererAnnotationsFilter
+import org.jetbrains.kotlin.analysis.api.renderer.declarations.impl.KaDeclarationRendererForSource
+import org.jetbrains.kotlin.analysis.api.renderer.declarations.modifiers.renderers.KaRendererKeywordFilter
+import org.jetbrains.kotlin.analysis.api.renderer.types.impl.KaTypeRendererForSource
+import org.jetbrains.kotlin.analysis.api.renderer.types.renderers.KaErrorTypeRenderer
+import org.jetbrains.kotlin.analysis.api.scopes.KaScope
+import org.jetbrains.kotlin.analysis.api.scopes.KaScopeLike
 import org.jetbrains.kotlin.analysis.api.symbols.DebugSymbolRenderer
-import org.jetbrains.kotlin.analysis.api.symbols.KtDeclarationSymbol
-import org.jetbrains.kotlin.analysis.api.types.KtType
+import org.jetbrains.kotlin.analysis.api.symbols.KaDeclarationSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaSymbol
+import org.jetbrains.kotlin.analysis.api.types.KaType
 import org.jetbrains.kotlin.analysis.utils.printer.PrettyPrinter
 import org.jetbrains.kotlin.analysis.utils.printer.prettyPrint
+import org.jetbrains.kotlin.name.Name
 
 internal object TestScopeRenderer {
-
-    context (KtAnalysisSession)
-    fun PrettyPrinter.renderForTests(
-        scopeContext: KtScopeContext,
+    fun renderForTests(
+        analysisSession: KaSession,
+        scopeContext: KaScopeContext,
+        printer: PrettyPrinter,
         printPretty: Boolean = false,
-        fullyPrintScope: (KtScopeKind) -> Boolean,
+        fullyPrintScope: (KaScopeKind) -> Boolean,
     ) {
-        appendLine("implicit receivers:")
+        with(analysisSession) {
+            with(printer) {
+                appendLine("implicit receivers:")
 
-        withIndent {
-            for (implicitReceiver in scopeContext.implicitReceivers) {
-                val type = implicitReceiver.type
-                appendLine("type: ${renderType(type, printPretty)}")
-                appendLine("owner symbol: ${implicitReceiver.ownerSymbol::class.simpleName}")
-                appendLine()
+                withIndent {
+                    for (implicitReceiver in scopeContext.implicitReceivers) {
+                        val type = implicitReceiver.type
+                        appendLine("type: ${renderType(type, printPretty)}")
+                        append("owner symbol: ").appendLine(implicitReceiver.ownerSymbol::class.simpleName)
+                        appendLine()
+                    }
+                }
+                appendLine("scopes:")
+                withIndent {
+                    renderScopeContext(scopeContext, printer, printPretty, fullyPrintScope)
+                }
             }
-        }
-        appendLine("scopes:")
-        withIndent {
-            renderScopeContext(scopeContext, printPretty, fullyPrintScope)
         }
     }
 
-    context (KtAnalysisSession)
-    private fun renderType(
-        type: KtType,
+    fun KaSession.renderForTests(
+        scope: KaScope,
+        printer: PrettyPrinter,
+        printPretty: Boolean,
+        additionalSymbolInfo: KaSession.(KaSymbol) -> String? = { null }
+    ) {
+        renderScopeMembers(scope, printer, printPretty, additionalSymbolInfo)
+    }
+
+    private fun KaSession.renderType(
+        type: KaType,
         printPretty: Boolean
     ): String = prettyPrint {
         if (printPretty) {
-            prettyPrintTypeRenderer.renderType(type, this)
+            prettyPrintTypeRenderer.renderType(useSiteSession, type, this)
         } else {
-            append(debugRenderer.renderType(type))
+            append(debugRenderer.renderType(useSiteSession, type))
         }
     }
 
-    context(KtAnalysisSession)
-    private fun PrettyPrinter.renderScopeContext(
-        scopeContext: KtScopeContext,
+    private fun KaSession.renderScopeContext(
+        scopeContext: KaScopeContext,
+        printer: PrettyPrinter,
         printPretty: Boolean,
-        fullyPrintScope: (KtScopeKind) -> Boolean,
+        fullyPrintScope: (KaScopeKind) -> Boolean,
     ) {
         for (scopeWithKind in scopeContext.scopes) {
-            appendLine(renderForTests(scopeWithKind.scope, scopeWithKind.kind, printPretty, fullyPrintScope))
+            renderForTests(scopeWithKind.scope, scopeWithKind.kind, printer, printPretty, fullyPrintScope)
+            printer.appendLine()
         }
     }
 
-    context (KtAnalysisSession)
-    private fun renderForTests(
-        scope: KtScope,
-        scopeKind: KtScopeKind,
+    private fun KaSession.renderForTests(
+        scope: KaScope,
+        scopeKind: KaScopeKind,
+        printer: PrettyPrinter,
         printPretty: Boolean,
-        fullyPrintScope: (KtScopeKind) -> Boolean,
-    ): String = prettyPrint {
-        append("${scopeKind::class.simpleName}, index = ${scopeKind.indexInTower}")
+        fullyPrintScope: (KaScopeKind) -> Boolean,
+    ) {
+        with(printer) {
+            appendLine("${scopeKind::class.simpleName}, index = ${scopeKind.indexInTower}")
 
-        if (!fullyPrintScope(scopeKind)) {
-            appendLine()
-            return@prettyPrint
-        }
+            if (!fullyPrintScope(scopeKind)) {
+                return
+            }
 
-        renderScopeMembers(scope, printPretty)
-    }
-
-    context (KtAnalysisSession)
-    private fun PrettyPrinter.renderScopeMembers(scope: KtScope, printPretty: Boolean) {
-        val callables = scope.getCallableSymbols().toList()
-        val classifiers = scope.getClassifierSymbols().toList()
-        val isEmpty = callables.isEmpty() && classifiers.isEmpty()
-        if (isEmpty) {
-            appendLine(", empty")
-        } else {
-            appendLine()
             withIndent {
-                appendLine("classifiers: ${classifiers.size}")
-                withIndent { classifiers.forEach { appendLine(TestScopeRenderer.renderSymbol(it, printPretty)) } }
-                appendLine("callables: ${callables.size}")
-                withIndent { callables.forEach { appendLine(TestScopeRenderer.renderSymbol(it, printPretty)) } }
+                renderScopeMembers(scope, printer, printPretty) { null }
             }
         }
     }
 
-    context(KtAnalysisSession)
-    private fun renderSymbol(
-        symbol: KtDeclarationSymbol,
-        printPretty: Boolean
-    ): String = if (printPretty) symbol.render(prettyPrintSymbolRenderer) else debugRenderer.render(symbol)
+    private fun KaSession.renderScopeMembers(
+        scope: KaScope,
+        printer: PrettyPrinter,
+        printPretty: Boolean,
+        additionalSymbolInfo: KaSession.(KaSymbol) -> String?,
+    ) {
+        fun <T : KaSymbol> List<T>.renderAll(
+            symbolKind: String,
+            renderPrettySymbol: KaSession.(T) -> String,
+        ) = with(printer) {
+            appendLine("$symbolKind: $size")
+            withIndent {
+                forEach {
+                    appendLine(
+                        if (printPretty) {
+                            this@renderScopeMembers.renderPrettySymbol(it)
+                        } else {
+                            debugRenderer.render(useSiteSession, it)
+                        }
+                    )
+                    this@renderScopeMembers.additionalSymbolInfo(it)?.let {
+                        withIndent { appendLine(it) }
+                    }
+                }
+            }
+        }
+
+        scope.getPackageSymbols()
+            .toMutableList()
+            .apply { sortBy { it.fqName.asString() } }
+            .renderAll("packages") { prettyRenderPackage(it) }
+        scope.classifiers.toList().renderAll("classifiers") { prettyRenderDeclaration(it) }
+        scope.callables.toList().renderAll("callables") { prettyRenderDeclaration(it) }
+        scope.constructors.toList().renderAll("constructors") { prettyRenderDeclaration(it) }
+    }
+
+    private fun prettyRenderPackage(symbol: KaPackageSymbol): String =
+        symbol.fqName.asString()
+
+    private fun KaSession.prettyRenderDeclaration(symbol: KaDeclarationSymbol): String =
+        symbol.render(prettyPrintSymbolRenderer)
 
     private val debugRenderer = DebugSymbolRenderer()
 
-    private val prettyPrintSymbolRenderer = KtDeclarationRendererForSource.WITH_QUALIFIED_NAMES.with {
-        annotationRenderer = annotationRenderer.with { annotationFilter = KtRendererAnnotationsFilter.NONE }
-        modifiersRenderer = modifiersRenderer.with { modifierFilter = KtRendererModifierFilter.NONE }
+    private val prettyPrintSymbolRenderer = KaDeclarationRendererForSource.WITH_QUALIFIED_NAMES.with {
+        annotationRenderer = annotationRenderer.with { annotationFilter = KaRendererAnnotationsFilter.NONE }
+        modifiersRenderer = modifiersRenderer.with {
+            keywordsRenderer = keywordsRenderer.with { keywordFilter = KaRendererKeywordFilter.NONE }
+        }
     }
 
-    private val prettyPrintTypeRenderer = KtTypeRendererForSource.WITH_QUALIFIED_NAMES.with {
-        typeErrorTypeRenderer = KtTypeErrorTypeRenderer.WITH_ERROR_MESSAGE
+    private val prettyPrintTypeRenderer = KaTypeRendererForSource.WITH_QUALIFIED_NAMES.with {
+        errorTypeRenderer = KaErrorTypeRenderer.WITH_ERROR_MESSAGE
     }
+}
+
+/**
+ * Render the names contained in the scope, provided by [KaScope.getPossibleClassifierNames] and [KaScope.getPossibleCallableNames].
+ * Scope tests should not forget checking contained names, as they're a public part of the [KaScope] API.
+ *
+ * Note: Many scopes wouldn't work correctly if the contained name sets were broken, as these names are often the basis for the search.
+ * But this is not a good reason for a lack of tests, as the scope implementation is not forced to use these name sets internally, and
+ * the contained names are still part of the public API.
+ */
+fun PrettyPrinter.renderNamesContainedInScope(scope: KaScopeLike) {
+    appendLine("Classifier names:")
+    withIndent {
+        renderSortedNames(scope.getPossibleClassifierNames())
+    }
+    appendLine()
+
+    appendLine("Callable names:")
+    withIndent {
+        renderSortedNames(scope.getPossibleCallableNames())
+    }
+}
+
+private fun PrettyPrinter.renderSortedNames(names: Set<Name>) {
+    names.sorted().forEach { appendLine(it.toString()) }
 }

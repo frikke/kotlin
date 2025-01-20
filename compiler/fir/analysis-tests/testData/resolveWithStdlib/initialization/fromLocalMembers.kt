@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 fun test1() {
     val x: Int
 
@@ -12,6 +13,7 @@ fun test1() {
 fun test2() {
     val x: Int
     val y: Int
+    val z: Int
 
     object {
         init {
@@ -21,6 +23,12 @@ fun test2() {
         fun localFunc() {
             <!CAPTURED_VAL_INITIALIZATION!>y<!> = 0
         }
+
+        val prop: Int
+            get() {
+                <!CAPTURED_VAL_INITIALIZATION!>z<!> = 0
+                return 2
+            }
     }
 
     println(x)

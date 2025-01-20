@@ -1,5 +1,6 @@
-// !CHECK_TYPE
-// !DIAGNOSTICS: -UNUSED_PARAMETER -UNUSED_ANONYMOUS_PARAMETER
+// RUN_PIPELINE_TILL: FRONTEND
+// CHECK_TYPE
+// DIAGNOSTICS: -UNUSED_PARAMETER -UNUSED_ANONYMOUS_PARAMETER
 data class A(val x: Int, val y: String)
 data class B(val u: Double, val w: Short)
 
@@ -11,12 +12,12 @@ fun bar() {
         b checkType { <!UNRESOLVED_REFERENCE_WRONG_RECEIVER!>_<!><String>() }
     }
 
-    foo { (a, b), a ->
+    foo { (<!REDECLARATION!>a<!>, b), <!REDECLARATION!>a<!> ->
         a checkType { _<Int>() }
         b checkType { _<String>() }
     }
 
-    foo { a, (a, b) ->
+    foo { <!REDECLARATION!>a<!>, (<!REDECLARATION!>a<!>, b) ->
         a checkType { <!UNRESOLVED_REFERENCE_WRONG_RECEIVER!>_<!><Int>() }
         b checkType { <!UNRESOLVED_REFERENCE_WRONG_RECEIVER!>_<!><String>() }
     }

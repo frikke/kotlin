@@ -1,4 +1,4 @@
-// !OPT_IN: kotlin.ExperimentalStdlibApi
+// OPT_IN: kotlin.ExperimentalStdlibApi
 // IGNORE_BACKEND: JVM
 
 // IMPORTANT!
@@ -29,7 +29,6 @@ fun test(a: Long, b: Long): Long {
 // 1 IFGE
 // 1 IF
 
-// JVM_IR_TEMPLATES
 // 0 ILOAD
 // 0 ISTORE
 // 0 IADD

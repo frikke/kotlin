@@ -1,4 +1,5 @@
-// FILE: A.java
+// RUN_PIPELINE_TILL: FRONTEND
+// FILE: base/A.java
 
 package base;
 

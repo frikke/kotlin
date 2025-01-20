@@ -5,16 +5,23 @@
 
 package org.jetbrains.kotlin.gradle.targets.js.npm
 
+import org.gradle.api.Action
 import org.gradle.api.DefaultTask
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
 import org.jetbrains.kotlin.gradle.targets.js.npm.NpmProject.Companion.PACKAGE_JSON
+import org.jetbrains.kotlin.gradle.targets.js.npm.resolved.PreparedKotlinCompilationNpmResolution
+import org.jetbrains.kotlin.gradle.utils.getFile
 import org.jetbrains.kotlin.gradle.utils.property
 import java.io.File
 
+@DisableCachingByDefault
 abstract class PublicPackageJsonTask :
     DefaultTask(),
     UsesKotlinNpmResolutionManager {
@@ -31,24 +38,29 @@ abstract class PublicPackageJsonTask :
     abstract val jsIrCompilation: Property<Boolean>
 
     @get:Input
+    abstract val extension: Property<String>
+
+    @get:Input
     abstract val npmProjectName: Property<String>
 
     @get:Internal
     abstract val npmProjectMain: Property<String>
 
-    private val packageJsonHandlers: List<PackageJson.() -> Unit>
-        get() = npmResolutionManager.get().parameters.packageJsonHandlers.get()
-            .getValue("$projectPath:${compilationDisambiguatedName.get()}")
+    @get:Internal
+    abstract val packageJsonHandlers: ListProperty<Action<PackageJson>>
 
-
+    @Suppress("unused")
     @get:Input
-    val packageJsonCustomFields: Map<String, Any?>
-        get() = PackageJson(fakePackageJsonValue, fakePackageJsonValue)
-            .apply {
-                packageJsonHandlers.forEach { it() }
-            }.customFields
+    internal val packageJsonInputHandlers: Provider<PackageJson> by lazy {
+        packageJsonHandlers.map { packageJsonHandlersList ->
+            PackageJson(fakePackageJsonValue, fakePackageJsonValue)
+                .apply {
+                    packageJsonHandlersList.forEach { it.execute(this) }
+                }
+        }
+    }
 
-    private val compilationResolution
+    private val compilationResolution: PreparedKotlinCompilationNpmResolution
         get() = npmResolutionManager.get().resolution.get()[projectPath][compilationDisambiguatedName.get()]
             .getResolutionOrPrepare(
                 npmResolutionManager.get(),
@@ -60,10 +72,11 @@ abstract class PublicPackageJsonTask :
         get() = compilationResolution.externalNpmDependencies
 
     private val defaultPackageJsonFile by lazy {
-        project.buildDir
-            .resolve("tmp")
-            .resolve(name)
-            .resolve(PACKAGE_JSON)
+        project.layout.buildDirectory
+            .dir("tmp")
+            .map { it.dir(name) }
+            .map { it.file(PACKAGE_JSON) }
+            .getFile()
     }
 
     @get:OutputFile
@@ -76,9 +89,9 @@ abstract class PublicPackageJsonTask :
             projectVersion,
             npmProjectMain.get(),
             externalDependencies,
-            packageJsonHandlers
+            packageJsonHandlers.get()
         ).let { packageJson ->
-            packageJson.main = "${npmProjectName.get()}.js"
+            packageJson.main = "${npmProjectName.get()}.${extension.get()}"
 
             if (jsIrCompilation.get()) {
                 packageJson.types = "${npmProjectName.get()}.d.ts"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -31,7 +31,7 @@ private fun IrType.withNullability(newNullability: Boolean): IrType =
         else -> this
     }
 
-private fun IrSimpleType.withNullability(newNullability: Boolean): IrSimpleType {
+fun IrSimpleType.withNullability(newNullability: Boolean): IrSimpleType {
     val requiredNullability = if (newNullability) SimpleTypeNullability.MARKED_NULLABLE else SimpleTypeNullability.DEFINITELY_NOT_NULL
     return if (nullability == requiredNullability)
         this
@@ -57,7 +57,7 @@ fun IrType.addAnnotations(newAnnotations: List<IrConstructorCall>): IrType =
                 annotations = annotations memoryOptimizedPlus newAnnotations
             }.buildSimpleType()
         is IrDynamicType ->
-            IrDynamicTypeImpl(null, annotations memoryOptimizedPlus newAnnotations, Variance.INVARIANT)
+            IrDynamicTypeImpl(annotations memoryOptimizedPlus newAnnotations, Variance.INVARIANT)
         else ->
             this
     }
@@ -69,7 +69,7 @@ fun IrType.removeAnnotations(predicate: (IrConstructorCall) -> Boolean): IrType 
                 annotations = annotations.memoryOptimizedFilterNot(predicate)
             }.buildSimpleType()
         is IrDynamicType ->
-            IrDynamicTypeImpl(null, annotations.memoryOptimizedFilterNot(predicate), Variance.INVARIANT)
+            IrDynamicTypeImpl(annotations.memoryOptimizedFilterNot(predicate), Variance.INVARIANT)
         else ->
             this
     }
@@ -81,7 +81,7 @@ fun IrType.removeAnnotations(): IrType =
                 annotations = emptyList()
             }.buildSimpleType()
         is IrDynamicType ->
-            IrDynamicTypeImpl(null, emptyList(), Variance.INVARIANT)
+            IrDynamicTypeImpl(emptyList(), Variance.INVARIANT)
         else ->
             this
     }
@@ -110,6 +110,12 @@ val IrType.classFqName: FqName?
     get() = classOrNull?.owner?.fqNameWhenAvailable
 
 val IrTypeArgument.typeOrNull: IrType? get() = (this as? IrTypeProjection)?.type
+
+val IrTypeArgument.typeOrFail: IrType
+    get() {
+        require(this is IrTypeProjection) { "Type argument should be of type `IrTypeProjection`, but was `${this::class}` instead" }
+        return this.type
+    }
 
 fun IrType.makeNotNull() = withNullability(false)
 

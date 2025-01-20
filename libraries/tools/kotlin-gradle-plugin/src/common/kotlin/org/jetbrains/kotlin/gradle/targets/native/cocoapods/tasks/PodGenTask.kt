@@ -7,21 +7,26 @@
 
 package org.jetbrains.kotlin.gradle.targets.native.tasks
 
+import org.gradle.api.file.ProjectLayout
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.*
+import org.gradle.work.DisableCachingByDefault
 import org.jetbrains.kotlin.gradle.plugin.cocoapods.CocoapodsExtension.*
 import org.jetbrains.kotlin.gradle.plugin.cocoapods.cocoapodsBuildDirs
 import org.jetbrains.kotlin.gradle.plugin.cocoapods.platformLiteral
-import org.jetbrains.kotlin.gradle.utils.XcodeVersion
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.UsesXcodeVersion
 import org.jetbrains.kotlin.konan.target.Family
+import org.jetbrains.kotlin.konan.target.XcodeVersion
 import java.io.File
+import javax.inject.Inject
 
 /**
  * The task generates a synthetic project with all cocoapods dependencies
  */
-abstract class PodGenTask : CocoapodsTask() {
+@DisableCachingByDefault
+abstract class PodGenTask @Inject constructor(projectLayout: ProjectLayout) : CocoapodsTask(), UsesXcodeVersion {
 
     init {
         onlyIf {
@@ -29,14 +34,8 @@ abstract class PodGenTask : CocoapodsTask() {
         }
     }
 
-    @get:InputFile
-    internal abstract val podspec: Property<File>
-
     @get:Input
     internal abstract val podName: Property<String>
-
-    @get:Input
-    internal abstract val useLibraries: Property<Boolean>
 
     @get:Input
     internal abstract val family: Property<Family>
@@ -50,11 +49,8 @@ abstract class PodGenTask : CocoapodsTask() {
     @get:Nested
     internal abstract val pods: ListProperty<CocoapodsDependency>
 
-    @get:Input
-    internal abstract val xcodeVersion: Property<XcodeVersion>
-
     @get:OutputFile
-    val podfile: Provider<File> = family.map { project.cocoapodsBuildDirs.synthetic(it).resolve("Podfile") }
+    val podfile: Provider<File> = projectLayout.cocoapodsBuildDirs.synthetic(family).map { it.file("Podfile").asFile }
 
     @TaskAction
     fun generate() {
@@ -75,9 +71,8 @@ abstract class PodGenTask : CocoapodsTask() {
             }
 
             appendLine("target '${family.platformLiteral}' do")
-            if (useLibraries.get().not()) {
-                appendLine("\tuse_frameworks!")
-            }
+            appendLine("\tuse_frameworks!")
+
             val settings = platformSettings.get()
             val deploymentTarget = settings.deploymentTarget
             if (deploymentTarget != null) {
@@ -121,7 +116,7 @@ abstract class PodGenTask : CocoapodsTask() {
         }
 
     private fun insertXcode143DeploymentTargetWorkarounds(family: Family): String {
-        if (xcodeVersion.get() < XcodeVersion(14, 3)) {
+        if (xcodeVersion.let { version -> version != null && version < XcodeVersion(14, 3) }) {
             return ""
         }
 

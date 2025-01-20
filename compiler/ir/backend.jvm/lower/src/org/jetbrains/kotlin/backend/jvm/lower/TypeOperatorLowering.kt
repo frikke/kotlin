@@ -11,14 +11,13 @@ import org.jetbrains.kotlin.backend.common.lower.IrBuildingTransformer
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.irNot
 import org.jetbrains.kotlin.backend.common.lower.irThrow
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.common.pop
 import org.jetbrains.kotlin.backend.common.push
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.ir.*
 import org.jetbrains.kotlin.backend.jvm.unboxInlineClass
-import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
@@ -33,7 +32,12 @@ import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
+import org.jetbrains.kotlin.ir.util.getArrayElementType
+import org.jetbrains.kotlin.ir.util.isBoxedArray
+import org.jetbrains.kotlin.ir.util.isNullable
+import org.jetbrains.kotlin.ir.util.isSubtypeOf
+import org.jetbrains.kotlin.ir.util.isSubtypeOfClass
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
 import org.jetbrains.kotlin.name.Name
@@ -43,22 +47,20 @@ import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.commons.Method
 import java.lang.invoke.LambdaMetafactory
 
-// After this pass runs there are only four kinds of IrTypeOperatorCalls left:
-//
-// - IMPLICIT_CAST
-// - SAFE_CAST with reified type parameters
-// - INSTANCEOF with non-nullable type operand or reified type parameters
-// - CAST with non-nullable argument, nullable type operand, or reified type parameters
-//
-// The latter two correspond to the instanceof/checkcast instructions on the JVM, except for
-// the presence of reified type parameters.
-internal val typeOperatorLowering = makeIrFilePhase(
-    ::TypeOperatorLowering,
-    name = "TypeOperatorLowering",
-    description = "Lower IrTypeOperatorCalls to (implicit) casts and instanceof checks"
-)
-
-private class TypeOperatorLowering(private val backendContext: JvmBackendContext) :
+/**
+ * Lowers [IrTypeOperatorCall]s to (implicit) casts and instanceof checks.
+ *
+ * After this pass runs, there are only four kinds of [IrTypeOperatorCall]s left:
+ *
+ * - `IMPLICIT_CAST`
+ * - `SAFE_CAST` with reified type parameters
+ * - `INSTANCEOF` with non-nullable type operand or reified type parameters
+ * - `CAST` with non-nullable argument, nullable type operand, or reified type parameters
+ *
+ * The latter two correspond to the `instanceof`/`checkcast` instructions on the JVM, except for the presence of reified type parameters.
+ */
+@PhaseDescription(name = "TypeOperatorLowering")
+internal class TypeOperatorLowering(private val backendContext: JvmBackendContext) :
     FileLoweringPass, IrBuildingTransformer(backendContext) {
 
     override fun lower(irFile: IrFile) = irFile.transformChildrenVoid()
@@ -97,7 +99,7 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
                 with(builder) {
                     irLetS(argument, irType = context.irBuiltIns.anyNType) { tmp ->
                         val message = irString("null cannot be cast to non-null type ${type.render()}")
-                        if (backendContext.state.unifiedNullChecks) {
+                        if (backendContext.config.unifiedNullChecks) {
                             // Avoid branching to improve code coverage (KT-27427).
                             // We have to generate a null check here, because even if argument is of non-null type,
                             // it can be uninitialized value, which is 'null' for reference types in JMM.
@@ -176,7 +178,7 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
         bootstrapMethodArguments: List<IrExpression>
     ) =
         irCall(backendContext.ir.symbols.jvmIndyIntrinsic, dynamicCall.type).apply {
-            putTypeArgument(0, dynamicCall.type)
+            typeArguments[0] = dynamicCall.type
             putValueArgument(0, dynamicCall)
             putValueArgument(1, jvmMethodHandle(bootstrapMethodHandle))
             putValueArgument(2, irVararg(context.irBuiltIns.anyType, bootstrapMethodArguments))
@@ -449,8 +451,8 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
                     // Inline class type arguments are stored as their underlying representation.
                     val unboxedType = expectedType.unboxInlineClass()
                     irCall(backendContext.ir.symbols.unsafeCoerceIntrinsic).also { coercion ->
-                        coercion.putTypeArgument(0, unboxedType)
-                        coercion.putTypeArgument(1, expectedType)
+                        coercion.typeArguments[0] = unboxedType
+                        coercion.typeArguments[1] = expectedType
                         coercion.putValueArgument(0, capturedArg)
                     }
                 } else {
@@ -474,7 +476,7 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
         val startOffset = call.startOffset
         val endOffset = call.endOffset
 
-        val samType = call.getTypeArgument(0) as? IrSimpleType
+        val samType = call.typeArguments[0] as? IrSimpleType
             ?: fail("'samType' is expected to be a simple type")
 
         val samMethodRef = call.getValueArgument(0) as? IrRawFunctionReference
@@ -645,9 +647,6 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
                         argumentStart++
                     }
                 }
-                else -> {
-                    throw AssertionError("Unexpected function: ${targetFun.render()}")
-                }
             }
 
             val samMethodValueParametersCount = samMethod.valueParameters.size +
@@ -764,10 +763,13 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
     }
 
     private fun IrBuilderWithScope.computeNotNullAssertionText(typeOperatorCall: IrTypeOperatorCall): String? {
-        if (backendContext.state.noSourceCodeInNotNullAssertionExceptions) {
+        if (backendContext.config.noSourceCodeInNotNullAssertionExceptions) {
             return when (val argument = typeOperatorCall.argument) {
                 is IrCall -> "${argument.symbol.owner.name.asString()}(...)"
-                is IrGetField -> argument.symbol.owner.name.asString()
+                is IrGetField -> {
+                    val field = argument.symbol.owner
+                    field.name.asString().takeUnless { field.origin.isSynthetic }
+                }
                 else -> null
             }
         }
@@ -799,7 +801,7 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
     private fun IrElement.extents(): Pair<Int, Int> {
         var startOffset = Int.MAX_VALUE
         var endOffset = 0
-        acceptVoid(object : IrElementVisitorVoid {
+        acceptVoid(object : IrVisitorVoid() {
             override fun visitElement(element: IrElement) {
                 element.acceptChildrenVoid(this)
                 if (element.startOffset in 0 until startOffset)
@@ -818,7 +820,7 @@ private class TypeOperatorLowering(private val backendContext: JvmBackendContext
         backendContext.ir.symbols.throwTypeCastException
 
     private val checkExpressionValueIsNotNull: IrSimpleFunctionSymbol =
-        if (backendContext.state.unifiedNullChecks)
+        if (backendContext.config.unifiedNullChecks)
             backendContext.ir.symbols.checkNotNullExpressionValue
         else
             backendContext.ir.symbols.checkExpressionValueIsNotNull

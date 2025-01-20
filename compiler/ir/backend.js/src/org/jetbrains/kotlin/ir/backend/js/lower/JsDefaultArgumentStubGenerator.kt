@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.ir.backend.js.lower
 
+import org.jetbrains.kotlin.backend.common.defaultArgumentsDispatchFunction
 import org.jetbrains.kotlin.backend.common.lower.DefaultArgumentStubGenerator
 import org.jetbrains.kotlin.backend.common.lower.VariableRemapper
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
@@ -64,6 +65,7 @@ class JsDefaultArgumentStubGenerator(context: JsIrBackendContext) :
     }
 
     private fun IrFunction.introduceDefaultResolution(): IrFunction {
+        this.defaultArgumentsDispatchFunction?.let { return it }
         val irBuilder = context.createIrBuilder(symbol, UNDEFINED_OFFSET, UNDEFINED_OFFSET)
 
         val variables = hashMapOf<IrValueParameter, IrValueParameter>()
@@ -84,7 +86,7 @@ class JsDefaultArgumentStubGenerator(context: JsIrBackendContext) :
         }
 
         return also {
-            context.mapping.defaultArgumentsDispatchFunction[it] = it
+            it.defaultArgumentsDispatchFunction = it
         }
     }
 
@@ -116,7 +118,7 @@ class JsDefaultArgumentStubGenerator(context: JsIrBackendContext) :
                     context.additionalExportedDeclarations.add(defaultFunStub)
 
                     if (!originalFun.hasAnnotation(JsAnnotations.jsNameFqn)) {
-                        annotations = annotations memoryOptimizedPlus originalFun.generateJsNameAnnotationCall()
+                        originalFun.annotations = originalFun.annotations memoryOptimizedPlus originalFun.generateJsNameAnnotationCall()
                     }
                 }
             }
@@ -129,7 +131,7 @@ class JsDefaultArgumentStubGenerator(context: JsIrBackendContext) :
             }
 
         originalFun.annotations = irrelevantAnnotations
-        defaultFunStub.annotations = defaultFunStub.annotations memoryOptimizedPlus exportAnnotations
+        defaultFunStub.annotations = exportAnnotations
         originalFun.origin = JsLoweredDeclarationOrigin.JS_SHADOWED_EXPORT
 
         return listOf(originalFun, defaultFunStub)
@@ -172,7 +174,7 @@ class JsDefaultArgumentStubGenerator(context: JsIrBackendContext) :
 
             var superContextValueParam: IrValueParameter? = null
 
-            val superFunCall = runIf(wrappedFunctionCall.dispatchReceiver != null && !originalDeclaration.isExported(ctx)) {
+            val superFunCall = runIf(wrappedFunctionCall.dispatchReceiver != null) {
                 val superContext = valueParameters.last().also {
                     superContextValueParam = it
                 }

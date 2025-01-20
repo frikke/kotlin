@@ -4,13 +4,15 @@
  */
 package kotlin.native.internal
 
+import kotlin.native.internal.escapeAnalysis.Escapes
+
 /*
  * Internal utilities for debugging K/N compiler and runtime.
  */
 
 @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
 @Deprecated("Use kotlin.native.runtime.Debugging instead.", ReplaceWith("Debugging", "kotlin.native.runtime.Debugging"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
+@DeprecatedSinceKotlin(warningSince = "1.9", errorSince = "2.1")
 public object Debugging {
     public var forceCheckedShutdown: Boolean by kotlin.native.runtime.Debugging::forceCheckedShutdown
 
@@ -19,8 +21,10 @@ public object Debugging {
 
 @GCUnsafeCall("Kotlin_Debugging_isPermanent")
 @InternalForKotlinNative
+@Escapes.Nothing
 public external fun Any.isPermanent() : Boolean
 
 @GCUnsafeCall("Kotlin_Debugging_isLocal")
 @InternalForKotlinNative
+@Escapes.Nothing
 public external fun Any.isLocal() : Boolean

@@ -9,6 +9,8 @@ import java.lang.reflect.Method
 import java.util.regex.MatchResult
 import kotlin.random.FallbackThreadLocalRandom
 import kotlin.random.Random
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 internal open class PlatformImplementations {
 
@@ -43,6 +45,11 @@ internal open class PlatformImplementations {
     }
 
     public open fun defaultPlatformRandom(): Random = FallbackThreadLocalRandom()
+
+    @ExperimentalTime
+    public open fun getSystemClock(): Clock {
+        throw UnsupportedOperationException("getSystemClock should not be called on the base PlatformImplementations.")
+    }
 }
 
 
@@ -74,5 +81,5 @@ private inline fun <reified T : Any> castToBaseType(instance: Any): T {
  */
 @PublishedApi
 @SinceKotlin("1.2")
-internal fun apiVersionIsAtLeast(major: Int, minor: Int, patch: Int) =
+internal fun apiVersionIsAtLeast(major: Int, minor: Int, patch: Int): Boolean =
     KotlinVersion.CURRENT.isAtLeast(major, minor, patch)

@@ -5,11 +5,15 @@
 
 package org.jetbrains.kotlin.analysis.low.level.api.fir.sessions
 
+import com.intellij.openapi.project.Project
 import org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar
 import org.jetbrains.kotlin.scripting.compiler.plugin.services.FirScriptConfiguratorExtensionImpl
 import org.jetbrains.kotlin.scripting.compiler.plugin.services.FirScriptDefinitionProviderService
+import org.jetbrains.kotlin.scripting.compiler.plugin.services.FirScriptResolutionConfigurationExtensionImpl
 import org.jetbrains.kotlin.scripting.definitions.ScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.ScriptDefinitionProvider
 import org.jetbrains.kotlin.scripting.definitions.ScriptDefinitionsSource
+import org.jetbrains.kotlin.scripting.definitions.ScriptConfigurationsProvider
 import kotlin.script.experimental.host.ScriptingHostConfiguration
 
 /**
@@ -18,6 +22,7 @@ import kotlin.script.experimental.host.ScriptingHostConfiguration
  * [org.jetbrains.kotlin.config.CompilerConfiguration] replaced with a pair of explicit [scriptDefinitionSources] and [scriptDefinitions].
  */
 internal class FirScriptingCompilerExtensionIdeRegistrar(
+    private val project: Project,
     private val hostConfiguration: ScriptingHostConfiguration,
     private val scriptDefinitionSources: List<ScriptDefinitionsSource>,
     private val scriptDefinitions: List<ScriptDefinition>
@@ -27,9 +32,14 @@ internal class FirScriptingCompilerExtensionIdeRegistrar(
         val definitionSources = scriptDefinitionSources
         val definitions = scriptDefinitions
         if (definitionSources.isNotEmpty() || definitions.isNotEmpty()) {
-            +FirScriptDefinitionProviderService.getFactory(definitions, definitionSources)
+            +FirScriptDefinitionProviderService.getFactory(
+                definitions, definitionSources,
+                ScriptDefinitionProvider.getInstance(project),
+                ScriptConfigurationsProvider.getInstance(project)
+            )
         }
 
         +FirScriptConfiguratorExtensionImpl.getFactory(hostConfiguration)
+        +FirScriptResolutionConfigurationExtensionImpl.getFactory(hostConfiguration)
     }
 }

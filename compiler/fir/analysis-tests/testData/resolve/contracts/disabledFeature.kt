@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // LANGUAGE: -ContractSyntaxV2
 // WITH_STDLIB
 
@@ -11,7 +12,7 @@ inline fun <reified T> requreIsInstance(value: Any) contract <!UNSUPPORTED_FEATU
 
 val Any?.myLength: Int?
     get() contract <!CONTRACT_NOT_ALLOWED, UNSUPPORTED_FEATURE!>[
-        <!ERROR_IN_CONTRACT_DESCRIPTION!>returnsNotNull() implies (this@length is String)<!>
+        returnsNotNull() implies (this@length is String)
     ]<!> = (this as? String)?.length
 
 fun test_1(x: Any) {

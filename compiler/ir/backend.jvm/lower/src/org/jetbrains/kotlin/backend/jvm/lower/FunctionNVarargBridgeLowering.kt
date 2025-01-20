@@ -10,10 +10,10 @@ import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.irIfThen
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.ir.createJvmIrBuilder
-import org.jetbrains.kotlin.backend.jvm.ir.erasedUpperBound
+import org.jetbrains.kotlin.ir.util.erasedUpperBound
 import org.jetbrains.kotlin.backend.jvm.ir.irArray
 import org.jetbrains.kotlin.backend.jvm.needsMfvcFlattening
 import org.jetbrains.kotlin.builtins.StandardNames
@@ -31,17 +31,15 @@ import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.Name
 
-internal val functionNVarargBridgePhase = makeIrFilePhase(
-    ::FunctionNVarargBridgeLowering,
-    name = "FunctionBridgePhase",
-    description = "Add bridges for invoke functions with a large number of arguments"
-)
-
-// There are concrete function classes for functions with up to 22 arguments. Above that, we
-// inherit from the generic FunctionN class which has a vararg invoke method. This phase
-// adds a bridge method for such large arity functions, which checks the number of arguments
-// dynamically.
-private class FunctionNVarargBridgeLowering(val context: JvmBackendContext) :
+/**
+ * Adds bridges for invoke functions with a large number of arguments.
+ *
+ * There are concrete function classes for functions with fewer than [BuiltInFunctionArity.BIG_ARITY] arguments. Above that, we inherit
+ * from the generic FunctionN class which has a vararg `invoke` method. This phase adds a bridge method for such large arity functions,
+ * which checks the number of arguments dynamically.
+ */
+@PhaseDescription(name = "FunctionBridgePhase")
+internal class FunctionNVarargBridgeLowering(val context: JvmBackendContext) :
     FileLoweringPass, IrElementTransformerVoidWithContext() {
     override fun lower(irFile: IrFile) = irFile.transformChildrenVoid(this)
 
@@ -138,7 +136,7 @@ private class FunctionNVarargBridgeLowering(val context: JvmBackendContext) :
                     dispatchReceiver = irGet(dispatchReceiverParameter!!)
 
                     for (parameter in invoke.valueParameters) {
-                        val index = parameter.index
+                        val index = parameter.indexInOldValueParameters
                         val argArray = irGet(valueParameters.single())
                         val argument = irCallOp(arrayGetFun, context.irBuiltIns.anyNType, argArray, irInt(index))
                         putValueArgument(index, irImplicitCast(argument, invoke.valueParameters[index].type))

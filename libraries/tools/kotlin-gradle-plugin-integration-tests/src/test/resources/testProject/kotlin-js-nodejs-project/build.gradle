@@ -17,13 +17,7 @@ kotlin {
         useCommonJs()
         binaries.executable()
         nodejs {
+            passProcessArgvToMainFunction()
         }
     }
-}
-
-tasks.named("compileKotlinJs", org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile) {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
-}
-tasks.named("compileTestKotlinJs", org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile) {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
 }

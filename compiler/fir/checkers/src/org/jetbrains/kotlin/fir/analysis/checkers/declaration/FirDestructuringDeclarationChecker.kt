@@ -9,8 +9,11 @@ import org.jetbrains.kotlin.KtNodeTypes
 import org.jetbrains.kotlin.KtSourceElement
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.diagnostics.FirErrors
+import org.jetbrains.kotlin.fir.analysis.diagnostics.toFirDiagnostics
+import org.jetbrains.kotlin.fir.analysis.diagnostics.toInvisibleReferenceDiagnostic
 import org.jetbrains.kotlin.fir.declarations.FirProperty
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase
 import org.jetbrains.kotlin.fir.declarations.FirValueParameter
@@ -21,13 +24,14 @@ import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.references.isError
 import org.jetbrains.kotlin.fir.references.toResolvedVariableSymbol
 import org.jetbrains.kotlin.fir.resolve.diagnostics.*
+import org.jetbrains.kotlin.fir.resolve.fullyExpandedType
 import org.jetbrains.kotlin.fir.symbols.SymbolInternals
 import org.jetbrains.kotlin.fir.symbols.impl.FirNamedFunctionSymbol
 import org.jetbrains.kotlin.fir.symbols.lazyResolveToPhase
 import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.types.AbstractTypeChecker
 
-object FirDestructuringDeclarationChecker : FirPropertyChecker() {
+object FirDestructuringDeclarationChecker : FirPropertyChecker(MppCheckerKind.Common) {
     override fun check(declaration: FirProperty, context: CheckerContext, reporter: DiagnosticReporter) {
         val source = declaration.source ?: return
         // val (...) = `destructuring_declaration`
@@ -65,7 +69,7 @@ object FirDestructuringDeclarationChecker : FirPropertyChecker() {
         val originalDestructuringDeclarationType =
             when (originalDestructuringDeclarationOrInitializer) {
                 is FirVariable -> originalDestructuringDeclarationOrInitializer.returnTypeRef.coneType
-                is FirExpression -> originalDestructuringDeclarationOrInitializer.typeRef.coneType
+                is FirExpression -> originalDestructuringDeclarationOrInitializer.resolvedType
                 else -> null
             } ?: return
 
@@ -122,6 +126,15 @@ object FirDestructuringDeclarationChecker : FirPropertyChecker() {
                     context
                 )
             }
+            is ConeHiddenCandidateError -> {
+                reporter.reportOn(
+                    source,
+                    FirErrors.COMPONENT_FUNCTION_MISSING,
+                    diagnostic.candidate.callInfo.name,
+                    destructuringDeclarationType,
+                    context
+                )
+            }
             is ConeInapplicableWrongReceiver -> {
                 reporter.reportOn(
                     source,
@@ -141,19 +154,27 @@ object FirDestructuringDeclarationChecker : FirPropertyChecker() {
                 )
             }
             is ConeInapplicableCandidateError -> {
-                if (destructuringDeclarationType.isNullable) {
+                if (destructuringDeclarationType.fullyExpandedType(context.session).isMarkedNullable) {
                     reporter.reportOn(
                         source,
                         FirErrors.COMPONENT_FUNCTION_ON_NULLABLE,
                         (diagnostic.candidate.symbol as FirNamedFunctionSymbol).callableId.callableName,
                         context
                     )
+                } else {
+                    reportDefaultDiagnostics(diagnostic, componentCall, reporter, context)
                 }
             }
             is ConeConstraintSystemHasContradiction -> {
-                val componentType = componentCall.typeRef.coneType
+                val componentType = componentCall.resolvedType
                 if (componentType is ConeErrorType) {
-                    // There will be other errors on this error type.
+                    reporter.reportOn(
+                        source,
+                        FirErrors.COMPONENT_FUNCTION_MISSING,
+                        diagnostic.candidates.first().callInfo.name,
+                        destructuringDeclarationType,
+                        context
+                    )
                     return
                 }
                 val expectedType = property.returnTypeRef.coneType
@@ -173,17 +194,27 @@ object FirDestructuringDeclarationChecker : FirPropertyChecker() {
                         expectedType,
                         context
                     )
+                } else {
+                    reportDefaultDiagnostics(diagnostic, componentCall, reporter, context)
                 }
             }
             is ConeVisibilityError -> {
-                reporter.reportOn(
-                    property.source,
-                    FirErrors.INVISIBLE_REFERENCE,
-                    diagnostic.symbol,
-                    context,
-                )
+                reporter.report(diagnostic.symbol.toInvisibleReferenceDiagnostic(property.source), context)
             }
-            else -> error("Unhandled error during a component function call")
+            else -> {
+                reportDefaultDiagnostics(diagnostic, componentCall, reporter, context)
+            }
+        }
+    }
+
+    private fun reportDefaultDiagnostics(
+        diagnostic: ConeDiagnostic,
+        componentCall: FirComponentCall,
+        reporter: DiagnosticReporter,
+        context: CheckerContext,
+    ) {
+        for (coneDiagnostic in diagnostic.toFirDiagnostics(context.session, componentCall.source, null)) {
+            reporter.report(coneDiagnostic, context)
         }
     }
 

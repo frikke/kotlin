@@ -5,59 +5,55 @@
 
 package org.jetbrains.kotlin.fir.resolve.transformers.mpp
 
+import org.jetbrains.kotlin.descriptors.Visibilities
+import org.jetbrains.kotlin.fir.FirExpectActualMatchingContext
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.declarations.*
-import org.jetbrains.kotlin.fir.resolve.*
+import org.jetbrains.kotlin.fir.declarations.ExpectForActualMatchingData
+import org.jetbrains.kotlin.fir.declarations.expectForActual
+import org.jetbrains.kotlin.fir.declarations.fullyExpandedClass
+import org.jetbrains.kotlin.fir.declarations.utils.isExpect
+import org.jetbrains.kotlin.fir.declarations.utils.isStatic
 import org.jetbrains.kotlin.fir.resolve.providers.dependenciesSymbolProvider
 import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
-import org.jetbrains.kotlin.fir.resolve.substitution.ConeSubstitutor
 import org.jetbrains.kotlin.fir.scopes.impl.FirPackageMemberScope
 import org.jetbrains.kotlin.fir.symbols.FirBasedSymbol
-import org.jetbrains.kotlin.fir.symbols.impl.*
-import org.jetbrains.kotlin.fir.types.*
-import org.jetbrains.kotlin.resolve.calls.mpp.AbstractExpectActualCompatibilityChecker
+import org.jetbrains.kotlin.fir.symbols.impl.FirCallableSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirClassLikeSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirConstructorSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirEnumEntrySymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.mpp.CallableSymbolMarker
+import org.jetbrains.kotlin.resolve.calls.mpp.AbstractExpectActualMatcher
+import org.jetbrains.kotlin.resolve.multiplatform.ExpectActualMatchingCompatibility
 
 object FirExpectActualResolver {
     fun findExpectForActual(
         actualSymbol: FirBasedSymbol<*>,
         useSiteSession: FirSession,
-        scopeSession: ScopeSession
-    ): ExpectForActualData? {
-        val context = FirExpectActualMatchingContext(useSiteSession, scopeSession)
+        context: FirExpectActualMatchingContext,
+    ): ExpectForActualMatchingData {
         with(context) {
-            val result = when (actualSymbol) {
+            val result: Map<ExpectActualMatchingCompatibility, List<FirBasedSymbol<*>>> = when (actualSymbol) {
                 is FirCallableSymbol<*> -> {
                     val callableId = actualSymbol.callableId
                     val classId = callableId.classId
-                    var parentSubstitutor: ConeSubstitutor? = null
-                    var expectContainingClass: FirRegularClassSymbol? = null
                     var actualContainingClass: FirRegularClassSymbol? = null
+                    var expectContainingClass: FirRegularClassSymbol? = null
                     val candidates = when {
+                        callableId.isLocal -> return emptyMap()
                         classId != null -> {
-                            expectContainingClass = useSiteSession.dependenciesSymbolProvider.getClassLikeSymbolByClassId(classId)?.let {
-                                it.fullyExpandedClass(it.moduleData.session)
-                            }
                             actualContainingClass = useSiteSession.symbolProvider.getClassLikeSymbolByClassId(classId)
                                 ?.fullyExpandedClass(useSiteSession)
+                            expectContainingClass = actualContainingClass?.fir?.expectForActual
+                                ?.get(ExpectActualMatchingCompatibility.MatchedSuccessfully)
+                                ?.singleOrNull() as? FirRegularClassSymbol
 
-                            val expectTypeParameters = expectContainingClass?.typeParameterSymbols.orEmpty()
-                            val actualTypeParameters = actualContainingClass
-                                ?.typeParameterSymbols
-                                .orEmpty()
-
-                            parentSubstitutor = createExpectActualTypeParameterSubstitutor(
-                                expectTypeParameters,
-                                actualTypeParameters,
-                                useSiteSession,
-                            )
-
-                            when (actualSymbol) {
-                                is FirConstructorSymbol -> expectContainingClass?.getConstructors(scopeSession)
-                                else -> expectContainingClass?.getMembersForExpectClass(actualSymbol.name)
+                            when {
+                                actualSymbol is FirConstructorSymbol -> expectContainingClass?.getConstructors(expectScopeSession)
+                                actualSymbol.isStatic -> expectContainingClass?.getStaticCallablesForExpectClass(actualSymbol.name)
+                                else -> expectContainingClass?.getCallablesForExpectClass(actualSymbol.name)
                             }.orEmpty()
                         }
-                        callableId.isLocal -> return null
                         else -> {
                             val scope = FirPackageMemberScope(callableId.packageName, useSiteSession, useSiteSession.dependenciesSymbolProvider)
                             mutableListOf<FirCallableSymbol<*>>().apply {
@@ -66,26 +62,39 @@ object FirExpectActualResolver {
                             }
                         }
                     }
+                    val transitiveDependsOn = actualSymbol.moduleData.allDependsOnDependencies
                     candidates.filter { expectSymbol ->
-                        actualSymbol != expectSymbol && expectSymbol.isExpect
+                        actualSymbol != expectSymbol &&
+                                (expectContainingClass != null && expectSymbol.visibility != Visibilities.Private /*match non-private fake overrides*/ ||
+                                        expectSymbol.isExpect && expectSymbol.moduleData in transitiveDependsOn)
                     }.groupBy { expectDeclaration ->
-                        AbstractExpectActualCompatibilityChecker.areCompatibleCallables(
+                        AbstractExpectActualMatcher.getCallablesMatchingCompatibility(
                             expectDeclaration,
                             actualSymbol as CallableSymbolMarker,
-                            parentSubstitutor,
                             expectContainingClass,
                             actualContainingClass,
                             context
                         )
+                    }.let {
+                        // If there is a compatible entry, return a map only containing it
+                        when (val compatibleSymbols = it[ExpectActualMatchingCompatibility.MatchedSuccessfully]) {
+                            null -> it
+                            else -> mapOf(ExpectActualMatchingCompatibility.MatchedSuccessfully to compatibleSymbols)
+                        }
                     }
                 }
                 is FirClassLikeSymbol<*> -> {
                     val expectClassSymbol = useSiteSession.dependenciesSymbolProvider
-                        .getClassLikeSymbolByClassId(actualSymbol.classId) as? FirRegularClassSymbol ?: return null
-                    val compatibility = AbstractExpectActualCompatibilityChecker.areCompatibleClassifiers(expectClassSymbol, actualSymbol, context)
-                    mapOf(compatibility to listOf(expectClassSymbol))
+                        .getClassLikeSymbolByClassId(actualSymbol.classId) as? FirRegularClassSymbol ?: return emptyMap()
+                    val transitiveDependsOn = actualSymbol.moduleData.allDependsOnDependencies
+                    if (expectClassSymbol.isExpect && expectClassSymbol.moduleData in transitiveDependsOn) {
+                        val compatibility = AbstractExpectActualMatcher.matchClassifiers(expectClassSymbol, actualSymbol, context)
+                        mapOf(compatibility to listOf(expectClassSymbol))
+                    } else {
+                        emptyMap()
+                    }
                 }
-                else -> null
+                else -> emptyMap()
             }
             return result
         }

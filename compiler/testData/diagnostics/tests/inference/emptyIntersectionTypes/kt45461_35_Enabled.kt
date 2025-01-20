@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: BACKEND
 // FIR_IDENTICAL
-// !LANGUAGE: +ForbidInferringTypeVariablesIntoEmptyIntersection
+// LANGUAGE: +ForbidInferringTypeVariablesIntoEmptyIntersection
 // WITH_STDLIB
 
 class Foo<T>

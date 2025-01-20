@@ -1,11 +1,16 @@
 package org.jetbrains.kotlin.gradle
 
 import org.gradle.api.logging.LogLevel
-import org.gradle.api.logging.configuration.WarningMode
 import org.gradle.util.GradleVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilerExecutionStrategy
 import org.jetbrains.kotlin.gradle.testbase.*
+import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.KotlinToolingDiagnostics
+import org.jetbrains.kotlin.test.TestMetadata
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import java.util.zip.ZipFile
 import kotlin.io.path.*
 
@@ -70,7 +75,7 @@ class SimpleKotlinGradleIT : KGPBaseTest() {
     fun testLanguageVersion(gradleVersion: GradleVersion) {
         project("languageVersion", gradleVersion) {
             buildAndFail("build") {
-                assertOutputContains("Suspend function type is allowed as a supertype only since version 1.6")
+                assertOutputContains("The feature \"generic inline class parameter\" is only available since language version 1.8")
             }
         }
     }
@@ -102,7 +107,7 @@ class SimpleKotlinGradleIT : KGPBaseTest() {
     fun testDestinationDirReferencedDuringEvaluation(gradleVersion: GradleVersion) {
         project("destinationDirReferencedDuringEvaluation", gradleVersion) {
             build("build") {
-                assertOutputContains("foo.GreeterTest > testHelloWorld PASSED")
+                assertOutputContains("GreeterTest > testHelloWorld PASSED")
             }
         }
     }
@@ -142,13 +147,12 @@ class SimpleKotlinGradleIT : KGPBaseTest() {
     // https://sourceforge.net/p/proguard/bugs/735/
     // Gradle 7 compatibility issue: https://github.com/Guardsquare/proguard/issues/136
     @GradleTest
-    @GradleTestVersions(maxVersion = TestVersions.Gradle.G_6_8)
     @DisplayName("Should correctly interop with ProGuard")
+    @TestMetadata("interopWithProguarded")
     fun testInteropWithProguarded(gradleVersion: GradleVersion) {
         project(
             "interopWithProguarded",
             gradleVersion,
-            buildOptions = defaultBuildOptions.copy(warningMode = WarningMode.Summary)
         ) {
             build("build") {
                 assertTasksExecuted(":test")
@@ -195,81 +199,6 @@ class SimpleKotlinGradleIT : KGPBaseTest() {
                 }
             }
 
-            build("assemble")
-        }
-    }
-
-    @GradleTest
-    @DisplayName("Should be compatible with project isolation")
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_1)
-    fun testProjectIsolation(gradleVersion: GradleVersion) {
-        project(
-            projectName = "instantExecution",
-            gradleVersion = gradleVersion,
-            buildOptions = defaultBuildOptions.copy(configurationCache = true, projectIsolation = true),
-        ) {
-            build(":main-project:compileKotlin")
-        }
-    }
-
-    @DisplayName("Proper Gradle plugin variant is used")
-    @GradleTestVersions(
-        additionalVersions = [TestVersions.Gradle.G_7_0, TestVersions.Gradle.G_7_1, TestVersions.Gradle.G_7_3, TestVersions.Gradle.G_7_4, TestVersions.Gradle.G_7_5],
-        maxVersion = TestVersions.Gradle.G_7_6
-    )
-    @GradleTest
-    internal fun pluginVariantIsUsed(gradleVersion: GradleVersion) {
-        project("kotlinProject", gradleVersion) {
-            build("tasks") {
-                val expectedVariant = when (gradleVersion) {
-                    GradleVersion.version(TestVersions.Gradle.G_7_6) -> "gradle76"
-                    GradleVersion.version(TestVersions.Gradle.G_7_5) -> "gradle75"
-                    GradleVersion.version(TestVersions.Gradle.G_7_4) -> "gradle74"
-                    in GradleVersion.version(TestVersions.Gradle.G_7_1)..GradleVersion.version(TestVersions.Gradle.G_7_3) -> "gradle71"
-                    GradleVersion.version(TestVersions.Gradle.G_7_0) -> "gradle70"
-                    else -> "main"
-                }
-
-                assertOutputContains("Using Kotlin Gradle Plugin $expectedVariant variant")
-            }
-        }
-    }
-
-    @DisplayName("Validate Gradle plugins inputs")
-    @GradleTestVersions(minVersion = TestVersions.Gradle.MAX_SUPPORTED) // Always should use only latest Gradle version
-    @GradleTest
-    internal fun validatePluginInputs(gradleVersion: GradleVersion) {
-        project("kotlinProject", gradleVersion) {
-            buildGradle.modify {
-                """
-                plugins {
-                    id "validate-external-gradle-plugin"
-                ${it.substringAfter("plugins {")}
-                """.trimIndent()
-            }
-
-            build("validateExternalPlugins")
-        }
-    }
-
-    @DisplayName("Accessing Kotlin SourceSet in KotlinDSL")
-    @GradleTestVersions(maxVersion = TestVersions.Gradle.G_7_1)
-    @GradleTest
-    internal fun kotlinDslSourceSets(gradleVersion: GradleVersion) {
-        project("sourceSetsKotlinDsl", gradleVersion) {
-            build("assemble")
-        }
-    }
-
-    @DisplayName("KT-53402: ignore non project source changes")
-    @GradleTest
-    fun ignoreNonProjectSourceChanges(gradleVersion: GradleVersion) {
-        project("simpleProject", gradleVersion) {
-            val resources = projectPath.resolve("src/main/resources").createDirectories()
-            val resourceKts = resources.resolve("resource.kts").createFile()
-            resourceKts.appendText("lkdfjgkjs invalid something")
-            build("assemble")
-            resourceKts.appendText("kajhgfkh invalid something")
             build("assemble")
         }
     }
@@ -324,39 +253,71 @@ class SimpleKotlinGradleIT : KGPBaseTest() {
         }
     }
 
-    @DisplayName("KT-36904: Adding resources to Kotlin source set should work")
+    @Disabled("KT-58223: Currently is not used and we should start using it after working on followup issues")
+    @DisplayName("Possible to override kotlin.user.home location")
     @GradleTest
-    internal fun addResourcesKotlinSourceSet(gradleVersion: GradleVersion) {
-        project("simpleProject", gradleVersion) {
-            val mainResDir = projectPath.resolve("src/main/resources").apply { createDirectories() }
-            val mainResFile = mainResDir.resolve("main.txt").apply { writeText("Yay, Kotlin!") }
-
-            val additionalResDir = projectPath.resolve("additionalRes").apply { createDirectory() }
-            val additionalResFile = additionalResDir.resolve("test.txt").apply { writeText("Kotlin!") }
-
-            buildGradle.appendText(
-                //language=groovy
+    fun overrideKotlinUserHome(
+        gradleVersion: GradleVersion,
+        @TempDir tempDir: Path,
+    ) {
+        project(
+            projectName = "simpleProject",
+            gradleVersion = gradleVersion,
+            buildOptions = defaultBuildOptions.copy(kotlinUserHome = null)
+        ) {
+            gradleProperties.appendText(
                 """
                 |
-                |kotlin {
-                |    sourceSets.main.resources.srcDir("additionalRes")
-                |}
+                |kotlin.user.home=${tempDir.resolve("kotlin-cache").absolutePathString().normalizePath()}
                 """.trimMargin()
             )
 
-            build("jar") {
-                assertFileInProjectExists("build/libs/simpleProject.jar")
-                ZipFile(projectPath.resolve("build/libs/simpleProject.jar").toFile()).use { jar ->
-                    assert(jar.entries().asSequence().count { it.name == mainResFile.name } == 1) {
-                        "The jar should contain one entry `${mainResFile.name}` with no duplicates\n" +
-                                jar.entries().asSequence().map { it.name }.joinToString()
-                    }
+            build("compileKotlin") {
+                assertTasksExecuted(":compileKotlin")
 
-                    assert(jar.entries().asSequence().count { it.name == additionalResFile.name } == 1) {
-                        "The jar should contain one entry `${additionalResFile.name}` with no duplicates\n" +
-                                jar.entries().asSequence().map { it.name }.joinToString()
+                val baseProjectsDir = tempDir.resolve("kotlin-cache")
+                assertDirectoryExists(baseProjectsDir)
+            }
+        }
+    }
+
+    @DisplayName("KT-63499: source sets conventions are not registered since Gradle 8.2")
+    @GradleTestVersions(minVersion = TestVersions.Gradle.G_8_2)
+    @GradleTest
+    fun sourceSetsConventionsAreNotRegistered(gradleVersion: GradleVersion) {
+        project("simpleProject", gradleVersion) {
+            // project's buildscript has to be in Groovy
+            buildGradle.append(
+                //language=Gradle
+                """
+                sourceSets {
+                    main {
+                        customSourceFilesExtensions // try using a property of KotlinSourceSet through the source set convention
                     }
                 }
+                """.trimIndent()
+            )
+            KotlinSourceSet::customSourceFilesExtensions // ensure the accessed property is available on KotlinSourceSet
+            buildAndFail("help") {
+                assertOutputContains("Could not get unknown property 'customSourceFilesExtensions' for source set 'main' ")
+            }
+        }
+    }
+
+    @GradleTest
+    fun testKotlinCompilerEmbeddable(gradleVersion: GradleVersion) {
+        project("kotlinProjectWithBuildSrc", gradleVersion) {
+            build {
+                assertNoDiagnostic(KotlinToolingDiagnostics.KotlinCompilerEmbeddableIsPresentInClasspath)
+            }
+            subProject("buildSrc").buildScriptInjection {
+                project.dependencies.add("runtimeOnly", "org.jetbrains.kotlin:kotlin-compiler-embeddable:1.7.10")
+            }
+            buildAndFail {
+                // example of incompatibility caused by the problem
+                // if it started to fail, feel free to remove/adjust this assertion
+                assertOutputContains("class org.jetbrains.kotlin.build.report.metrics.GradleBuildTime can not implement org.jetbrains.kotlin.build.report.metrics.BuildTime, because it is not an interface")
+                assertHasDiagnostic(KotlinToolingDiagnostics.KotlinCompilerEmbeddableIsPresentInClasspath)
             }
         }
     }

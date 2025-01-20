@@ -6,13 +6,7 @@
 
 package kotlin.native.internal
 
-import kotlinx.cinterop.CPointer
-import kotlinx.cinterop.NativePointed
-import kotlinx.cinterop.NativePtr
-import kotlinx.cinterop.ExperimentalForeignApi
-
-import kotlin.native.internal.TypedIntrinsic
-import kotlin.native.internal.IntrinsicType
+import kotlinx.cinterop.*
 
 @TypedIntrinsic(IntrinsicType.ARE_EQUAL_BY_VALUE) @PublishedApi external internal fun areEqualByValue(first: Boolean, second: Boolean): Boolean
 @TypedIntrinsic(IntrinsicType.ARE_EQUAL_BY_VALUE) @PublishedApi external internal fun areEqualByValue(first: Byte, second: Byte): Boolean

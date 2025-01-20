@@ -14,11 +14,11 @@ import org.jetbrains.kotlin.test.builders.classicFrontendStep
 import org.jetbrains.kotlin.test.directives.ConfigurationDirectives.WITH_STDLIB
 import org.jetbrains.kotlin.test.directives.DiagnosticsDirectives.CHECK_COMPILE_TIME_VALUES
 import org.jetbrains.kotlin.test.directives.DiagnosticsDirectives.DIAGNOSTICS
-import org.jetbrains.kotlin.test.directives.DiagnosticsDirectives.REPORT_JVM_DIAGNOSTICS_ON_FRONTEND
 import org.jetbrains.kotlin.test.directives.JvmEnvironmentConfigurationDirectives.JDK_KIND
 import org.jetbrains.kotlin.test.directives.JvmEnvironmentConfigurationDirectives.USE_PSI_CLASS_FILES_READING
 import org.jetbrains.kotlin.test.directives.JvmEnvironmentConfigurationDirectives.WITH_REFLECT
 import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives.EXPLICIT_API_MODE
+import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives.EXPLICIT_RETURN_TYPES_MODE
 import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives.LANGUAGE
 import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives.OPT_IN
 import org.jetbrains.kotlin.test.directives.MultiplatformDiagnosticsDirectives
@@ -26,6 +26,7 @@ import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontendFailingTestSupp
 import org.jetbrains.kotlin.test.frontend.classic.handlers.*
 import org.jetbrains.kotlin.test.model.DependencyKind
 import org.jetbrains.kotlin.test.model.FrontendKinds
+import org.jetbrains.kotlin.test.services.LibraryProvider
 import org.jetbrains.kotlin.test.services.configuration.CommonEnvironmentConfigurator
 import org.jetbrains.kotlin.test.services.configuration.JvmEnvironmentConfigurator
 import org.jetbrains.kotlin.test.services.configuration.ScriptingEnvironmentConfigurator
@@ -47,7 +48,7 @@ abstract class AbstractDiagnosticTest : AbstractKotlinCompilerTest() {
         ).map { "-$it" }
     }
 
-    override fun TestConfigurationBuilder.configuration() {
+    override fun configure(builder: TestConfigurationBuilder) = with(builder) {
         globalDefaults {
             frontend = FrontendKinds.ClassicFrontend
             targetPlatform = JvmPlatforms.defaultJvmPlatform
@@ -56,7 +57,6 @@ abstract class AbstractDiagnosticTest : AbstractKotlinCompilerTest() {
 
         defaultDirectives {
             +USE_PSI_CLASS_FILES_READING
-            +REPORT_JVM_DIAGNOSTICS_ON_FRONTEND
         }
 
         enableMetaInfoHandler()
@@ -72,6 +72,7 @@ abstract class AbstractDiagnosticTest : AbstractKotlinCompilerTest() {
             ::AdditionalDiagnosticsSourceFilesProvider,
             ::CoroutineHelpersSourceFilesProvider,
         )
+        useAdditionalService(::LibraryProvider)
 
         classicFrontendStep()
 
@@ -101,6 +102,12 @@ abstract class AbstractDiagnosticTest : AbstractKotlinCompilerTest() {
             }
         }
 
+        forTestsMatching("compiler/testData/diagnostics/tests/testsWithExplicitReturnTypes/*") {
+            defaultDirectives {
+                EXPLICIT_RETURN_TYPES_MODE with ExplicitApiMode.STRICT
+            }
+        }
+
         forTestsNotMatching("compiler/testData/diagnostics/tests/controlFlowAnalysis/*") {
             defaultDirectives {
                 DIAGNOSTICS with DISABLED_BY_DEFAULT_UNUSED_DIAGNOSTICS
@@ -117,6 +124,14 @@ abstract class AbstractDiagnosticTest : AbstractKotlinCompilerTest() {
         forTestsMatching("compiler/testData/diagnostics/tests/testsWithJava17/*") {
             defaultDirectives {
                 JDK_KIND with TestJdkKind.FULL_JDK_17
+                +WITH_STDLIB
+                +WITH_REFLECT
+            }
+        }
+
+        forTestsMatching("compiler/testData/diagnostics/tests/testsWithJava21/*") {
+            defaultDirectives {
+                JDK_KIND with TestJdkKind.FULL_JDK_21
                 +WITH_STDLIB
                 +WITH_REFLECT
             }

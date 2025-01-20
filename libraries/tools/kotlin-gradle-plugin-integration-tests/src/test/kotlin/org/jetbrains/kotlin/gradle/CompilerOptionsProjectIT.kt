@@ -7,6 +7,8 @@ package org.jetbrains.kotlin.gradle
 
 import org.gradle.api.logging.LogLevel
 import org.gradle.util.GradleVersion
+import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
+import org.jetbrains.kotlin.cli.common.arguments.cliArgument
 import org.jetbrains.kotlin.gradle.testbase.*
 import org.junit.jupiter.api.DisplayName
 import kotlin.io.path.appendText
@@ -21,7 +23,6 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
         project(
             projectName = "simpleProject",
             gradleVersion = gradleVersion,
-            buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)
         ) {
             buildGradle.appendText(
                 //language=Groovy
@@ -39,18 +40,42 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
             build("compileKotlin") {
                 assertTasksExecuted(":compileKotlin")
 
-                val compilationArgs = output.lineSequence().first { it.contains("Kotlin compiler args:") }
+                assertCompilerArguments(":compileKotlin", "-java-parameters", logLevel = LogLevel.INFO)
+                assertNoCompilerArgument(":compileKotlin", "-verbose", logLevel = LogLevel.INFO)
+            }
+        }
+    }
 
-                assert(compilationArgs.contains("-java-parameters")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-progressive': $compilationArgs"
-                }
+    @GradleTest
+    @DisplayName("Jvm project target compiler options DSL override project level options")
+    @JvmGradlePluginTests
+    fun jvmOptionTarget(gradleVersion: GradleVersion) {
+        project(
+            "simpleProject",
+            gradleVersion,
+        ) {
+            buildGradle.appendText(
+                //language=Groovy
+                """
+                |
+                |kotlin {
+                |    target.compilerOptions {
+                |        javaParameters = true
+                |        verbose = false
+                |    }
+                |    
+                |    compilerOptions {
+                |        javaParameters = false
+                |        verbose = false
+                |    }
+                |}
+                """.trimMargin()
+            )
 
-                // '-verbose' by default will be set to 'true' by debug log level
-                assert(!compilationArgs.contains("-verbose")) {
-                    printBuildOutput()
-                    "Compiler arguments contains '-verbose': $compilationArgs"
-                }
+            build("compileKotlin") {
+                assertTasksExecuted(":compileKotlin")
+                assertCompilerArgument(":compileKotlin", "-java-parameters", logLevel = LogLevel.INFO)
+                assertNoCompilerArgument(":compileKotlin", "-verbose", logLevel = LogLevel.INFO)
             }
         }
     }
@@ -62,7 +87,6 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
         project(
             projectName = "simpleProject",
             gradleVersion = gradleVersion,
-            buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)
         ) {
             buildGradle.appendText(
                 //language=Groovy
@@ -83,32 +107,11 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
             build("compileKotlin") {
                 assertTasksExecuted(":compileKotlin")
 
-                val compilationArgs = output.lineSequence().first { it.contains("Kotlin compiler args:") }
-
-                assert(compilationArgs.contains("-language-version 2.0")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-language-version 2.0': $compilationArgs"
-                }
-
-                assert(compilationArgs.contains("-api-version 2.0")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-api-version 2.0': $compilationArgs"
-                }
-
-                assert(compilationArgs.contains("-progressive")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-progressive': $compilationArgs"
-                }
-
-                assert(compilationArgs.contains("-opt-in my.custom.OptInAnnotation")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-opt-in my.custom.OptInAnnotation': $compilationArgs"
-                }
-
-                assert(compilationArgs.contains("-Xdebug")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-Xdebug': $compilationArgs"
-                }
+                assertCompilerArguments(
+                    ":compileKotlin",
+                    "-language-version 2.0", "-api-version 2.0", "-progressive", "-opt-in my.custom.OptInAnnotation", "-Xdebug",
+                    logLevel = LogLevel.INFO
+                )
             }
         }
     }
@@ -120,7 +123,6 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
         project(
             projectName = "simpleProject",
             gradleVersion = gradleVersion,
-            buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)
         ) {
             buildGradle.appendText(
                 //language=Groovy
@@ -140,7 +142,7 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
                 |            languageVersion = '1.9'
                 |            apiVersion = '1.9'
                 |            progressiveMode = false
-                |            optInAnnotationsInUse.add("another.CustomOptInAnnotation")
+                |            optIn("another.CustomOptInAnnotation")
                 |            enableLanguageFeature("UnitConversionsOnArbitraryExpressions")
                 |        }
                 |    }
@@ -157,10 +159,11 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
                     "-api-version 1.9",
                     "-Xdebug",
                     "-opt-in my.custom.OptInAnnotation,another.CustomOptInAnnotation",
-                    "-XXLanguage:+UnitConversionsOnArbitraryExpressions"
+                    "-XXLanguage:+UnitConversionsOnArbitraryExpressions",
+                    logLevel = LogLevel.INFO
                 )
 
-                assertNoCompilerArgument(":compileKotlin", "-progressive")
+                assertNoCompilerArgument(":compileKotlin", "-progressive", logLevel = LogLevel.INFO)
             }
         }
     }
@@ -172,7 +175,6 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
         project(
             projectName = "simpleProject",
             gradleVersion = gradleVersion,
-            buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)
         ) {
             buildGradle.appendText(
                 //language=Groovy
@@ -192,13 +194,7 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
                 assertOutputDoesNotContain(
                     "w: :compileKotlin 'KotlinJvmCompile.moduleName' is deprecated, please migrate to 'compilerOptions.moduleName'!"
                 )
-
-                val compilationArgs = output.lineSequence().first { it.contains("Kotlin compiler args:") }
-
-                assert(compilationArgs.contains("-module-name customModule")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-module-name customModule': $compilationArgs"
-                }
+                assertCompilerArgument(":compileKotlin", "-module-name customModule", logLevel = LogLevel.INFO)
             }
         }
     }
@@ -215,7 +211,7 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
             "AndroidSimpleApp",
             gradleVersion,
             buildJdk = jdk.location,
-            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion, logLevel = LogLevel.DEBUG)
+            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion)
         ) {
             buildGradle.appendText(
                 //language=Groovy
@@ -236,18 +232,60 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
                 assertOutputDoesNotContain(
                     "w: :compileKotlin 'KotlinJvmCompile.moduleName' is deprecated, please migrate to 'compilerOptions.moduleName'!"
                 )
+                assertCompilerArguments(
+                    ":compileDebugKotlin",
+                    "-java-parameters", "-module-name my_app_debug",
+                    logLevel = LogLevel.INFO
+                )
+            }
+        }
+    }
 
-                val compilationArgs = output.lineSequence().first { it.contains("Kotlin compiler args:") }
+    @DisplayName("Android target compiler options override project level compiler options")
+    @AndroidGradlePluginTests
+    @GradleAndroidTest
+    fun androidProjectTargetOverrideProjectOptions(
+        gradleVersion: GradleVersion,
+        agpVersion: String,
+        jdk: JdkVersions.ProvidedJdk
+    ) {
+        project(
+            "AndroidSimpleApp",
+            gradleVersion,
+            buildJdk = jdk.location,
+            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion)
+        ) {
+            buildGradle.appendText(
+                //language=Groovy
+                """
+                |
+                |kotlin {
+                |   target.compilerOptions {
+                |       javaParameters = true
+                |       moduleName = "my_app"
+                |   }
+                |   
+                |   compilerOptions {
+                |       javaParameters = false
+                |       moduleName = "other_app"
+                |   }
+                |}
+                """.trimMargin()
+            )
 
-                assert(compilationArgs.contains("-java-parameters")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-java-parameters': $compilationArgs"
-                }
+            build("compileDebugKotlin") {
+                assertTasksExecuted(":compileDebugKotlin")
 
-                assert(compilationArgs.contains("-module-name my_app_debug")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-module-name my_app_debug': $compilationArgs"
-                }
+                assertOutputDoesNotContain(
+                    "w: :compileKotlin 'KotlinJvmCompile.moduleName' is deprecated, please migrate to 'compilerOptions.moduleName'!"
+                )
+
+                assertCompilerArguments(
+                    ":compileDebugKotlin",
+                    "-java-parameters",
+                    "-module-name my_app_debug",
+                    logLevel = LogLevel.INFO
+                )
             }
         }
     }
@@ -265,7 +303,6 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
             gradleVersion,
             buildOptions = defaultBuildOptions.copy(
                 androidVersion = agpVersion,
-                logLevel = LogLevel.DEBUG
             ),
             buildJdk = jdk.location
         ) {
@@ -298,8 +335,16 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
             build(":libAndroid:compileDebugKotlin") {
                 assertTasksExecuted(":libAndroid:compileDebugKotlin")
 
-                assertCompilerArgument(":libAndroid:compileDebugKotlin", "-progressive")
-                assertCompilerArgument(":libAndroid:compileDebugKotlin", "-opt-in=com.example.roo.requiresOpt.FunTests")
+                assertCompilerArgument(
+                    ":libAndroid:compileDebugKotlin",
+                    "-progressive",
+                    logLevel = LogLevel.INFO
+                )
+                assertCompilerArgument(
+                    ":libAndroid:compileDebugKotlin",
+                    "-opt-in=com.example.roo.requiresOpt.FunTests",
+                    logLevel = LogLevel.INFO
+                )
             }
         }
     }
@@ -311,7 +356,6 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
         project(
             projectName = "simpleProject",
             gradleVersion = gradleVersion,
-            buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)
         ) {
             buildGradle.appendText(
                 //language=Groovy
@@ -335,21 +379,13 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
                 assertOutputContains(
                     "w: :compileKotlin 'KotlinJvmCompile.moduleName' is deprecated, please migrate to 'compilerOptions.moduleName'!"
                 )
-
-                val compilationArgs = output.lineSequence().first { it.contains("Kotlin compiler args:") }
-
-                assert(compilationArgs.contains("-module-name otherCustomModuleName")) {
-                    printBuildOutput()
-                    "Compiler arguments does not contain '-module-name otherCustomModuleName': $compilationArgs"
-                }
+                assertCompilerArgument(":compileKotlin", "-module-name otherCustomModuleName", logLevel = LogLevel.INFO)
             }
         }
     }
 
     @DisplayName("KT-57959: should be possible to configure module name in MPP/android")
     @GradleAndroidTest
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_0)
-    @AndroidTestVersions(minVersion = TestVersions.AGP.AGP_70)
     @AndroidGradlePluginTests
     fun mppAndroidModuleName(
         gradleVersion: GradleVersion,
@@ -359,7 +395,7 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
         project(
             "multiplatformAndroidSourceSetLayout2",
             gradleVersion,
-            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion, logLevel = LogLevel.DEBUG),
+            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
             buildJdk = jdk.location
         ) {
             buildGradleKts.appendText(
@@ -367,7 +403,7 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
                 """
                 |
                 |kotlin {
-                |    android {
+                |    androidTarget {
                 |        compilations.all {
                 |            compilerOptions.options.moduleName.set("last-chance")
                 |        }
@@ -379,7 +415,136 @@ class CompilerOptionsProjectIT : KGPBaseTest() {
             build(":compileGermanFreeDebugKotlinAndroid") {
                 assertTasksExecuted(":compileGermanFreeDebugKotlinAndroid")
 
-                assertCompilerArgument(":compileGermanFreeDebugKotlinAndroid", "-module-name last-chance")
+                assertCompilerArgument(
+                    ":compileGermanFreeDebugKotlinAndroid",
+                    "-module-name last-chance",
+                    logLevel = LogLevel.INFO
+                )
+            }
+        }
+    }
+
+    @GradleTest
+    @DisplayName("Multiplatform compiler option DSL hierarchy")
+    @JvmGradlePluginTests
+    fun mppCompilerOptionsDsl(gradleVersion: GradleVersion) {
+        project(
+            projectName = "mpp-default-hierarchy",
+            gradleVersion = gradleVersion,
+        ) {
+            buildGradle.modify {
+                it.substringBefore("kotlin {") +
+                        //language=Groovy
+                        """
+                        |
+                        |import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+                        |import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+                        |
+                        |kotlin {
+                        |    jvm {
+                        |        compilerOptions {
+                        |            languageVersion = KotlinVersion.KOTLIN_1_8
+                        |            apiVersion = KotlinVersion.KOTLIN_1_8
+                        |            jvmTarget.value(JvmTarget.JVM_11).disallowChanges()
+                        |            javaParameters = true
+                        |        }
+                        |    }
+                        |    
+                        |    js {
+                        |        compilerOptions {
+                        |            languageVersion = KotlinVersion.KOTLIN_2_0
+                        |            apiVersion = KotlinVersion.KOTLIN_2_0
+                        |            friendModulesDisabled = true
+                        |        }
+                        |    }
+                        |    
+                        |    linuxX64 {
+                        |        compilerOptions {
+                        |            progressiveMode = true
+                        |        }
+                        |    }
+                        |    
+                        |    compilerOptions {
+                        |         languageVersion = KotlinVersion.KOTLIN_1_7
+                        |         apiVersion = KotlinVersion.KOTLIN_1_7
+                        |    }    
+                        |}
+                        """.trimMargin()
+            }
+
+            build(":compileCommonMainKotlinMetadata") {
+                assertCompilerArguments(
+                    ":compileCommonMainKotlinMetadata",
+                    "-language-version 1.7", "-api-version 1.7",
+                    logLevel = LogLevel.INFO
+                )
+            }
+
+            build(":compileKotlinJvm") {
+                assertCompilerArguments(
+                    ":compileKotlinJvm",
+                    "-language-version 1.8",
+                    "-api-version 1.8",
+                    "-java-parameters",
+                    "-jvm-target 11",
+                    logLevel = LogLevel.INFO
+                )
+            }
+
+            build(":compileKotlinJs") {
+                assertCompilerArguments(
+                    ":compileKotlinJs",
+                    "-language-version 2.0", "-api-version 2.0", "-Xfriend-modules-disabled",
+                    logLevel = LogLevel.INFO
+                )
+            }
+
+            build(":compileKotlinLinuxX64") {
+                extractNativeTasksCommandLineArgumentsFromOutput(":compileKotlinLinuxX64") {
+                    assertCommandLineArgumentsContain(CommonCompilerArguments::languageVersion.cliArgument, "1.7")
+                    assertCommandLineArgumentsContain(CommonCompilerArguments::apiVersion.cliArgument, "1.7")
+                    assertCommandLineArgumentsContain("-progressive")
+                }
+            }
+        }
+    }
+
+
+    @DisplayName("KT-61303: Multiplatform/Android module name is changed")
+    @AndroidGradlePluginTests
+    @GradleAndroidTest
+    fun mppAndroidModuleNameCompilerOptionsDsl(
+        gradleVersion: GradleVersion,
+        agpVersion: String,
+        jdk: JdkVersions.ProvidedJdk
+    ) {
+        project(
+            projectName = "multiplatformAndroidSourceSetLayout2",
+            gradleVersion = gradleVersion,
+            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
+            buildJdk = jdk.location
+        ) {
+            buildGradleKts.appendText(
+                //language=Groovy
+                """
+                |
+                |kotlin {
+                |    androidTarget {
+                |        compilerOptions {
+                |            moduleName.set("my-custom-module")
+                |        }
+                |    }
+                |}
+                |
+                """.trimMargin()
+            )
+
+            build(":compileGermanFreeDebugKotlinAndroid") {
+                assertCompilerArguments(
+                    ":compileGermanFreeDebugKotlinAndroid",
+                    "-module-name my-custom-module_germanFreeDebug",
+                    logLevel = LogLevel.INFO
+                )
             }
         }
     }

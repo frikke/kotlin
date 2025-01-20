@@ -21,32 +21,37 @@ dependencies {
 
     compileOnly(intellijCore())
 
-    testCompileOnly(project(":kotlin-test:kotlin-test-jvm"))
-    testCompileOnly(project(":kotlin-test:kotlin-test-junit"))
+    testCompileOnly(kotlinTest("junit"))
     testApi(projectTests(":compiler:test-infrastructure"))
     testApi(projectTests(":compiler:test-infrastructure-utils"))
     testApi(projectTests(":compiler:tests-compiler-utils"))
     testApi(projectTests(":compiler:tests-common-new"))
     testApi(projectTests(":compiler:fir:analysis-tests"))
 
-    testApiJUnit5()
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 
     testRuntimeOnly(project(":core:deserialization"))
     testRuntimeOnly(project(":core:descriptors.runtime"))
     testRuntimeOnly(project(":core:descriptors.jvm"))
     testRuntimeOnly(project(":compiler:fir:fir2ir:jvm-backend"))
+    testRuntimeOnly(project(":kotlin-util-klib-abi"))
     testRuntimeOnly(project(":generators"))
 
     testCompileOnly(intellijCore())
     testRuntimeOnly(intellijCore())
 
+    testRuntimeOnly(toolsJar())
     testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps.jna:jna"))
-    testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps.fastutil:intellij-deps-fastutil"))
+    testRuntimeOnly(libs.intellij.fastutil)
     testRuntimeOnly(commonDependency("one.util:streamex"))
 
     testRuntimeOnly(jpsModel())
     testRuntimeOnly(jpsModelImpl())
 }
+
+optInToObsoleteDescriptorBasedAPI()
 
 val generationRoot = projectDir.resolve("tests-gen")
 
@@ -55,14 +60,6 @@ sourceSets {
     "test" {
         projectDefault()
         this.java.srcDir(generationRoot.name)
-    }
-}
-
-tasks {
-    val compileKotlin by existing(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class) {
-        kotlinOptions {
-            freeCompilerArgs += "-opt-in=org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI"
-        }
     }
 }
 
@@ -83,21 +80,33 @@ fun Test.configure(configureJUnit: JUnitPlatformOptions.() -> Unit = {}) {
 
 projectTest(
     jUnitMode = JUnitMode.JUnit5,
-    defineJDKEnvVariables = listOf(JdkMajorVersion.JDK_1_8, JdkMajorVersion.JDK_11_0, JdkMajorVersion.JDK_17_0)
+    defineJDKEnvVariables = listOf(JdkMajorVersion.JDK_1_8, JdkMajorVersion.JDK_11_0, JdkMajorVersion.JDK_17_0, JdkMajorVersion.JDK_21_0)
 ) {
     configure()
 }
 
-projectTest("aggregateTests", jUnitMode = JUnitMode.JUnit5) {
-    configure {
-        excludeTags("FirPsiCodegenTest")
+if (kotlinBuildProperties.isTeamcityBuild) {
+    projectTest("aggregateTests", jUnitMode = JUnitMode.JUnit5) {
+        configure {
+            excludeTags("FirPsiCodegenTest")
+        }
     }
-}
 
-projectTest("nightlyTests", jUnitMode = JUnitMode.JUnit5) {
-    configure {
-        includeTags("FirPsiCodegenTest")
+    projectTest("nightlyTests", jUnitMode = JUnitMode.JUnit5) {
+        configure {
+            includeTags("FirPsiCodegenTest")
+        }
     }
+} else {
+    /*
+     * There is no much sense in those configurations in the local development
+     * They actually reduce the UX of running tests, as IDEA suggests choosing one of three
+     *   test tasks when you run any test
+     * So to fix this inconvenience in local environment, those
+     *   tasks just do nothing (and not inherit TestTask), so the IDEA won't see them
+    */
+    tasks.create("aggregateTests")
+    tasks.create("nightlyTests")
 }
 
 testsJar()

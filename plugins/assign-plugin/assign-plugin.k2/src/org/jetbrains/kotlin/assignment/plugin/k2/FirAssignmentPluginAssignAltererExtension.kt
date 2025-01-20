@@ -18,7 +18,7 @@ import org.jetbrains.kotlin.fir.symbols.impl.FirBackingFieldSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirFieldSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirVariableSymbol
-import org.jetbrains.kotlin.fir.types.toRegularClassSymbol
+import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 import org.jetbrains.kotlin.fir.types.upperBoundIfFlexible
 import org.jetbrains.kotlin.types.expressions.OperatorConventions.ASSIGN_METHOD
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
@@ -51,17 +51,17 @@ class FirAssignmentPluginAssignAltererExtension(
         val leftResolvedType = leftSymbol.resolvedReturnTypeRef
         val rightArgument = variableAssignment.rValue
         return buildFunctionCall {
-            source = variableAssignment.source?.fakeElement(KtFakeSourceElementKind.DesugaredCompoundAssignment)
+            source = variableAssignment.source?.fakeElement(KtFakeSourceElementKind.AssignmentPluginAltered)
             explicitReceiver = buildPropertyAccessExpression {
                 source = leftArgument.source
-                typeRef = leftResolvedType
+                coneTypeOrNull = leftResolvedType.coneType
                 calleeReference = leftArgument
                 (variableAssignment.lValue as? FirQualifiedAccessExpression)?.typeArguments?.let(typeArguments::addAll)
                 annotations += variableAssignment.annotations
                 explicitReceiver = variableAssignment.explicitReceiver
                 dispatchReceiver = variableAssignment.dispatchReceiver
                 extensionReceiver = variableAssignment.extensionReceiver
-                contextReceiverArguments += variableAssignment.contextReceiverArguments
+                contextArguments += variableAssignment.contextArguments
             }
             argumentList = buildUnaryArgumentList(rightArgument)
             calleeReference = buildSimpleNamedReference {

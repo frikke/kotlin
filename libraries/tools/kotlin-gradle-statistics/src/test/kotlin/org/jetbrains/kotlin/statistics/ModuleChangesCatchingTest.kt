@@ -17,20 +17,20 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 private const val SOURCE_CODE_RELATIVE_PATH =
-    "libraries/tools/kotlin-gradle-statistics/src/main/kotlin/org/jetbrains/kotlin/statistics"
-private const val BOOLEAN_METRICS_RELATIVE_PATH = "$SOURCE_CODE_RELATIVE_PATH/metrics/BooleanMetrics.kt"
-private const val STRING_METRICS_RELATIVE_PATH = "$SOURCE_CODE_RELATIVE_PATH/metrics/StringMetrics.kt"
-private const val NUMERICAL_METRICS_RELATIVE_PATH = "$SOURCE_CODE_RELATIVE_PATH/metrics/NumericalMetrics.kt"
+    "libraries/tools/kotlin-gradle-statistics/src/main/kotlin/org/jetbrains/kotlin/statistics/metrics"
+private const val BOOLEAN_METRICS_RELATIVE_PATH = "$SOURCE_CODE_RELATIVE_PATH/BooleanMetrics.kt"
+private const val STRING_METRICS_RELATIVE_PATH = "$SOURCE_CODE_RELATIVE_PATH/StringMetrics.kt"
+private const val NUMERICAL_METRICS_RELATIVE_PATH = "$SOURCE_CODE_RELATIVE_PATH/NumericalMetrics.kt"
 
-private val STRING_METRICS_EXPECTED_VERSION_AND_HASH = Pair(1, "90347332db2ce54b51e7daa64595371e")
-private val BOOLEAN_METRICS_EXPECTED_VERSION_AND_HASH = Pair(1, "b1d0eb433e0df5544a33d4c944e66e45")
-private val NUMERICAL_METRICS_EXPECTED_VERSION_AND_HASH = Pair(1, "8fda0e0845f12f40346a9e4c5cae5989")
+private val STRING_METRICS_EXPECTED_VERSION_AND_HASH = Pair(2, "636529439256b809cd4fb99e20310505")
+private val BOOLEAN_METRICS_EXPECTED_VERSION_AND_HASH = Pair(13, "ba7fd08fe8ec00bd52de958c21335065")
+private val NUMERICAL_METRICS_EXPECTED_VERSION_AND_HASH = Pair(2, "d8c1a1f4fb7227fbe8247320bf3370ca")
 private val SOURCE_FOLDER_EXPECTED_VERSION_AND_HASH =
     Pair(
         STRING_METRICS_EXPECTED_VERSION_AND_HASH.first +
                 BOOLEAN_METRICS_EXPECTED_VERSION_AND_HASH.first +
                 NUMERICAL_METRICS_EXPECTED_VERSION_AND_HASH.first,
-        "31c6533f2b6d2bec302cc44172892e5f"
+        "8b845ce616f5bdb9b885ededcdfd812d"
     )
 private const val HASH_ALG = "MD5"
 
@@ -114,6 +114,7 @@ class ModuleChangesCatchingTest {
             .walk()
             .filter { file -> file.isFile }
             .filter { file -> !pathsToExclude.contains(file.absolutePath) }
+            .sorted()
             .map { file -> calculateMD5HashForFileContent(file.toPath()) }
             .fold(byteArrayOf()) { acc, fileHash -> acc + fileHash }
             .getMD5Hash()

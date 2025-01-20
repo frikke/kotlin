@@ -19,19 +19,33 @@ import org.jetbrains.kotlin.test.services.assertions
 import org.jetbrains.kotlin.test.services.sourceFileProvider
 
 abstract class AbstractFirIdenticalChecker(testServices: TestServices) : AfterAnalysisChecker(testServices) {
-    protected inner class SpecificHelper : FirIdenticalCheckerHelper(testServices) {
+    protected inner class Helper : FirIdenticalCheckerHelper(testServices) {
         override fun getClassicFileToCompare(testDataFile: File): File = testDataFile.originalTestDataFile
         override fun getFirFileToCompare(testDataFile: File): File = testDataFile.firTestDataFile
     }
 
-    protected val helper = SpecificHelper()
-
     protected abstract fun checkTestDataFile(testDataFile: File)
 
-    final override fun check(failedAssertions: List<WrappedException>) {
-        if (failedAssertions.isNotEmpty()) return
+    override val order: Order
+        get() = Order.P5
+
+    /**
+     * [org.jetbrains.kotlin.test.TestRunner] runs `check` for all checkers and then `suppressIfNeeded`
+     * for all checkers. Since this checker relies on the fact that there are no other failures in the
+     * test, we need to run it after all other suppressing checkers already suppressed all required
+     * failures
+     */
+    final override fun check(failedAssertions: List<WrappedException>) {}
+
+    final override fun suppressIfNeeded(failedAssertions: List<WrappedException>): List<WrappedException> {
+        if (failedAssertions.isNotEmpty()) return failedAssertions
         val testDataFile = testServices.moduleStructure.originalTestDataFiles.first()
-        checkTestDataFile(testDataFile)
+        return try {
+            checkTestDataFile(testDataFile)
+            emptyList()
+        } catch (e: Throwable) {
+            listOf(WrappedException.FromAfterAnalysisChecker(e))
+        }
     }
 
     /**
@@ -55,7 +69,7 @@ abstract class AbstractFirIdenticalChecker(testServices: TestServices) : AfterAn
                 isAdditional = false,
                 RegisteredDirectives.Empty,
             )
-        )
+        ).replace("\r", "")
         val processedLlContent = testServices.sourceFileProvider.getContentOfSourceFile(
             TestFile(
                 customFile.path,
@@ -65,7 +79,7 @@ abstract class AbstractFirIdenticalChecker(testServices: TestServices) : AfterAn
                 isAdditional = false,
                 RegisteredDirectives.Empty,
             )
-        )
+        ).replace("\r", "")
 
         testServices.assertions.assertEquals(processedBaseContent, processedLlContent, message)
     }

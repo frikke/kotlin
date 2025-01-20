@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -18,7 +18,7 @@ import org.jetbrains.kotlin.fir.diagnostics.ConeSimpleDiagnostic
 import org.jetbrains.kotlin.fir.diagnostics.DiagnosticKind
 import org.jetbrains.kotlin.fir.expressions.builder.buildAnnotation
 import org.jetbrains.kotlin.fir.expressions.builder.buildAnnotationArgumentMapping
-import org.jetbrains.kotlin.fir.expressions.builder.buildConstExpression
+import org.jetbrains.kotlin.fir.expressions.builder.buildLiteralExpression
 import org.jetbrains.kotlin.fir.symbols.*
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassLikeSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirTypeParameterSymbol
@@ -26,6 +26,7 @@ import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.fir.types.builder.buildResolvedTypeRef
 import org.jetbrains.kotlin.fir.types.impl.ConeClassLikeTypeImpl
 import org.jetbrains.kotlin.fir.types.impl.ConeTypeParameterTypeImpl
+import org.jetbrains.kotlin.fir.utils.exceptions.withConeTypeEntry
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
@@ -36,6 +37,8 @@ import org.jetbrains.kotlin.psi.stubs.elements.KtStubElementTypes
 import org.jetbrains.kotlin.psi.stubs.impl.*
 import org.jetbrains.kotlin.types.ConstantValueKind
 import org.jetbrains.kotlin.types.Variance
+import org.jetbrains.kotlin.utils.exceptions.errorWithAttachment
+import org.jetbrains.kotlin.utils.exceptions.withPsiEntry
 
 internal class StubBasedFirTypeDeserializer(
     private val moduleData: FirModuleData,
@@ -60,6 +63,7 @@ internal class StubBasedFirTypeDeserializer(
                 val symbol = FirTypeParameterSymbol().also {
                     typeParametersByName[name.asString()] = it
                 }
+
                 builders += FirTypeParameterBuilder().apply {
                     source = KtRealPsiSourceElement(typeParameter)
                     moduleData = this@StubBasedFirTypeDeserializer.moduleData
@@ -67,7 +71,11 @@ internal class StubBasedFirTypeDeserializer(
                     origin = initialOrigin
                     this.name = name
                     this.symbol = symbol
-                    this.containingDeclarationSymbol = containingSymbol ?: error("Top-level type parameter ???")
+                    this.containingDeclarationSymbol = containingSymbol ?: errorWithAttachment("Top-level type parameter ???") {
+                        withPsiEntry("owner", owner)
+                        withPsiEntry("parameter", typeParameter)
+                    }
+
                     variance = typeParameter.variance
                     isReified = typeParameter.hasModifier(KtTokens.REIFIED_KEYWORD)
                     annotations += annotationDeserializer.loadAnnotations(typeParameter)
@@ -97,7 +105,7 @@ internal class StubBasedFirTypeDeserializer(
         return buildResolvedTypeRef {
             source = KtRealPsiSourceElement(typeReference)
             annotations += annotationDeserializer.loadAnnotations(typeReference)
-            type = type(typeReference, annotations.computeTypeAttributes(moduleData.session, shouldExpandTypeAliases = false))
+            coneType = type(typeReference, annotations.computeTypeAttributes(moduleData.session, shouldExpandTypeAliases = false))
         }
     }
 
@@ -105,15 +113,15 @@ internal class StubBasedFirTypeDeserializer(
         val annotations = annotationDeserializer.loadAnnotations(typeReference).toMutableList()
         val parent = (typeReference.stub ?: loadStubByElement(typeReference))?.parentStub
         if (parent is KotlinParameterStubImpl) {
-            (parent as? KotlinParameterStubImpl)?.functionTypeParameterName?.let { paramName ->
+            parent.functionTypeParameterName?.let { paramName ->
                 annotations += buildAnnotation {
                     annotationTypeRef = buildResolvedTypeRef {
-                        type = StandardNames.FqNames.parameterNameClassId.toLookupTag()
-                            .constructClassType(ConeTypeProjection.EMPTY_ARRAY, isNullable = false)
+                        coneType = StandardNames.FqNames.parameterNameClassId.toLookupTag()
+                            .constructClassType()
                     }
                     this.argumentMapping = buildAnnotationArgumentMapping {
                         mapping[StandardNames.NAME] =
-                            buildConstExpression(null, ConstantValueKind.String, paramName, setType = true)
+                            buildLiteralExpression(null, ConstantValueKind.String, paramName, setType = true)
                     }
                 }
             }
@@ -127,7 +135,7 @@ internal class StubBasedFirTypeDeserializer(
                 val lookupTag =
                     typeParametersByName[type.typeParameterName]?.toLookupTag() ?: parent?.typeParameterSymbol(type.typeParameterName)
                     ?: return null
-                return ConeTypeParameterTypeImpl(lookupTag, isNullable = type.nullable).let {
+                return ConeTypeParameterTypeImpl(lookupTag, isMarkedNullable = type.nullable).let {
                     if (type.definitelyNotNull)
                         ConeDefinitelyNotNullType.create(it, moduleData.session.typeContext, avoidComprehensiveCheck = true) ?: it
                     else
@@ -135,51 +143,87 @@ internal class StubBasedFirTypeDeserializer(
                 }
             }
             is KotlinClassTypeBean -> {
-                val projections = type.arguments.map { typeArgumentBean ->
-                    val kind = typeArgumentBean.projectionKind
-                    if (kind == KtProjectionKind.STAR) {
-                        return@map ConeStarProjection
-                    }
-                    val argBean = typeArgumentBean.type!!
-                    val lowerBound = type(argBean) ?: error("Broken type argument ${typeArgumentBean.type}")
-                    typeArgument(lowerBound, kind)
-                }
-                return ConeClassLikeTypeImpl(
-                    type.classId.toLookupTag(),
-                    projections.toTypedArray(),
-                    isNullable = type.nullable,
-                    ConeAttributes.Empty
-                )
+                return deserializeClassType(type)
             }
             is KotlinFlexibleTypeBean -> {
                 val lowerBound = type(type.lowerBound)
                 val upperBound = type(type.upperBound)
                 return ConeFlexibleType(
-                    lowerBound as? ConeSimpleKotlinType ?: error("Unexpected lower bound $lowerBound"),
-                    upperBound as? ConeSimpleKotlinType ?: error("Unexpected upper bound $upperBound")
+                    lowerBound as? ConeSimpleKotlinType
+                        ?: errorWithAttachment("Unexpected lower bound ${lowerBound?.let { it::class }}") {
+                            withConeTypeEntry("lowerBound", lowerBound)
+                        },
+                    upperBound as? ConeSimpleKotlinType
+                        ?: errorWithAttachment("Unexpected lower bound ${upperBound?.let { it::class }}") {
+                            withConeTypeEntry("upperBound", upperBound)
+                        },
                 )
             }
         }
     }
 
-    private fun type(typeReference: KtTypeReference, attributes: ConeAttributes): ConeKotlinType {
-        val userType = typeReference.typeElement as? KtUserType
-        val upperBoundType = (userType?.let { it.stub ?: loadStubByElement(it) } as? KotlinUserTypeStubImpl)?.upperBound
-        if (upperBoundType != null) {
-            val lowerBound = simpleType(typeReference, attributes)
-            val upperBound = type(upperBoundType)
-
-            val isDynamic = lowerBound == moduleData.session.builtinTypes.nothingType.coneType &&
-                    upperBound == moduleData.session.builtinTypes.nullableAnyType.coneType
-
-            return if (isDynamic) {
-                ConeDynamicType.create(moduleData.session)
-            } else {
-                ConeFlexibleType(lowerBound!!, upperBound as ConeSimpleKotlinType)
+    private fun deserializeClassType(typeBean: KotlinClassTypeBean): ConeClassLikeType {
+        val projections = typeBean.arguments.map { typeArgumentBean ->
+            val kind = typeArgumentBean.projectionKind
+            if (kind == KtProjectionKind.STAR) {
+                return@map ConeStarProjection
             }
+            val argBean = typeArgumentBean.type!!
+            val lowerBound = type(argBean)
+                ?: errorWithAttachment("Broken type argument ${typeArgumentBean.type?.let { it::class }}") {
+                    withEntry("type", typeArgumentBean.type) { it.toString() }
+                }
+            typeArgument(lowerBound, kind)
         }
 
-        return simpleType(typeReference, attributes) ?: ConeErrorType(ConeSimpleDiagnostic("?!id:0", DiagnosticKind.DeserializationError))
+        val abbreviatedTypeAttribute = typeBean.abbreviatedType?.let { AbbreviatedTypeAttribute(deserializeClassType(it)) }
+        val attributes = ConeAttributes.create(listOfNotNull(abbreviatedTypeAttribute))
+
+        return ConeClassLikeTypeImpl(
+            typeBean.classId.toLookupTag(),
+            projections.toTypedArray(),
+            isMarkedNullable = typeBean.nullable,
+            attributes,
+        )
+    }
+
+    private fun type(typeReference: KtTypeReference, attributes: ConeAttributes): ConeKotlinType {
+        val unwrappedTypeElement = typeReference.typeElement?.unwrapNullability()
+        if (unwrappedTypeElement is KtDynamicType) {
+            return ConeDynamicType.create(moduleData.session)
+        }
+
+        return when (unwrappedTypeElement) {
+            is KtFunctionType -> deserializeFunctionType(typeReference, unwrappedTypeElement, attributes)
+            is KtUserType -> deserializeUserType(typeReference, unwrappedTypeElement, attributes)
+            else -> simpleTypeOrError(typeReference, attributes)
+        }
+    }
+
+    private fun deserializeFunctionType(typeReference: KtTypeReference, type: KtFunctionType, attributes: ConeAttributes): ConeKotlinType {
+        val stub = (type.stub ?: loadStubByElement(type)) as? KotlinFunctionTypeStubImpl
+        return simpleTypeOrError(typeReference, attributes.withAbbreviation(stub?.abbreviatedType))
+    }
+
+    private fun deserializeUserType(typeReference: KtTypeReference, type: KtUserType, attributes: ConeAttributes): ConeKotlinType {
+        val stub = (type.stub ?: loadStubByElement(type)) as? KotlinUserTypeStubImpl
+        val coneType = simpleTypeOrError(typeReference, attributes.withAbbreviation(stub?.abbreviatedType))
+
+        val upperBoundTypeBean = stub?.upperBound
+        return if (upperBoundTypeBean != null) {
+            val upperBoundType = type(upperBoundTypeBean)
+
+            // If an upper bound is specified, `typeReference` represents a flexible type. The cone type deserialized from `typeReference`
+            // is defined as the lower bound of this flexible type.
+            ConeFlexibleType(coneType, upperBoundType as ConeSimpleKotlinType)
+        } else {
+            coneType
+        }
+    }
+
+    private fun ConeAttributes.withAbbreviation(abbreviatedType: KotlinClassTypeBean?): ConeAttributes {
+        if (abbreviatedType == null) return this
+        return add(AbbreviatedTypeAttribute(deserializeClassType(abbreviatedType)))
     }
 
     private fun typeParameterSymbol(typeParameterName: String): ConeTypeParameterLookupTag? =
@@ -188,11 +232,11 @@ internal class StubBasedFirTypeDeserializer(
     fun FirClassLikeSymbol<*>.typeParameters(): List<FirTypeParameterSymbol> =
         (fir as? FirTypeParameterRefsOwner)?.typeParameters?.map { it.symbol }.orEmpty()
 
-    private fun simpleType(typeReference: KtTypeReference, attributes: ConeAttributes): ConeSimpleKotlinType? {
+    private fun simpleType(typeReference: KtTypeReference, attributes: ConeAttributes): ConeRigidType? {
         val constructor = typeSymbol(typeReference) ?: return null
         val isNullable = typeReference.typeElement is KtNullableType
         if (constructor is ConeTypeParameterLookupTag) {
-            return ConeTypeParameterTypeImpl(constructor, isNullable = isNullable).let {
+            return ConeTypeParameterTypeImpl(constructor, isMarkedNullable = isNullable, attributes).let {
                 if (typeReference.typeElement?.unwrapNullability() is KtIntersectionType) {
                     ConeDefinitelyNotNullType.create(it, moduleData.session.typeContext, avoidComprehensiveCheck = true) ?: it
                 } else it
@@ -202,31 +246,51 @@ internal class StubBasedFirTypeDeserializer(
 
         val typeElement = typeReference.typeElement?.unwrapNullability()
         val arguments = when (typeElement) {
-            is KtUserType -> typeElement.typeArguments.map { typeArgument(it) }.toTypedArray()
+            is KtUserType -> buildList {
+                // The type for Outer<T>.Inner<S> needs to have type args <S, T>
+                var current: KtUserType? = typeElement
+                while (current != null) {
+                    current.typeArguments.forEach { add(typeArgument(it)) }
+                    current = current.qualifier
+                }
+            }.toTypedArray()
             is KtFunctionType -> buildList {
                 typeElement.receiver?.let { add(type(it.typeReference).toTypeProjection(Variance.INVARIANT)) }
                 addAll(typeElement.parameters.map { type(it.typeReference!!).toTypeProjection(Variance.INVARIANT) })
                 add(type(typeElement.returnTypeReference!!).toTypeProjection(Variance.INVARIANT))
             }.toTypedArray()
-            else -> error("not supported $typeElement")
+            else -> errorWithAttachment("not supported ${typeElement?.let { it::class }}") {
+                withPsiEntry("typeElement", typeElement)
+            }
         }
 
         return ConeClassLikeTypeImpl(
             constructor,
             arguments,
-            isNullable = isNullable,
-            if (typeElement is KtFunctionType && typeElement.receiver != null) ConeAttributes.WithExtensionFunctionType else attributes
+            isMarkedNullable = isNullable,
+            if (typeElement is KtFunctionType && typeElement.receiver != null) {
+                ConeAttributes.WithExtensionFunctionType.add(attributes)
+            } else {
+                attributes
+            }
         )
     }
 
-    private fun KtElementImplStub<*>.getAllModifierLists(): Array<out KtDeclarationModifierList> =
-        getStubOrPsiChildren(KtStubElementTypes.MODIFIER_LIST, KtStubElementTypes.MODIFIER_LIST.arrayFactory)
+    private fun simpleTypeOrError(typeReference: KtTypeReference, attributes: ConeAttributes): ConeRigidType =
+        simpleType(typeReference, attributes) ?: ConeErrorType(ConeSimpleDiagnostic("?!id:0", DiagnosticKind.DeserializationError))
+
+    private fun KtFunctionType.isSuspend(): Boolean {
+        val parent = parent as? KtElementImplStub<*>
+            ?: error("Expected parent of KtTypeElement to have type KtElementImplStub<*>, but actual $parent")
+        val modifiers = parent.getStubOrPsiChildren(KtStubElementTypes.MODIFIER_LIST, KtStubElementTypes.MODIFIER_LIST.arrayFactory)
+        return modifiers.any { it.hasSuspendModifier() }
+    }
 
     private fun typeSymbol(typeReference: KtTypeReference): ConeClassifierLookupTag? {
         val typeElement = typeReference.typeElement?.unwrapNullability()
         if (typeElement is KtFunctionType) {
             val arity = (if (typeElement.receiver != null) 1 else 0) + typeElement.parameters.size
-            val isSuspend = typeReference.getAllModifierLists().any { it.hasSuspendModifier() }
+            val isSuspend = typeElement.isSuspend()
             val functionClassId = if (isSuspend) StandardNames.getSuspendFunctionClassId(arity) else StandardNames.getFunctionClassId(arity)
             return computeClassifier(functionClassId)
         }
@@ -294,6 +358,6 @@ internal fun KtUserType.classId(): ClassId {
     return ClassId(
         FqName.fromSegments(packageFragments),
         FqName.fromSegments(classFragments),
-        /* local = */ false
+        isLocal = false
     )
 }

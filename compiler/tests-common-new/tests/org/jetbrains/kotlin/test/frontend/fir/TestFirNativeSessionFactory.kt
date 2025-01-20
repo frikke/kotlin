@@ -5,6 +5,8 @@
 
 package org.jetbrains.kotlin.test.frontend.fir
 
+import org.jetbrains.kotlin.backend.common.CommonKLibResolver
+import org.jetbrains.kotlin.cli.common.messages.getLogger
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.fir.FirSession
@@ -27,9 +29,12 @@ object TestFirNativeSessionFactory {
         configuration: CompilerConfiguration,
         extensionRegistrars: List<FirExtensionRegistrar>,
         languageVersionSettings: LanguageVersionSettings,
-        registerExtraComponents: (FirSession) -> Unit = {},
     ): FirSession {
-        val resolvedLibraries = resolveLibraries(configuration, getAllNativeDependenciesPaths(module, testServices))
+        val resolvedLibraries = CommonKLibResolver.resolve(
+            getAllNativeDependenciesPaths(module, testServices),
+            configuration.getLogger(treatWarningsAsErrors = true),
+            knownIrProviders = listOf("kotlin.native.cinterop"), // FIXME use KonanLibraryProperResolver instead, as in production.
+        ).getFullResolvedList()
 
         return FirNativeSessionFactory.createLibrarySession(
             mainModuleName,
@@ -38,7 +43,6 @@ object TestFirNativeSessionFactory {
             moduleDataProvider,
             extensionRegistrars,
             languageVersionSettings,
-            registerExtraComponents,
         )
     }
 }

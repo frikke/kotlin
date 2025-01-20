@@ -6,9 +6,12 @@
 #include "KAssert.h"
 
 #include <array>
+#include <cinttypes>
 #include <cstdarg>
+#include <cstdlib>
 
 #include "std_support/Span.hpp"
+#include "CallsChecker.hpp"
 #include "Format.h"
 #include "Porting.h"
 #include "StackTrace.hpp"
@@ -20,6 +23,8 @@ namespace {
 THREAD_LOCAL_VARIABLE bool assertionReportInProgress = false;
 
 void PrintAssert(bool allowStacktrace, const char* location, const char* format, std::va_list args) noexcept {
+    CallsCheckerIgnoreGuard ignoreCallsChecker;
+
     if (assertionReportInProgress) {
         // WARNING: avoid anything that can assert ar panic here
         konan::consoleErrorf("An attempt to report an assertion lead to another failure:\n");
@@ -36,7 +41,7 @@ void PrintAssert(bool allowStacktrace, const char* location, const char* format,
     std::array<char, 1024> bufferStorage;
     std_support::span<char> buffer(bufferStorage);
 
-    buffer = FormatToSpan(buffer, "[tid#%d] ", konan::currentThreadId());
+    buffer = FormatToSpan(buffer, "[tid#%" PRIuPTR "] ", konan::currentThreadId());
 
     // Write the title with a source location.
     if (location != nullptr) {
@@ -69,5 +74,5 @@ RUNTIME_NORETURN void internal::RuntimeAssertFailedPanic(bool allowStacktrace, c
     va_start(args, format);
     PrintAssert(allowStacktrace, location, format, args);
     va_end(args);
-    konan::abort();
+    std::abort();
 }

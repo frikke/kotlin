@@ -10,14 +10,15 @@ dependencies {
     compileOnly(intellijCore())
     testApi(kotlinStdlib())
     testCompileOnly("org.jetbrains:annotations:13.0")
-    testApi(project(":kotlin-test:kotlin-test-jvm"))
-    testApi(project(":kotlin-test:kotlin-test-junit"))
-    testApi(commonDependency("junit:junit"))
+    testApi(kotlinTest("junit"))
+    testCompileOnly(libs.junit4)
     testCompileOnly(intellijCore())
 
+    testImplementation("org.junit.jupiter:junit-jupiter:${libs.versions.junit5.get()}")
+    testRuntimeOnly(libs.junit.vintage.engine)
+    testRuntimeOnly(libs.junit.platform.launcher)
     testRuntimeOnly(intellijCore())
-    testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps:trove4j"))
-    testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps.fastutil:intellij-deps-fastutil"))
+    testRuntimeOnly(libs.intellij.fastutil)
 }
 
 sourceSets {
@@ -29,4 +30,5 @@ testsJar {}
 
 projectTest(parallel = true) {
     workingDir = rootDir
+    useJUnitPlatform()
 }

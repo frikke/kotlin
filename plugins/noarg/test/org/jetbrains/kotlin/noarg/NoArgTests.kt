@@ -14,18 +14,11 @@ import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.runners.AbstractDiagnosticTest
 import org.jetbrains.kotlin.test.runners.AbstractFirPsiDiagnosticTest
 import org.jetbrains.kotlin.test.runners.codegen.*
-import org.jetbrains.kotlin.test.runners.configurationForClassicAndFirTestsAlongside
+import org.jetbrains.kotlin.test.configuration.configurationForClassicAndFirTestsAlongside
 import org.jetbrains.kotlin.test.services.EnvironmentConfigurator
 import org.jetbrains.kotlin.test.services.TestServices
 
 // ---------------------------- codegen ----------------------------
-
-open class AbstractBlackBoxCodegenTestForNoArg : AbstractBlackBoxCodegenTest() {
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.enableNoArg()
-    }
-}
 
 open class AbstractIrBlackBoxCodegenTestForNoArg : AbstractIrBlackBoxCodegenTest() {
     override fun configure(builder: TestConfigurationBuilder) {
@@ -42,13 +35,6 @@ open class AbstractFirLightTreeBlackBoxCodegenTestForNoArg : AbstractFirLightTre
 }
 
 // ---------------------------- bytecode ----------------------------
-
-open class AbstractBytecodeListingTestForNoArg : AbstractBytecodeListingTest() {
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.enableNoArg()
-    }
-}
 
 open class AbstractIrBytecodeListingTestForNoArg : AbstractIrBytecodeListingTest() {
     override fun configure(builder: TestConfigurationBuilder) {
@@ -98,12 +84,7 @@ class NoArgEnvironmentConfigurator(testServices: TestServices) : EnvironmentConf
         module: TestModule,
         configuration: CompilerConfiguration
     ) {
-        NoArgComponentRegistrar.registerNoArgComponents(
-            this,
-            NOARG_ANNOTATIONS,
-            useIr = module.targetBackend?.isIR == true,
-            invokeInitializers = NoArgDirectives.INVOKE_INITIALIZERS in module.directives
-        )
+        NoArgComponentRegistrar.registerNoArgComponents(this, NOARG_ANNOTATIONS, NoArgDirectives.INVOKE_INITIALIZERS in module.directives)
     }
 }
 

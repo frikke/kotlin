@@ -10,6 +10,7 @@ import org.gradle.api.Task
 import org.gradle.api.artifacts.Dependency
 import org.jetbrains.kotlin.gradle.plugin.getKotlinPluginVersion
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -23,10 +24,16 @@ fun Task.assertDependsOn(other: Task) {
     }
 }
 
+fun Task.assertNotDependsOn(other: Task) {
+    if (isDependsOn(other)) {
+        fail("Expected ${this.path} not to depend on ${other.path}")
+    }
+}
+
 fun Task.assertNoCircularTaskDependencies() {
     data class TaskAndDependants(
         val task: Task,
-        val dependants: List<Task>
+        val dependants: List<Task>,
     )
 
     val visited = mutableSetOf<Task>()
@@ -63,6 +70,12 @@ fun Project.assertContainsNoTaskWithName(taskName: String) {
     if (taskName in tasks.names) {
         fail("Expected *no* task with name $taskName in project ${this.path}")
     }
+}
+
+inline fun <reified T : Task> Project.assertContainsTaskInstance(taskName: String): T {
+    assertContainsTaskWithName(taskName)
+    val task = tasks.getByName(taskName)
+    return assertIsInstance<T>(task)
 }
 
 fun Project.assertContainsDependencies(configurationName: String, vararg dependencyNotations: Any, exhaustive: Boolean = false) {
@@ -110,4 +123,53 @@ fun Project.assertNotContainsDependencies(configurationName: String, vararg depe
 inline fun <reified T> assertIsInstance(value: Any?): T {
     if (value is T) return value
     fail("Expected $value to implement ${T::class.java}")
+}
+
+/**
+ * Assert that given consumable configuration [configurationName] depends on [expectedTaskNames] tasks
+ */
+fun Project.assertConfigurationsHaveTaskDependencies(
+    configurationName: String,
+    vararg expectedTaskNames: String,
+) {
+    val actualNames = configurations
+        .getByName(configurationName)
+        .outgoing
+        .artifacts
+        .buildDependencies.getDependencies(null)
+        .map { it.path }
+
+    assertEquals(expectedTaskNames.toSet(), actualNames.toSet(), "Unexpected task dependencies for $configurationName")
+}
+
+/** Assert that [actual] contains substring [expected] */
+fun assertContains(
+    expected: String,
+    actual: String,
+    ignoreCase: Boolean = false,
+) {
+    if (!actual.contains(expected, ignoreCase = ignoreCase)) {
+        fail("expected:<string contains '$expected' (ignoreCase:$ignoreCase)> but was:<$actual>")
+    }
+}
+
+/** Assert that [actual] does _not_ contain substring [expected] */
+fun assertNotContains(
+    expected: String,
+    actual: String,
+    ignoreCase: Boolean = false,
+) {
+    if (actual.contains(expected, ignoreCase = ignoreCase)) {
+        fail("expected:<string does not contain '$expected' (ignoreCase:$ignoreCase)> but was:<$actual>")
+    }
+}
+
+inline fun <reified T : Throwable> assertFailsWithChainedCause(block: () -> Unit): T {
+    val throwable = assertFails(block)
+    var cause: Throwable? = throwable
+    while (cause != null) {
+        if (cause is T) return cause
+        cause = cause.cause
+    }
+    fail("Expected to fail with ${T::class.java.name} but failed with ${throwable::class.java.name}")
 }

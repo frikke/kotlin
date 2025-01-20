@@ -18,8 +18,8 @@ import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.bundling.Zip
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilation
 import org.jetbrains.kotlin.gradle.plugin.categoryByName
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinJsCompilation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinUsages
+import org.jetbrains.kotlin.gradle.plugin.mpp.fileExtension
 import org.jetbrains.kotlin.gradle.plugin.mpp.isMain
 import org.jetbrains.kotlin.gradle.plugin.sources.KotlinDependencyScope
 import org.jetbrains.kotlin.gradle.plugin.sources.compilationDependencyConfigurationByScope
@@ -27,14 +27,13 @@ import org.jetbrains.kotlin.gradle.plugin.sources.sourceSetDependencyConfigurati
 import org.jetbrains.kotlin.gradle.plugin.usesPlatformOf
 import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrCompilation
 import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrTarget
-import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNodeJsExtension
+import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNodeJsRootExtension
 import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNpmResolutionManager
 import org.jetbrains.kotlin.gradle.targets.js.npm.*
 import org.jetbrains.kotlin.gradle.targets.js.npm.tasks.KotlinPackageJsonTask
 import org.jetbrains.kotlin.gradle.tasks.registerTask
-import org.jetbrains.kotlin.gradle.utils.CompositeProjectComponentArtifactMetadata
-import org.jetbrains.kotlin.gradle.utils.`is`
-import org.jetbrains.kotlin.gradle.utils.topRealPath
+import org.jetbrains.kotlin.gradle.utils.*
+import org.jetbrains.kotlin.gradle.utils.createResolvable
 import java.io.Serializable
 
 /**
@@ -42,7 +41,7 @@ import java.io.Serializable
  */
 class KotlinCompilationNpmResolver(
     val projectResolver: KotlinProjectNpmResolver,
-    val compilation: KotlinJsCompilation,
+    val compilation: KotlinJsIrCompilation,
 ) : Serializable {
     var rootResolver = projectResolver.resolver
 
@@ -65,20 +64,22 @@ class KotlinCompilationNpmResolver(
 
     val publicPackageJsonTaskHolder: TaskProvider<PublicPackageJsonTask> = run {
         val npmResolutionManager = project.kotlinNpmResolutionManager
-        val nodeJsTaskProviders = project.rootProject.kotlinNodeJsExtension
+        val nodeJsTaskProviders = project.rootProject.kotlinNodeJsRootExtension
         project.registerTask<PublicPackageJsonTask>(
             npmProject.publicPackageJsonTaskName
         ) {
             it.dependsOn(packageJsonTaskHolder)
 
             it.compilationDisambiguatedName.set(compilation.disambiguatedName)
+            it.packageJsonHandlers.set(compilation.packageJsonHandlers)
 
             it.npmResolutionManager.value(npmResolutionManager)
                 .disallowChanges()
 
-            it.jsIrCompilation.set(compilation is KotlinJsIrCompilation)
+            it.jsIrCompilation.set(true)
             it.npmProjectName.set(npmProject.name)
             it.npmProjectMain.set(npmProject.main)
+            it.extension.set(compilation.fileExtension)
         }.also { packageJsonTask ->
             project.dependencies.attributesSchema {
                 it.attribute(publicPackageJsonAttribute)
@@ -91,9 +92,10 @@ class KotlinCompilationNpmResolver(
             if (compilation.isMain()) {
                 project.tasks
                     .withType(Zip::class.java)
-                    .named(npmProject.target.artifactsTaskName)
-                    .configure {
-                        it.dependsOn(packageJsonTask)
+                    .configureEach {
+                        if (it.name == npmProject.target.artifactsTaskName) {
+                            it.dependsOn(packageJsonTask)
+                        }
                     }
 
                 val publicPackageJsonConfiguration = createPublicPackageJsonConfiguration()
@@ -130,15 +132,13 @@ class KotlinCompilationNpmResolver(
     }
 
     private fun createAggregatedConfiguration(): Configuration {
-        val all = project.configurations.create(compilation.npmAggregatedConfigurationName)
+        val all = project.configurations.createResolvable(compilation.npmAggregatedConfigurationName)
 
         all.usesPlatformOf(target)
-        all.attributes.attribute(Usage.USAGE_ATTRIBUTE, KotlinUsages.consumerRuntimeUsage(target))
-        all.attributes.attribute(Category.CATEGORY_ATTRIBUTE, project.categoryByName(Category.LIBRARY))
-        all.attributes.attribute(publicPackageJsonAttribute, PUBLIC_PACKAGE_JSON_ATTR_VALUE)
+        all.attributes.setAttribute(Usage.USAGE_ATTRIBUTE, KotlinUsages.consumerRuntimeUsage(target))
+        all.attributes.setAttribute(Category.CATEGORY_ATTRIBUTE, project.categoryByName(Category.LIBRARY))
+        all.attributes.setAttribute(publicPackageJsonAttribute, PUBLIC_PACKAGE_JSON_ATTR_VALUE)
         all.isVisible = false
-        all.isCanBeConsumed = false
-        all.isCanBeResolved = true
         all.description = "NPM configuration for $compilation."
 
         KotlinDependencyScope.values().forEach { scope ->
@@ -153,22 +153,17 @@ class KotlinCompilationNpmResolver(
             }
         }
 
-        // We don't have `kotlin-js-test-runner` in NPM yet
-        all.dependencies.add(rootResolver.versions.kotlinJsTestRunner.createDependency(project))
-
         return all
     }
 
     private fun createPublicPackageJsonConfiguration(): Configuration {
-        val all = project.configurations.create(compilation.publicPackageJsonConfigurationName)
+        val all = project.configurations.createConsumable(compilation.publicPackageJsonConfigurationName)
 
         all.usesPlatformOf(target)
-        all.attributes.attribute(Usage.USAGE_ATTRIBUTE, KotlinUsages.consumerRuntimeUsage(target))
-        all.attributes.attribute(Category.CATEGORY_ATTRIBUTE, project.categoryByName(Category.LIBRARY))
-        all.attributes.attribute(publicPackageJsonAttribute, PUBLIC_PACKAGE_JSON_ATTR_VALUE)
+        all.attributes.setAttribute(Usage.USAGE_ATTRIBUTE, KotlinUsages.consumerRuntimeUsage(target))
+        all.attributes.setAttribute(Category.CATEGORY_ATTRIBUTE, project.categoryByName(Category.LIBRARY))
+        all.attributes.setAttribute(publicPackageJsonAttribute, PUBLIC_PACKAGE_JSON_ATTR_VALUE)
         all.isVisible = false
-        all.isCanBeConsumed = true
-        all.isCanBeResolved = false
 
         return all
     }
@@ -201,12 +196,12 @@ class KotlinCompilationNpmResolver(
 
             //TODO: rewrite when we get general way to have inter compilation dependencies
             if (compilation.name == KotlinCompilation.TEST_COMPILATION_NAME) {
-                val main = compilation.target.compilations.findByName(KotlinCompilation.MAIN_COMPILATION_NAME) as KotlinJsCompilation
+                val main = compilation.target.compilations.findByName(KotlinCompilation.MAIN_COMPILATION_NAME) as KotlinJsIrCompilation
                 internalDependencies.add(
                     InternalDependency(
                         projectResolver.projectPath,
                         main.disambiguatedName,
-                        projectResolver[main].npmProject.name
+                        projectResolver[main].compilation.outputModuleName.get()
                     )
                 )
             }
@@ -263,16 +258,6 @@ class KotlinCompilationNpmResolver(
             dependency: ResolvedDependency,
             componentIdentifier: ProjectComponentIdentifier,
         ) {
-            check(target is KotlinJsIrTarget) {
-                """
-                Composite builds for Kotlin/JS are supported only for IR compiler.
-                Use kotlin.js.compiler=ir in gradle.properties or
-                js(IR) {
-                ...
-                }
-                """.trimIndent()
-            }
-
             (componentIdentifier as DefaultProjectComponentIdentifier).let { identifier ->
                 val includedBuild = project.gradle.includedBuild(identifier.identityPath.topRealPath().name!!)
                 internalCompositeDependencies.add(
@@ -293,7 +278,7 @@ class KotlinCompilationNpmResolver(
                         InternalDependency(
                             dependentResolver.projectPath,
                             dependentResolver.compilationDisambiguatedName,
-                            dependentResolver.npmProject.name
+                            dependentResolver.compilation.outputModuleName.get()
                         )
                     )
                 }
@@ -312,14 +297,9 @@ class KotlinCompilationNpmResolver(
             externalNpmDependencies,
             fileCollectionDependencies,
             projectPath,
-            rootResolver.projectPackagesDir,
-            rootResolver.rootProjectDir,
             compilationDisambiguatedName,
-            npmProject.name,
+            compilation.outputModuleName.get(),
             npmVersion,
-            npmProject.main,
-            npmProject.packageJsonFile,
-            npmProject.dir,
             rootResolver.tasksRequirements
         )
     }

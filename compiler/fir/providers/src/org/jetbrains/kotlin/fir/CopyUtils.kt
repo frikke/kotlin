@@ -5,11 +5,9 @@
 
 package org.jetbrains.kotlin.fir
 
+import org.jetbrains.kotlin.KtSourceElement
 import org.jetbrains.kotlin.builtins.StandardNames
-import org.jetbrains.kotlin.fir.declarations.FirDeclaration
-import org.jetbrains.kotlin.fir.declarations.toAnnotationClassId
 import org.jetbrains.kotlin.fir.declarations.utils.expandedConeType
-import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnostic
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.expressions.builder.FirImplicitInvokeCallBuilder
 import org.jetbrains.kotlin.fir.expressions.builder.buildImplicitInvokeCall
@@ -42,34 +40,26 @@ inline fun FirFunctionCall.copyAsImplicitInvokeCall(
 }
 
 fun FirTypeRef.resolvedTypeFromPrototype(
-    type: ConeKotlinType
+    type: ConeKotlinType,
+    fallbackSource: KtSourceElement? = null,
 ): FirResolvedTypeRef {
+    if (this is FirResolvedTypeRef) {
+        return withReplacedSourceAndType(this@resolvedTypeFromPrototype.source ?: fallbackSource, type)
+    }
     return if (type is ConeErrorType) {
         buildErrorTypeRef {
-            source = this@resolvedTypeFromPrototype.source
-            this.type = type
+            source = this@resolvedTypeFromPrototype.source ?: fallbackSource
+            this.coneType = type
             diagnostic = type.diagnostic
+            annotations += this@resolvedTypeFromPrototype.annotations
         }
     } else {
         buildResolvedTypeRef {
-            source = this@resolvedTypeFromPrototype.source
-            this.type = type
-            delegatedTypeRef = when (val original = this@resolvedTypeFromPrototype) {
-                is FirResolvedTypeRef -> original.delegatedTypeRef
-                is FirUserTypeRef -> original
-                else -> null
-            }
+            source = this@resolvedTypeFromPrototype.source ?: fallbackSource
+            this.coneType = type
+            delegatedTypeRef = this@resolvedTypeFromPrototype as? FirUserTypeRef
             annotations += this@resolvedTypeFromPrototype.annotations
         }
-    }
-}
-
-fun FirTypeRef.errorTypeFromPrototype(
-    diagnostic: ConeDiagnostic
-): FirErrorTypeRef {
-    return buildErrorTypeRef {
-        source = this@errorTypeFromPrototype.source
-        this.diagnostic = diagnostic
     }
 }
 
@@ -80,7 +70,7 @@ fun FirTypeRef.errorTypeFromPrototype(
 fun List<FirAnnotation>.computeTypeAttributes(
     session: FirSession,
     predefined: List<ConeAttribute<*>> = emptyList(),
-    containerDeclaration: FirDeclaration? = null,
+    allowExtensionFunctionType: Boolean = true,
     shouldExpandTypeAliases: Boolean
 ): ConeAttributes {
     if (this.isEmpty()) {
@@ -88,24 +78,37 @@ fun List<FirAnnotation>.computeTypeAttributes(
         return ConeAttributes.create(predefined)
     }
     val attributes = mutableListOf<ConeAttribute<*>>()
+    var parameterName: ParameterNameTypeAttribute? = null
     attributes += predefined
     val customAnnotations = mutableListOf<FirAnnotation>()
     for (annotation in this) {
         val classId = when (shouldExpandTypeAliases) {
             true -> annotation.tryExpandClassId(session)
-            false -> annotation.typeRef.coneType.classId
+            false -> annotation.resolvedType.classId
         }
         when (classId) {
             CompilerConeAttributes.Exact.ANNOTATION_CLASS_ID -> attributes += CompilerConeAttributes.Exact
             CompilerConeAttributes.NoInfer.ANNOTATION_CLASS_ID -> attributes += CompilerConeAttributes.NoInfer
-            CompilerConeAttributes.ExtensionFunctionType.ANNOTATION_CLASS_ID -> attributes += CompilerConeAttributes.ExtensionFunctionType
+            CompilerConeAttributes.ExtensionFunctionType.ANNOTATION_CLASS_ID -> when {
+                allowExtensionFunctionType -> attributes += CompilerConeAttributes.ExtensionFunctionType
+            }
             CompilerConeAttributes.ContextFunctionTypeParams.ANNOTATION_CLASS_ID ->
                 attributes +=
                     CompilerConeAttributes.ContextFunctionTypeParams(
-                        annotation.extractContextReceiversCount() ?: 0
+                        annotation.extractContextParameterCount() ?: 0
                     )
-
+            ParameterNameTypeAttribute.ANNOTATION_CLASS_ID -> {
+                // ConeAttributes.create() will always take the last attribute of a given type,
+                // where ParameterName should prefer the first annotation.
+                if (parameterName == null) {
+                    parameterName = ParameterNameTypeAttribute(annotation)
+                } else {
+                    // Preserve repeated ParameterName annotations to check for repeated errors.
+                    parameterName = ParameterNameTypeAttribute(parameterName.annotation, parameterName.others + annotation)
+                }
+            }
             CompilerConeAttributes.UnsafeVariance.ANNOTATION_CLASS_ID -> attributes += CompilerConeAttributes.UnsafeVariance
+            CompilerConeAttributes.EnhancedNullability.ANNOTATION_CLASS_ID -> attributes += CompilerConeAttributes.EnhancedNullability
             else -> {
                 val attributeFromPlugin = session.extensionService.typeAttributeExtensions.firstNotNullOfOrNull {
                     it.extractAttributeFromAnnotation(annotation)
@@ -119,8 +122,11 @@ fun List<FirAnnotation>.computeTypeAttributes(
         }
     }
 
+    if (parameterName != null) {
+        attributes += parameterName
+    }
     if (customAnnotations.isNotEmpty()) {
-        attributes += CustomAnnotationTypeAttribute(customAnnotations, containerDeclaration?.symbol)
+        attributes += CustomAnnotationTypeAttribute(customAnnotations)
     }
 
     return ConeAttributes.create(attributes)
@@ -133,5 +139,5 @@ private fun FirAnnotation.tryExpandClassId(session: FirSession): ClassId? {
     }
 }
 
-private fun FirAnnotation.extractContextReceiversCount() =
-    (argumentMapping.mapping[StandardNames.CONTEXT_FUNCTION_TYPE_PARAMETER_COUNT_NAME] as? FirConstExpression<*>)?.value as? Int
+private fun FirAnnotation.extractContextParameterCount() =
+    (argumentMapping.mapping[StandardNames.CONTEXT_FUNCTION_TYPE_PARAMETER_COUNT_NAME] as? FirLiteralExpression)?.value as? Int

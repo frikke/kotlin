@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.fir.analysis.checkers.declaration
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.hasModifier
 import org.jetbrains.kotlin.fir.analysis.diagnostics.FirErrors
@@ -21,7 +22,7 @@ import org.jetbrains.kotlin.name.isSubpackageOf
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
 
-object FirOperatorModifierChecker : FirSimpleFunctionChecker() {
+object FirOperatorModifierChecker : FirSimpleFunctionChecker(MppCheckerKind.Common) {
 
     override fun check(declaration: FirSimpleFunction, context: CheckerContext, reporter: DiagnosticReporter) {
         if (!declaration.isOperator) return
@@ -39,22 +40,5 @@ object FirOperatorModifierChecker : FirSimpleFunctionChecker() {
                 return
             }
         }
-
-        checkReplaceableLegacyOperators(declaration, context, reporter)
-    }
-
-    private fun checkReplaceableLegacyOperators(declaration: FirSimpleFunction, context: CheckerContext, reporter: DiagnosticReporter) {
-        val replacement = OperatorNameConventions.MOD_OPERATORS_REPLACEMENT[declaration.name] ?: return
-
-        val diagnostic = if (
-            declaration.symbol.callableId.packageName.isSubpackageOf(StandardClassIds.BASE_KOTLIN_PACKAGE) ||
-            !context.languageVersionSettings.supportsFeature(LanguageFeature.ProhibitOperatorMod)
-        ) {
-            FirErrors.DEPRECATED_BINARY_MOD
-        } else {
-            FirErrors.FORBIDDEN_BINARY_MOD
-        }
-
-        reporter.reportOn(declaration.source, diagnostic, declaration.symbol, replacement.asString(), context)
     }
 }

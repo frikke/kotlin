@@ -7,6 +7,9 @@ package org.jetbrains.kotlin.gradle.android
 
 import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.kotlin.dsl.getByType
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.dsl.HasConfigurableKotlinCompilerOptions
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompilerOptions
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.mpp.external.DecoratedExternalKotlinTarget
 
@@ -17,10 +20,14 @@ data class PrototypeAndroidDsl(
 class PrototypeAndroidTarget(
     delegate: Delegate,
     val androidDsl: PrototypeAndroidDsl
-) : DecoratedExternalKotlinTarget(delegate) {
+) : DecoratedExternalKotlinTarget(delegate),
+    HasConfigurableKotlinCompilerOptions<KotlinJvmCompilerOptions> {
     internal val kotlin = super.project.extensions.getByType<KotlinMultiplatformExtension>()
 
     @Suppress("unchecked_cast")
     override val compilations: NamedDomainObjectContainer<PrototypeAndroidCompilation>
         get() = super.compilations as NamedDomainObjectContainer<PrototypeAndroidCompilation>
+
+    override val compilerOptions: KotlinJvmCompilerOptions
+        get() = super.compilerOptions as KotlinJvmCompilerOptions
 }

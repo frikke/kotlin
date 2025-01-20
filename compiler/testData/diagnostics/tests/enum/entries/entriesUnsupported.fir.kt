@@ -1,4 +1,6 @@
-// !LANGUAGE: -EnumEntries
+// RUN_PIPELINE_TILL: FRONTEND
+// DISABLE_NEXT_PHASE_SUGGESTION: Disabling EnumEntries is not normal operation mode
+// LANGUAGE: -EnumEntries
 // WITH_STDLIB
 // ISSUE: KT-55251
 

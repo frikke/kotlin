@@ -8,23 +8,25 @@ package org.jetbrains.kotlin.konan.target
 import org.jetbrains.kotlin.konan.target.KonanTarget.*
 import java.lang.Exception
 
-// TODO: Consider redesigning experimental targets support (e.g. by getting rid of such separation at all).
-open class HostManager(
-    subTargetProvider: SubTargetProvider = SubTargetProvider.NoSubTargets,
-    private val experimental: Boolean = false
-) {
+@Suppress("DEPRECATION") // Uses deprecated SubTargetProvider in other deprecated APIs
+open class HostManager() {
+    fun targetManager(userRequest: String? = null): TargetManager = TargetManagerImpl(userRequest, this)
 
+    @Suppress("UNUSED_PARAMETER")
+    @Deprecated(level = DeprecationLevel.HIDDEN, message = "Kept for binary compatibility of Gradle plugins")
+    constructor(
+        subTargetProvider: SubTargetProvider = SubTargetProvider.NoSubTargets,
+        experimental: Boolean = false
+    ) : this()
+
+    @Suppress("UNUSED_PARAMETER")
+    @Deprecated(level = DeprecationLevel.HIDDEN, message = "Kept for binary compatibility of Gradle plugins")
     constructor(
         distribution: Distribution,
         experimental: Boolean = false
-    ) : this(distribution.subTargetProvider, experimental || distribution.experimentalEnabled)
+    ) : this()
 
-    fun targetManager(userRequest: String? = null): TargetManager = TargetManagerImpl(userRequest, this)
-
-    private val zephyrSubtargets = subTargetProvider.availableSubTarget("zephyr").map { ZEPHYR(it) }
-    private val configurableSubtargets = zephyrSubtargets
-
-    val targetValues: List<KonanTarget> by lazy { KonanTarget.predefinedTargets.values + configurableSubtargets }
+    val targetValues: List<KonanTarget> by lazy { KonanTarget.predefinedTargets.values.toList() }
 
     val targets = targetValues.associateBy { it.visibleName }
 
@@ -50,27 +52,21 @@ open class HostManager(
         LINUX_X64,
         LINUX_ARM32_HFP,
         LINUX_ARM64,
-        LINUX_MIPS32,
-        LINUX_MIPSEL32,
-        MINGW_X86,
         MINGW_X64,
         ANDROID_X86,
         ANDROID_X64,
         ANDROID_ARM32,
         ANDROID_ARM64,
-        WASM32
     )
 
     private val appleTargets = setOf(
         MACOS_X64,
         MACOS_ARM64,
-        IOS_ARM32,
         IOS_ARM64,
         IOS_X64,
         IOS_SIMULATOR_ARM64,
         WATCHOS_ARM32,
         WATCHOS_ARM64,
-        WATCHOS_X86,
         WATCHOS_X64,
         WATCHOS_SIMULATOR_ARM64,
         WATCHOS_DEVICE_ARM64,
@@ -79,40 +75,15 @@ open class HostManager(
         TVOS_SIMULATOR_ARM64,
     )
 
-    private val enabledRegularByHost: Map<KonanTarget, Set<KonanTarget>> = mapOf(
+    val enabledByHost: Map<KonanTarget, Set<KonanTarget>> = mapOf(
         LINUX_X64 to commonTargets,
         MINGW_X64 to commonTargets,
         MACOS_X64 to commonTargets + appleTargets,
         MACOS_ARM64 to commonTargets + appleTargets
     )
 
-    private val enabledExperimentalByHost: Map<KonanTarget, Set<KonanTarget>> = mapOf(
-        LINUX_X64 to zephyrSubtargets.toSet(),
-        MACOS_X64 to zephyrSubtargets.toSet(),
-        MINGW_X64 to zephyrSubtargets.toSet(),
-        MACOS_ARM64 to emptySet()
-    )
-
-    val enabledByHost: Map<KonanTarget, Set<KonanTarget>> by lazy {
-        val result = enabledRegularByHost.toMutableMap()
-        if (experimental) {
-            enabledExperimentalByHost.forEach { (k, v) ->
-                result.merge(k, v) { old, new -> old + new }
-            }
-        }
-        result.toMap()
-    }
-
-    private val enabledRegular: List<KonanTarget> by lazy {
-        enabledRegularByHost[host]?.toList() ?: throw TargetSupportException("Unknown host platform: $host")
-    }
-
-    private val enabledExperimental: List<KonanTarget> by lazy {
-        enabledExperimentalByHost[host]?.toList() ?: throw TargetSupportException("Unknown host platform: $host")
-    }
-
     val enabled: List<KonanTarget>
-        get() = if (experimental) enabledRegular + enabledExperimental else enabledRegular
+        get() = enabledByHost[host]?.toList() ?: throw TargetSupportException("Unknown host platform: $host")
 
     fun isEnabled(target: KonanTarget) = enabled.contains(target)
 
@@ -180,7 +151,16 @@ open class HostManager(
             Pair("windows", "x86_64") to MINGW_X64
         )
 
-        val host: KonanTarget = determineHost(hostOs(), hostArchOrNull())
+        val host: KonanTarget get() = determineHost(hostOs(), hostArchOrNull())
+
+        /** Returns [KonanTarget] representing current host
+         *  or `null` if current host is unknown for Kotlin Native */
+        val hostOrNull: KonanTarget?
+            get() = try {
+                host
+            } catch (_: TargetSupportException) {
+                null
+            }
 
         private fun determineHost(os: String, arch: String?): KonanTarget {
             hostMapping[os to arch]?.let {
@@ -199,15 +179,13 @@ open class HostManager(
         val defaultJvmArgs = listOf("-XX:TieredStopAtLevel=1", "-ea", "-Dfile.encoding=UTF-8")
         val regularJvmArgs = defaultJvmArgs + "-Xmx3G"
 
-        val hostIsMac = (host.family == Family.OSX)
-        val hostIsLinux = (host.family == Family.LINUX)
-        val hostIsMingw = (host.family == Family.MINGW)
+        val hostIsMac get() = hostOrNull?.family == Family.OSX
+        val hostIsLinux get() = hostOrNull?.family == Family.LINUX
+        val hostIsMingw get() = hostOrNull?.family == Family.MINGW
 
         @JvmStatic
         val hostName: String
             get() = host.name
-
-        val knownTargetTemplates = listOf("zephyr")
 
         private val targetAliasResolutions = mapOf(
             "linux" to "linux_x64",

@@ -8,12 +8,15 @@ package org.jetbrains.kotlin.gradle.plugin.mpp.external
 import org.gradle.api.*
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.attributes.AttributeContainer
-import org.gradle.api.component.SoftwareComponent
 import org.gradle.api.logging.Logger
 import org.gradle.api.logging.Logging
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.TaskProvider
+import org.jetbrains.kotlin.gradle.ComposeKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.InternalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.PRESETS_API_IS_DEPRECATED_MESSAGE
+import org.jetbrains.kotlin.gradle.dsl.HasConfigurableKotlinCompilerOptions
+import org.jetbrains.kotlin.gradle.dsl.KotlinCommonCompilerOptions
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 import org.jetbrains.kotlin.gradle.plugin.KotlinTargetComponent
@@ -27,14 +30,18 @@ internal class ExternalKotlinTargetImpl internal constructor(
     override val targetName: String,
     override val platformType: KotlinPlatformType,
     override val publishable: Boolean,
+    override val compilerOptions: KotlinCommonCompilerOptions,
     val apiElementsConfiguration: Configuration,
     val runtimeElementsConfiguration: Configuration,
     val sourcesElementsConfiguration: Configuration,
     val apiElementsPublishedConfiguration: Configuration,
     val runtimeElementsPublishedConfiguration: Configuration,
+    val sourcesElementsPublishedConfiguration: Configuration,
+    @property:ComposeKotlinGradlePluginApi val resourcesElementsPublishedConfiguration: Configuration,
     val kotlinTargetComponent: ExternalKotlinTargetComponent,
     private val artifactsTaskLocator: ArtifactsTaskLocator,
-) : InternalKotlinTarget {
+) : InternalKotlinTarget,
+    HasConfigurableKotlinCompilerOptions<KotlinCommonCompilerOptions> {
 
 
     fun interface ArtifactsTaskLocator {
@@ -45,12 +52,18 @@ internal class ExternalKotlinTargetImpl internal constructor(
 
     override val extras: MutableExtras = mutableExtrasOf()
 
+    @Deprecated(
+        PRESETS_API_IS_DEPRECATED_MESSAGE,
+        level = DeprecationLevel.ERROR,
+    )
     override val preset: Nothing? = null
 
     internal val logger: Logger = Logging.getLogger("${ExternalKotlinTargetImpl::class.qualifiedName}: $name")
 
+    @Deprecated("Scheduled for removal with Kotlin 2.2")
     override val useDisambiguationClassifierAsSourceSetNamePrefix: Boolean = true
 
+    @Deprecated("Scheduled for removal with Kotlin 2.2")
     override val overrideDisambiguationClassifierOnIdeImport: String? = null
 
     val artifactsTask: TaskProvider<out Task> by lazy {
@@ -75,10 +88,14 @@ internal class ExternalKotlinTargetImpl internal constructor(
     override val sourcesElementsConfigurationName: String
         get() = sourcesElementsConfiguration.name
 
+    @ComposeKotlinGradlePluginApi
+    override val resourcesElementsConfigurationName: String
+        get() = resourcesElementsPublishedConfiguration.name
+
     @InternalKotlinGradlePluginApi
     override val kotlinComponents: Set<KotlinTargetComponent> = setOf(kotlinTargetComponent)
 
-    override val components: Set<SoftwareComponent> by lazy {
+    override val components: Set<ExternalKotlinTargetSoftwareComponent> by lazy {
         logger.debug("Creating SoftwareComponent")
         setOf(ExternalKotlinTargetSoftwareComponent(this))
     }

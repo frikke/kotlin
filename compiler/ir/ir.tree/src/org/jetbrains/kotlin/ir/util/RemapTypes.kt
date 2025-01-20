@@ -8,7 +8,7 @@ package org.jetbrains.kotlin.ir.util
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
 import org.jetbrains.kotlin.utils.memoryOptimizedMap
@@ -18,7 +18,7 @@ fun IrElement.remapTypes(typeRemapper: TypeRemapper) {
     acceptVoid(RemapTypesHelper(typeRemapper))
 }
 
-private class RemapTypesHelper(private val typeRemapper: TypeRemapper) : IrElementVisitorVoid {
+private class RemapTypesHelper(private val typeRemapper: TypeRemapper) : IrVisitorVoid() {
 
     override fun visitElement(element: IrElement) {
         element.acceptChildrenVoid(this)
@@ -71,9 +71,7 @@ private class RemapTypesHelper(private val typeRemapper: TypeRemapper) : IrEleme
     }
 
     override fun visitMemberAccess(expression: IrMemberAccessExpression<*>) {
-        for (i in 0 until expression.typeArgumentsCount) {
-            expression.getTypeArgument(i)?.let { expression.putTypeArgument(i, typeRemapper.remapType(it)) }
-        }
+        expression.typeArguments.replaceAll { it?.let { typeRemapper.remapType(it) } }
         super.visitMemberAccess(expression)
     }
 

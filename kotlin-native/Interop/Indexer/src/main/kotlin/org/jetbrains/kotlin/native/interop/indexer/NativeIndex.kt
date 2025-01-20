@@ -116,14 +116,15 @@ data class NativeLibrary(
         val headerExclusionPolicy: HeaderExclusionPolicy,
         val headerFilter: NativeLibraryHeaderFilter,
         val objCClassesIncludingCategories: Set<String>,
+        val allowIncludingObjCCategoriesFromDefFile: Boolean,
 ) : Compilation
 
-data class IndexerResult(val index: NativeIndex, val compilation: CompilationWithPCH)
+data class IndexerResult(val index: NativeIndex, val compilation: Compilation)
 
 /**
  * Retrieves the definitions from given C header file using given compiler arguments (e.g. defines).
  */
-fun buildNativeIndex(library: NativeLibrary, verbose: Boolean): IndexerResult = buildNativeIndexImpl(library, verbose)
+fun buildNativeIndex(library: NativeLibrary, verbose: Boolean, allowPrecompiledHeaders: Boolean = true): IndexerResult = buildNativeIndexImpl(library, verbose, allowPrecompiledHeaders)
 
 /**
  * This class describes the IR of definitions from C header file(s).
@@ -187,6 +188,7 @@ class AnonymousInnerRecord(val def: StructDef) : StructMember("") {
 abstract class StructDecl(val spelling: String) : TypeDeclaration {
 
     abstract val def: StructDef?
+    abstract val isAnonymous: Boolean
 }
 
 /**
@@ -242,6 +244,7 @@ class EnumConstant(val name: String, val value: Long, val isExplicitlyDefined: B
 abstract class EnumDef(val spelling: String, val baseType: Type) : TypeDeclaration {
 
     abstract val constants: List<EnumConstant>
+    abstract val isAnonymous: Boolean
 }
 
 sealed class ObjCContainer {
@@ -260,16 +263,39 @@ data class ObjCMethod(
         val isOptional: Boolean, val isInit: Boolean, val isExplicitlyDesignatedInitializer: Boolean, val isDirect: Boolean
 ) {
 
-    fun returnsInstancetype(): Boolean = returnType is ObjCInstanceType
+    fun containsInstancetype(): Boolean = returnType.containsInstancetype() // Clang doesn't allow parameter types to use instancetype.
 
-    fun getReturnType(container: ObjCClassOrProtocol): Type = if (returnType is ObjCInstanceType) {
-        when (container) {
-            is ObjCClass -> ObjCObjectPointer(container, returnType.nullability, protocols = emptyList())
-            is ObjCProtocol -> ObjCIdType(returnType.nullability, protocols = listOf(container))
-        }
+    fun getReturnType(container: ObjCClassOrProtocol): Type = if (returnType.containsInstancetype()) {
+        returnType.substituteInstancetype(container)
     } else {
+        // Fast path, avoid allocating copies.
         returnType
     }
+}
+
+// Clang seems to allow using instancetype only inside certain kinds of types.
+// The implementation below therefore covers only particular cases, based on the experiments with Clang and common sense.
+private fun Type.containsInstancetype(): Boolean = when (this) {
+    is ObjCInstanceType -> true
+
+    is ObjCBlockPointer -> this.returnType.containsInstancetype()
+    is FunctionType -> this.returnType.containsInstancetype()
+    is PointerType -> this.pointeeType.containsInstancetype()
+
+    else -> false
+}
+
+private fun Type.substituteInstancetype(container: ObjCClassOrProtocol): Type = when (this) {
+    is ObjCInstanceType -> when (container) {
+        is ObjCClass -> ObjCObjectPointer(container, this.nullability, protocols = emptyList())
+        is ObjCProtocol -> ObjCIdType(this.nullability, protocols = listOf(container))
+    }
+
+    is ObjCBlockPointer -> this.copy(returnType = this.returnType.substituteInstancetype(container))
+    is FunctionType -> this.copy(returnType = this.returnType.substituteInstancetype(container))
+    is PointerType -> this.copy(pointeeType = this.pointeeType.substituteInstancetype(container))
+
+    else -> this
 }
 
 data class ObjCProperty(val name: String, val getter: ObjCMethod, val setter: ObjCMethod?) {
@@ -293,47 +319,14 @@ abstract class ObjCCategory(val name: String, val clazz: ObjCClass) : ObjCContai
  */
 data class Parameter(val name: String?, val type: Type, val nsConsumed: Boolean)
 
-
-enum class CxxMethodKind {
-    None, // not supported yet?
-    Constructor,
-    Destructor,
-    StaticMethod,
-    InstanceMethod  // virtual or non-virtual instance member method (non-static)
-                    // do we need operators here?
-                    // do we need to distinguish virtual and non-virtual? Static? Final?
-}
-
-/**
- * C++ class method, constructor or destructor details
- */
-class CxxMethodInfo(val receiverType: PointerType, val kind: CxxMethodKind = CxxMethodKind.InstanceMethod)
-
-fun CxxMethodInfo.isConst() : Boolean = receiverType.pointeeIsConst
-
-
 /**
  * C function declaration.
  */
-class FunctionDecl(val name: String, val parameters: List<Parameter>, val returnType: Type, val binaryName: String,
-                   val isDefined: Boolean, val isVararg: Boolean,
-                   val parentName: String? = null, val cxxMethod: CxxMethodInfo? = null) {
+class FunctionDecl(val name: String, val parameters: List<Parameter>, val returnType: Type,
+                   val isVararg: Boolean,
+                   val parentName: String? = null) {
 
     val fullName: String = parentName?.let { "$parentName::$name" } ?: name
-
-    // C++ virtual or non-virtual instance member, i.e. has "this" receiver
-    val isCxxInstanceMethod: Boolean get() = this.cxxMethod?.kind == CxxMethodKind.InstanceMethod
-
-    /**
-     * C++ class or instance member function, i.e. any function in the scope of class/struct: method, static, ctor, dtor, cast operator, etc
-     */
-    val isCxxMethod: Boolean get() = this.cxxMethod != null && this.cxxMethod.kind != CxxMethodKind.None
-
-    val isCxxConstructor: Boolean get() = this.cxxMethod?.kind == CxxMethodKind.Constructor
-    val isCxxDestructor: Boolean get() = this.cxxMethod?.kind == CxxMethodKind.Destructor
-    val cxxReceiverType: PointerType? get() = cxxMethod?.receiverType
-    val cxxReceiverClass: StructDecl?
-        get() = cxxMethod?. let { (this.cxxMethod.receiverType.pointeeType as RecordType).decl }
 }
 
 /**
@@ -384,8 +377,6 @@ data class VectorType(val elementType: Type, val elementCount: Int, val spelling
 object VoidType : Type
 
 data class RecordType(val decl: StructDecl) : Type
-
-data class ManagedType(val decl: StructDecl) : Type
 
 data class EnumType(val def: EnumDef) : Type
 

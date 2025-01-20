@@ -1,6 +1,3 @@
-// MUTE_SIGNATURE_COMPARISON_K2: ANY
-// ^ KT-54517
-
 package ann
 
 annotation class Test1<T>(val x: Int)
@@ -9,7 +6,7 @@ annotation class Test2<T1 : Any, T2>(val x: Int = 0)
 
 interface I<T>
 
-annotation class Test3<T1, T2 : I<T1>>(val x: Test1<I<T2>>)
+annotation class Test3<T1, T2 : I<T1>>(val x: Test1<I<T2>> = Test1(1))
 
 class C<T> : I<T>
 

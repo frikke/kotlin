@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.gradle.native
 
 import org.gradle.util.GradleVersion
+import org.jetbrains.kotlin.gradle.plugin.cocoapods.KotlinCocoapodsPlugin.Companion.DUMMY_FRAMEWORK_TASK_NAME
 import org.jetbrains.kotlin.gradle.plugin.cocoapods.KotlinCocoapodsPlugin.Companion.POD_INSTALL_TASK_NAME
 import org.jetbrains.kotlin.gradle.testbase.*
 import org.jetbrains.kotlin.gradle.util.assertProcessRunResult
@@ -14,14 +15,13 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.condition.OS
 import java.nio.file.Path
-import kotlin.io.path.exists
+import java.nio.file.Paths
 import kotlin.io.path.name
-import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @OsCondition(supportedOn = [OS.MAC], enabledOnCI = [OS.MAC])
 @DisplayName("K/N tests cocoapods with xcodebuild")
 @NativeGradlePluginTests
-@GradleTestVersions(minVersion = TestVersions.Gradle.G_7_0)
 @OptIn(EnvironmentalVariablesOverride::class)
 class CocoaPodsXcodeIT : KGPBaseTest() {
 
@@ -46,6 +46,19 @@ class CocoaPodsXcodeIT : KGPBaseTest() {
         mapOf("kotlin-library" to null)
     )
 
+    @DisplayName("Checks xcodebuild for ios-app with a single framework with manual pod install")
+    @GradleTest
+    fun testXcodeUseFrameworksSingleWithManualPodInstall(gradleVersion: GradleVersion) {
+        nativeProject(cocoapodsSingleKtPod, gradleVersion, environmentVariables = environmentVariables) {
+            doTestXcode(
+                mode = ImportMode.FRAMEWORKS,
+                iosAppLocation = "ios-app",
+                subprojectsToFrameworkNamesMap = mapOf("kotlin-library" to null),
+                podInstall = ::manualPodInstall
+            )
+        }
+    }
+
     @DisplayName("Checks xcodebuild for ios-app with a single framework with custom name")
     @GradleTest
     fun testXcodeUseFrameworksWithCustomFrameworkNameSingle(gradleVersion: GradleVersion) = doTestXcode(
@@ -66,7 +79,6 @@ class CocoaPodsXcodeIT : KGPBaseTest() {
         mapOf("kotlin-library" to null)
     )
 
-
     @DisplayName("Checks xcodebuild for ios-app using modular headers with a single framework with custom name")
     @GradleTest
     fun testXcodeUseModularHeadersWithCustomFrameworkNameSingle(gradleVersion: GradleVersion) = doTestXcode(
@@ -76,6 +88,21 @@ class CocoaPodsXcodeIT : KGPBaseTest() {
         "ios-app",
         mapOf("kotlin-library" to "MultiplatformLibrary")
     )
+
+    @DisplayName("Checks xcodebuild for ios-app with manual pod install and static framework")
+    @GradleTest
+    fun testXcodeWithManualPodInstallForStaticFramework(gradleVersion: GradleVersion) {
+        nativeProject(cocoapodsSingleKtPod, gradleVersion, environmentVariables = environmentVariables) {
+            buildGradleKts.addFrameworkBlock("isStatic = true")
+
+            doTestXcode(
+                mode = ImportMode.MODULAR_HEADERS,
+                iosAppLocation = "ios-app",
+                subprojectsToFrameworkNamesMap = mapOf("kotlin-library" to "MultiplatformLibrary"),
+                podInstall = ::manualPodInstall
+            )
+        }
+    }
 
     @DisplayName("Checks xcodebuild for ios-app with kotlin library from root project")
     @GradleTest
@@ -163,14 +190,10 @@ class CocoaPodsXcodeIT : KGPBaseTest() {
         iosAppLocation: String?,
         subprojectsToFrameworkNamesMap: Map<String, String?>,
         arch: String = "x86_64",
+        podInstall: (taskPrefix: String, iosAppPath: Path) -> Unit = ::gradlePodInstall,
     ) {
 
-        gradleProperties
-            .takeIf(Path::exists)
-            ?.let {
-                it.append("kotlin_version=${defaultBuildOptions.kotlinVersion}")
-                it.append("test_fixes_version=${defaultBuildOptions.kotlinVersion}")
-            }
+        prepareForXcodebuild()
 
         for ((subproject, frameworkName) in subprojectsToFrameworkNamesMap) {
 
@@ -181,40 +204,46 @@ class CocoaPodsXcodeIT : KGPBaseTest() {
                 useCustomCocoapodsFrameworkName(subproject, it, iosAppLocation)
             }
 
-            val buildOptions = defaultBuildOptions.copy(
-                nativeOptions = defaultBuildOptions.nativeOptions.copy(
-                    cocoapodsGenerateWrapper = true
-                )
-            )
-
             // Generate podspec.
             build("$taskPrefix:podspec", buildOptions = buildOptions)
-            iosAppLocation?.also {
+            if (iosAppLocation != null) {
                 // Set import mode for Podfile.
-                preparePodfile(it, mode)
-                // Install pods.
-                build("$taskPrefix:$POD_INSTALL_TASK_NAME", buildOptions = buildOptions)
+                preparePodfile(iosAppLocation, mode)
 
-                projectPath.resolve(it).apply {
-                    // Run Xcode build.
-                    val xcodebuildResult = runProcess(
-                        cmd = listOf(
-                            "xcodebuild",
-                            "-sdk", "iphonesimulator",
-                            "-configuration", "Release",
-                            "-workspace", "$name.xcworkspace",
-                            "-scheme", name,
-                            "-arch", arch
-                        ),
-                        environmentVariables = environmentVariables.environmentalVariables,
-                        workingDir = this.toFile(),
-                    )
-                    assertProcessRunResult(xcodebuildResult) {
-                        assertEquals(0, exitCode, "Exit code mismatch for `xcodebuild`.")
-                    }
-                }
+                val iosAppPath = projectPath.resolve(iosAppLocation)
+
+                // Install pods.
+                podInstall(taskPrefix, iosAppPath)
+
+                // Run Xcode build.
+                xcodebuild(
+                    workspace = Paths.get("${iosAppPath.name}.xcworkspace"),
+                    scheme = iosAppPath.name,
+                    configuration = "Release",
+                    sdk = "iphonesimulator",
+                    arch = arch,
+                    workingDir = iosAppPath,
+                )
             }
         }
-
     }
+}
+
+private fun TestProject.gradlePodInstall(taskPrefix: String, @Suppress("UNUSED_PARAMETER") iosAppPath: Path) {
+    build("$taskPrefix:$POD_INSTALL_TASK_NAME", buildOptions = buildOptions)
+}
+
+private fun TestProject.manualPodInstall(taskPrefix: String, iosAppPath: Path) {
+    build("$taskPrefix:$DUMMY_FRAMEWORK_TASK_NAME", buildOptions = buildOptions)
+
+    val environmentalVariables = environmentVariables.environmentalVariables.toMutableMap()
+    environmentalVariables.getOrPut("LC_ALL") { "en_US.UTF-8" }
+
+    assertProcessRunResult(
+        runProcess(
+            cmd = listOf("env", "pod", "install"),
+            environmentVariables = environmentalVariables,
+            workingDir = iosAppPath.toFile(),
+        )
+    ) { assertTrue(isSuccessful) }
 }

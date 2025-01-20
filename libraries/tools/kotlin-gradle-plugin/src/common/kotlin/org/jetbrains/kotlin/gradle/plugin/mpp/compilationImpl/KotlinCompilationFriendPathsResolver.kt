@@ -8,9 +8,9 @@ package org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl
 import org.gradle.api.file.FileCollection
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
+import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.kotlinPropertiesProvider
 import org.jetbrains.kotlin.gradle.plugin.mpp.*
 import org.jetbrains.kotlin.gradle.plugin.sources.getVisibleSourceSetsFromAssociateCompilations
-import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompileTool
 import org.jetbrains.kotlin.gradle.utils.filesProvider
 
@@ -25,17 +25,17 @@ internal class DefaultKotlinCompilationFriendPathsResolver(
 
     override fun resolveFriendPaths(compilation: InternalKotlinCompilation<*>): Iterable<FileCollection> {
         return mutableListOf<FileCollection>().apply {
-            compilation.associateWithClosure.forEach {
-                add(it.output.classesDirs)
+            val friendsFromAssociatedCompilations = compilation.project.files()
+            compilation.allAssociatedCompilations.forAll {
+                friendsFromAssociatedCompilations.from(it.output.classesDirs)
                 // Adding classes that could be produced to non-default destination for JVM target
                 // Check KotlinSourceSetProcessor for details
                 @Suppress("UNCHECKED_CAST")
-                add(
-                    compilation.project.files(
-                        (it.compileTaskProvider as TaskProvider<KotlinCompileTool>).flatMap { task -> task.destinationDirectory }
-                    )
-                )
+                val compileTaskOutput = (it.compileTaskProvider as TaskProvider<KotlinCompileTool>)
+                    .flatMap { task -> task.destinationDirectory }
+                friendsFromAssociatedCompilations.from(compileTaskOutput)
             }
+            add(friendsFromAssociatedCompilations)
             add(friendArtifactResolver.resolveFriendArtifacts(compilation))
         }
     }
@@ -62,6 +62,8 @@ internal class DefaultKotlinCompilationFriendPathsResolver(
 
     object DefaultFriendArtifactResolver : FriendArtifactResolver {
         override fun resolveFriendArtifacts(compilation: InternalKotlinCompilation<*>): FileCollection {
+            if (!compilation.project.kotlinPropertiesProvider.archivesTaskOutputAsFriendModule) return compilation.project.files()
+
             return with(compilation.project) {
                 val friendArtifactsTaskProvider = resolveFriendArtifactsTask(compilation) ?: return files()
                 filesProvider { friendArtifactsTaskProvider.flatMap { it.archiveFile } }
@@ -69,7 +71,7 @@ internal class DefaultKotlinCompilationFriendPathsResolver(
         }
 
         private fun resolveFriendArtifactsTask(compilation: InternalKotlinCompilation<*>): TaskProvider<AbstractArchiveTask>? {
-            if (compilation.associateWithClosure.none { it.isMain() }) return null
+            if (compilation.allAssociatedCompilations.none { it.isMain() }) return null
             val archiveTasks = compilation.project.tasks.withType(AbstractArchiveTask::class.java)
             if (compilation.target.artifactsTaskName !in archiveTasks.names) return null
             return archiveTasks.named(compilation.target.artifactsTaskName)

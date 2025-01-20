@@ -1,4 +1,5 @@
-// FILE: A.java
+// RUN_PIPELINE_TILL: FRONTEND
+// FILE: MyHelpers.java
 
 class MyHelpers {
     public static <T> T id(T it) {

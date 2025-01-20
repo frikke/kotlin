@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -12,21 +12,20 @@ import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.expressions.impl.fromSymbolOwner
 import org.jetbrains.kotlin.ir.interpreter.exceptions.InterpreterError
 import org.jetbrains.kotlin.ir.interpreter.exceptions.handleUserException
 import org.jetbrains.kotlin.ir.interpreter.exceptions.verify
 import org.jetbrains.kotlin.ir.interpreter.stack.CallStack
 import org.jetbrains.kotlin.ir.interpreter.state.*
 import org.jetbrains.kotlin.ir.types.classOrNull
-import org.jetbrains.kotlin.ir.types.isUnit
 import org.jetbrains.kotlin.ir.types.makeNullable
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.utils.addToStdlib.assignFrom
 
-internal fun IrExpression.handleAndDropResult(callStack: CallStack, dropOnlyUnit: Boolean = false) {
-    val dropResult = fun() {
-        if (!dropOnlyUnit && !this.type.isUnit() || callStack.peekState().isUnit()) callStack.popState()
-    }
+internal fun IrExpression.handleAndDropResult(callStack: CallStack) {
+    val dropResult = fun() { callStack.popState() }
     callStack.pushInstruction(CustomInstruction(dropResult))
     callStack.pushCompoundInstruction(this)
 }
@@ -52,7 +51,7 @@ internal fun unfoldInstruction(element: IrElement?, environment: IrInterpreterEn
         is IrGetObjectValue -> unfoldGetObjectValue(element, environment)
         is IrGetEnumValue -> unfoldGetEnumValue(element, environment)
         is IrEnumEntry -> unfoldEnumEntry(element, environment)
-        is IrConst<*> -> callStack.pushSimpleInstruction(element)
+        is IrConst -> callStack.pushSimpleInstruction(element)
         is IrVariable -> unfoldVariable(element, callStack)
         is IrSetValue -> unfoldSetValue(element, callStack)
         is IrTypeOperatorCall -> unfoldTypeOperatorCall(element, callStack)
@@ -99,7 +98,7 @@ private fun unfoldConstructor(constructor: IrConstructor, callStack: CallStack) 
             val receiverState = callStack.loadState(receiverSymbol)
 
             irClass.declarations.filterIsInstance<IrProperty>().forEach { property ->
-                val parameter = constructor.valueParameters.singleOrNull { it.name == property.name }
+                val parameter = constructor.nonDispatchParameters.singleOrNull { it.name == property.name }
                 val state = parameter?.let { callStack.loadState(it.symbol) } ?: Primitive.nullStateOfType(property.getter!!.returnType)
                 receiverState.setField(property.symbol, state)
             }
@@ -126,16 +125,16 @@ private fun unfoldValueParameters(expression: IrFunctionAccessExpression, enviro
         return
     }
 
-    val hasDefaults = (0 until expression.valueArgumentsCount).any { expression.getValueArgument(it) == null }
+    val hasDefaults = expression.arguments.any { it == null }
     if (hasDefaults) {
         environment.getCachedFunction(expression.symbol, fromDelegatingCall = expression is IrDelegatingConstructorCall)?.let {
-            val callToDefault = it.owner.createCall().apply { environment.irBuiltIns.copyArgs(expression, this) }
+            val callToDefault = it.owner.createCall().apply { environment.irBuiltIns.copyArgumentsPassingNullOnDefault(expression, this) }
             callStack.pushCompoundInstruction(callToDefault)
             return
         }
 
         // if some arguments are not defined, then it is necessary to create temp function where defaults will be evaluated
-        val actualParameters = MutableList<IrValueDeclaration?>(expression.valueArgumentsCount) { null }
+        val actualParameters = MutableList<IrValueDeclaration?>(expression.arguments.size) { null }
         val ownerWithDefaults = expression.getFunctionThatContainsDefaults()
         val visibility = when (expression) {
             is IrEnumConstructorCall, is IrDelegatingConstructorCall -> DescriptorVisibilities.LOCAL
@@ -147,18 +146,15 @@ private fun unfoldValueParameters(expression: IrFunctionAccessExpression, enviro
             origin = IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER, visibility
         ).apply {
             this.parent = ownerWithDefaults.parent
-            this.dispatchReceiverParameter = ownerWithDefaults.dispatchReceiverParameter?.deepCopyWithSymbols(this)
-            this.extensionReceiverParameter = ownerWithDefaults.extensionReceiverParameter?.deepCopyWithSymbols(this)
-            (0 until expression.valueArgumentsCount).forEach { index ->
-                val originalParameter = ownerWithDefaults.valueParameters[index]
+            for (originalParameter in ownerWithDefaults.parameters) {
                 val copiedParameter = originalParameter.deepCopyWithSymbols(this)
-                this.valueParameters += copiedParameter
-                actualParameters[index] = if (copiedParameter.defaultValue != null || copiedParameter.isVararg) {
+                this.parameters += copiedParameter
+                actualParameters[originalParameter.indexInParameters] = if (copiedParameter.defaultValue != null || copiedParameter.isVararg) {
                     copiedParameter.type = copiedParameter.type.makeNullable() // make nullable type to keep consistency; parameter can be null if it is missing
                     val irGetParameter = copiedParameter.createGetValue()
                     // if parameter is vararg and it is missing, then create constructor call for empty array
                     val defaultInitializer = originalParameter.getDefaultWithActualParameters(this@apply, actualParameters)
-                        ?: environment.irBuiltIns.emptyArrayConstructor(expression.getVarargType(index)!!.getTypeIfReified(callStack))
+                        ?: environment.irBuiltIns.emptyArrayConstructor(expression.getVarargType(originalParameter.indexInParameters)!!.getTypeIfReified(callStack))
 
                     copiedParameter.createTempVariable().apply variable@{
                         this@variable.initializer = environment.irBuiltIns.irIfNullThenElse(irGetParameter, defaultInitializer, irGetParameter)
@@ -170,25 +166,20 @@ private fun unfoldValueParameters(expression: IrFunctionAccessExpression, enviro
         }
 
         val callWithAllArgs = expression.shallowCopy() // just a copy of given call, but with all arguments in place
-        expression.dispatchReceiver?.let { callWithAllArgs.dispatchReceiver = defaultFun.dispatchReceiverParameter!!.createGetValue() }
-        expression.extensionReceiver?.let { callWithAllArgs.extensionReceiver = defaultFun.extensionReceiverParameter!!.createGetValue() }
-        (0 until expression.valueArgumentsCount).forEach { callWithAllArgs.putValueArgument(it, actualParameters[it]?.createGetValue()) }
+        callWithAllArgs.arguments.assignFrom(actualParameters.map { it?.createGetValue() } )
         defaultFun.body = (actualParameters.filterIsInstance<IrVariable>() + defaultFun.createReturn(callWithAllArgs)).wrapWithBlockBody()
 
         val callToDefault = environment.setCachedFunction(
             expression.symbol, fromDelegatingCall = expression is IrDelegatingConstructorCall, newFunction = defaultFun.symbol
-        ).owner.createCall().apply { environment.irBuiltIns.copyArgs(expression, this) }
+        ).owner.createCall().apply { environment.irBuiltIns.copyArgumentsPassingNullOnDefault(expression, this) }
         callStack.pushCompoundInstruction(callToDefault)
     } else {
         callStack.pushSimpleInstruction(expression)
 
-        fun IrValueParameter.schedule(arg: IrExpression?) {
-            callStack.pushSimpleInstruction(this)
+        for ((param, arg) in (irFunction.parameters zip expression.arguments).asReversed()) {
+            callStack.pushSimpleInstruction(param)
             callStack.pushCompoundInstruction(arg)
         }
-        (expression.valueArgumentsCount - 1 downTo 0).forEach { irFunction.valueParameters[it].schedule(expression.getValueArgument(it)) }
-        expression.extensionReceiver?.let { irFunction.extensionReceiverParameter!!.schedule(it) }
-        expression.dispatchReceiver?.let { irFunction.dispatchReceiverParameter!!.schedule(it) }
     }
 }
 
@@ -199,8 +190,8 @@ private fun unfoldEnumConstructorCall(element: IrEnumConstructorCall, environmen
         val constructorCallCopy = element.shallowCopy()
         val enumObject = environment.callStack.loadState(element.getThisReceiver())
         environment.irBuiltIns.enumClass.owner.declarations.filterIsInstance<IrProperty>().forEachIndexed { index, it ->
-            val field = enumObject.getField(it.symbol) as Primitive<*>
-            constructorCallCopy.putValueArgument(index, field.value.toIrConst(field.type))
+            val field = enumObject.getField(it.symbol) as Primitive
+            constructorCallCopy.arguments[index] = field.value.toIrConst(field.type)
         }
         return unfoldValueParameters(constructorCallCopy, environment)
     }
@@ -212,6 +203,7 @@ private fun unfoldInstanceInitializerCall(instanceInitializerCall: IrInstanceIni
     val toInitialize = irClass.declarations.filter { it is IrProperty || it is IrAnonymousInitializer }
     val state = irClass.thisReceiver?.symbol?.let { callStack.loadState(it) } // try to avoid recalculation of properties
 
+    callStack.pushSimpleInstruction(instanceInitializerCall)
     toInitialize.reversed().forEach {
         when {
             it is IrAnonymousInitializer -> callStack.pushCompoundInstruction(it.body)
@@ -249,7 +241,7 @@ private fun unfoldStatements(statements: List<IrStatement>, callStack: CallStack
             is IrExpression ->
                 when {
                     i.isLastIndex() -> callStack.pushCompoundInstruction(statement)
-                    else -> statement.handleAndDropResult(callStack, dropOnlyUnit = true)
+                    else -> statement.handleAndDropResult(callStack)
                 }
             else -> callStack.pushCompoundInstruction(statement)
         }
@@ -394,7 +386,7 @@ private fun unfoldStringConcatenation(expression: IrStringConcatenation, environ
     // this callback is used to check the need for an explicit toString call
     val explicitToStringCheck = fun() {
         when (val state = callStack.peekState()) {
-            is Primitive<*> -> {
+            is Primitive -> {
                 // This block is not really needed, but this way it is easier to handle `toString` for JS.
                 callStack.popState()
                 val toStringCall = IrCallImpl.fromSymbolOwner(
@@ -426,7 +418,7 @@ private fun unfoldStringConcatenation(expression: IrStringConcatenation, environ
 private fun unfoldComposite(element: IrComposite, callStack: CallStack) {
     when (element.origin) {
         IrStatementOrigin.DESTRUCTURING_DECLARATION, IrStatementOrigin.DO_WHILE_LOOP, null -> // is null for body of do while loop
-            element.statements.reversed().forEach { callStack.pushCompoundInstruction(it) }
+            unfoldStatements(element.statements, callStack)
         else -> TODO("${element.origin} not implemented")
     }
 }

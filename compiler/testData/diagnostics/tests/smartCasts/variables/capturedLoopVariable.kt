@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
+// SKIP_TXT
 // ISSUE: KT-55338
 
 fun test_1() {
@@ -8,7 +10,7 @@ fun test_1() {
             s = "hello"
         }
         <!DEBUG_INFO_SMARTCAST!>s<!>.length // smartcast in K1 and K2
-        noInlineRun { <!DEBUG_INFO_SMARTCAST!>s<!>.length } // smartcast in K1, unsafe call in K2   <------------
+        noInlineRun { <!DEBUG_INFO_SMARTCAST!>s<!>.length } // smartcast in K1 and K2
     }
 }
 
@@ -62,7 +64,7 @@ fun test_3_2() {
             s = "world"
         }
         <!DEBUG_INFO_SMARTCAST!>s<!>.length // smartcast in K1 and K2
-        noInlineRun { <!DEBUG_INFO_SMARTCAST!>s<!>.length } // smartcast in K1, unsafe call in K2   <------------
+        noInlineRun { <!DEBUG_INFO_SMARTCAST!>s<!>.length } // smartcast in K1 and K2
     }
 }
 
@@ -90,7 +92,18 @@ fun test_4_2() {
             s = getString()
         }
         <!DEBUG_INFO_SMARTCAST!>s<!>.length // smartcast in K1 and K2
-        noInlineRun { <!DEBUG_INFO_SMARTCAST!>s<!>.length } // smartcast in K1, unsafe call in K2   <------------
+        noInlineRun { <!DEBUG_INFO_SMARTCAST!>s<!>.length } // smartcast in K1 and K2
+    }
+}
+
+fun test_5() {
+    var s: String? = <!VARIABLE_WITH_REDUNDANT_INITIALIZER!>null<!>
+
+    for (i in 1..10) {
+        s = null
+        s = getString()
+        <!DEBUG_INFO_SMARTCAST!>s<!>.length // smartcast in K1 and K2
+        noInlineRun { <!DEBUG_INFO_SMARTCAST!>s<!>.length } // smartcast in K1, unsafe call in K2
     }
 }
 

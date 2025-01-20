@@ -15,18 +15,16 @@ import org.jetbrains.kotlin.cli.jvm.compiler.VfsBasedProjectEnvironment
 import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 import org.jetbrains.kotlin.fir.session.FirSessionFactoryHelper
-import org.jetbrains.kotlin.fir.session.environment.AbstractProjectEnvironment
 import org.jetbrains.kotlin.fir.session.environment.AbstractProjectFileSearchScope
 import org.jetbrains.kotlin.load.kotlin.PackagePartProvider
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatformAnalyzerServices
 import java.nio.file.Path
 
 object FirTestSessionFactoryHelper {
     @ObsoleteTestInfrastructure
     fun createSessionForTests(
-        projectEnvironment: AbstractProjectEnvironment,
+        projectEnvironment: VfsBasedProjectEnvironment,
         javaSourceScope: AbstractProjectFileSearchScope,
         librariesScope: AbstractProjectFileSearchScope = !javaSourceScope,
         moduleName: String = "TestModule",
@@ -35,7 +33,6 @@ object FirTestSessionFactoryHelper {
     ): FirSession = FirSessionFactoryHelper.createSessionWithDependencies(
         Name.identifier(moduleName),
         JvmPlatforms.unspecifiedJvmPlatform,
-        JvmPlatformAnalyzerServices,
         externalSessionProvider = null,
         projectEnvironment,
         languageVersionSettings,
@@ -43,6 +40,7 @@ object FirTestSessionFactoryHelper {
         librariesScope,
         lookupTracker = null,
         enumWhenTracker = null,
+        importTracker = null,
         incrementalCompilationContext = null,
         extensionRegistrars = emptyList(),
         needRegisterJavaElementFinder = true,
@@ -63,7 +61,6 @@ object FirTestSessionFactoryHelper {
         return FirSessionFactoryHelper.createSessionWithDependencies(
             Name.identifier(moduleName),
             JvmPlatforms.unspecifiedJvmPlatform,
-            JvmPlatformAnalyzerServices,
             externalSessionProvider = null,
             VfsBasedProjectEnvironment(
                 project,
@@ -75,6 +72,7 @@ object FirTestSessionFactoryHelper {
             PsiBasedProjectFileSearchScope(librariesScope),
             lookupTracker = null,
             enumWhenTracker = null,
+            importTracker = null,
             incrementalCompilationContext = null,
             extensionRegistrars = emptyList(),
             needRegisterJavaElementFinder = true,

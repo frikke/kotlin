@@ -1,4 +1,5 @@
-// !LANGUAGE: +IntrinsicConstEvaluation
+// RUN_PIPELINE_TILL: FRONTEND
+// LANGUAGE: +IntrinsicConstEvaluation
 
 class SomeClassWithName(val property: Int) {
     val anotherProperty: String = ""

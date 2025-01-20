@@ -1,4 +1,6 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: FRONTEND
+// ISSUE: KT-60305
+
 open class C<T>
 
 typealias CStar = C<*>

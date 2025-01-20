@@ -1,16 +1,16 @@
 /*
- * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.test
 
-import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.TestDataFile
 import org.jetbrains.kotlin.test.model.AnalysisHandler
 import org.jetbrains.kotlin.test.model.ResultingArtifact
 import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.*
+import org.jetbrains.kotlin.cli.common.disposeRootInWriteAction
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import java.io.IOException
 
@@ -30,11 +30,11 @@ class TestRunner(private val testConfiguration: TestConfiguration) {
         } finally {
             try {
                 testConfiguration.testServices.temporaryDirectoryManager.cleanupTemporaryDirectories()
-            } catch (_: IOException) {
-                // ignored
+            } catch (e: IOException) {
+                println("Failed to clean temporary directories: ${e.message}\n${e.stackTrace}")
             }
             beforeDispose(testConfiguration)
-            Disposer.dispose(testConfiguration.rootDisposable)
+            disposeRootInWriteAction(testConfiguration.rootDisposable)
         }
     }
 
@@ -74,24 +74,26 @@ class TestRunner(private val testConfiguration: TestConfiguration) {
         globalMetadataInfoHandler.parseExistingMetadataInfosFromAllSources()
 
         val modules = moduleStructure.modules
-        val dependencyProvider = DependencyProviderImpl(services, modules)
-        services.registerDependencyProvider(dependencyProvider)
+        val artifactsProvider = ArtifactsProvider(services, modules)
+        services.registerArtifactsProvider(artifactsProvider)
 
         testConfiguration.preAnalysisHandlers.forEach { preprocessor ->
             preprocessor.preprocessModuleStructure(moduleStructure)
         }
 
         testConfiguration.preAnalysisHandlers.forEach { preprocessor ->
-            preprocessor.prepareSealedClassInheritors(moduleStructure)
+            withAssertionCatching(WrappedException::FromPreAnalysisHandler) {
+                preprocessor.prepareSealedClassInheritors(moduleStructure)
+            }
         }
 
         for (module in modules) {
-            val shouldProcessNextModules = processModule(module, dependencyProvider)
+            val shouldProcessNextModules = processModule(module, artifactsProvider)
             if (!shouldProcessNextModules) break
         }
 
         for (handler in allRanHandlers) {
-            val wrapperFactory: (Throwable) -> WrappedException = { WrappedException.FromHandler(it, handler) }
+            val wrapperFactory: (Throwable) -> WrappedException = { WrappedException.FromHandler(it, failedModule = null, handler) }
             withAssertionCatching(wrapperFactory) {
                 val thereWasAnException = allFailedExceptions.isNotEmpty()
                 if (handler.shouldRun(thereWasAnException)) {
@@ -127,7 +129,7 @@ class TestRunner(private val testConfiguration: TestConfiguration) {
      */
     fun processModule(
         module: TestModule,
-        dependencyProvider: DependencyProviderImpl
+        artifactsProvider: ArtifactsProvider
     ): Boolean {
         var inputArtifact = testConfiguration.startingArtifactFactory.invoke(module)
 
@@ -138,9 +140,7 @@ class TestRunner(private val testConfiguration: TestConfiguration) {
             when (val result = step.hackyProcessModule(module, inputArtifact, thereWereCriticalExceptionsOnPreviousSteps)) {
                 is TestStep.StepResult.Artifact<*> -> {
                     require(step is TestStep.FacadeStep<*, *>)
-                    if (step.inputArtifactKind != step.outputArtifactKind) {
-                        dependencyProvider.registerArtifact(module, result.outputArtifact)
-                    }
+                    artifactsProvider.registerArtifact(module, result.outputArtifact)
                     inputArtifact = result.outputArtifact
                 }
                 is TestStep.StepResult.ErrorFromFacade -> {

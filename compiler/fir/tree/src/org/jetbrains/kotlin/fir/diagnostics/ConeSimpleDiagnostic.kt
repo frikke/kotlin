@@ -27,20 +27,30 @@ class ConeUnderscoreIsReserved(source: KtSourceElement) : ConeDiagnosticWithSour
     override val reason: String get() = "Names _, __, ___, ..., are reserved in Kotlin"
 }
 
+class ConeMultipleLabelsAreForbidden(source: KtSourceElement) : ConeDiagnosticWithSource(source) {
+    override val reason: String get() = "Multiple labels per statement are forbidden"
+}
+
+abstract class ConeCannotInferType : ConeDiagnostic
+
 class ConeCannotInferTypeParameterType(
     val typeParameter: FirTypeParameterSymbol,
     override val reason: String = "Cannot infer type for parameter ${typeParameter.name}"
-) : ConeDiagnostic
+) : ConeCannotInferType()
 
 class ConeCannotInferValueParameterType(
     val valueParameter: FirValueParameterSymbol,
     override val reason: String = "Cannot infer type for parameter ${valueParameter.name}"
-) : ConeDiagnostic
+) : ConeCannotInferType()
+
+class ConeCannotInferReceiverParameterType(
+    override val reason: String = "Cannot infer type for receiver parameter"
+) : ConeCannotInferType()
 
 class ConeTypeVariableTypeIsNotInferred(
     val typeVariableType: ConeTypeVariableType,
-    override val reason: String = "Type for ${typeVariableType.lookupTag.debugName} is not inferred"
-) : ConeDiagnostic
+    override val reason: String = "Type for ${typeVariableType.typeConstructor.debugName} is not inferred"
+) : ConeCannotInferType()
 
 class ConeUnderscoreUsageWithoutBackticks(source: KtSourceElement) : ConeDiagnosticWithSource(source) {
     override val reason: String get() = "Names _, __, ___, ... can be used only in back-ticks (`_`, `__`, `___`, ...)"
@@ -71,6 +81,26 @@ class ConeAmbiguousFunctionTypeKinds(val kinds: List<FunctionTypeKind>) : ConeDi
         get() = "There are multiple function kinds for functional type ref"
 }
 
+object ConeUnsupportedClassLiteralsWithEmptyLhs : ConeDiagnostic {
+    override val reason: String get() = "No receiver in class literal"
+}
+
+object ConeNoConstructorError : ConeDiagnostic {
+    override val reason: String get() = "This type does not have a constructor"
+}
+
+object ConeContractShouldBeFirstStatement : ConeDiagnostic {
+    override val reason: String get() = "Contract should be the first statement."
+}
+
+object ConeContractMayNotHaveLabel : ConeDiagnostic {
+    override val reason: String get() = "Contract call may not have a label."
+}
+
+object ConeContextParameterWithDefaultValue : ConeDiagnostic {
+    override val reason: String get() = "Context parameters cannot have default values"
+}
+
 enum class DiagnosticKind {
     ExpressionExpected,
     NotLoopLabel,
@@ -79,6 +109,8 @@ enum class DiagnosticKind {
 
     ReturnNotAllowed,
     UnresolvedLabel,
+    AmbiguousLabel,
+    LabelNameClash,
     NotAFunctionLabel,
     NoThis,
     IllegalConstExpression,
@@ -96,7 +128,8 @@ enum class DiagnosticKind {
     MissingStdlibClass,
     NotASupertype,
     SuperNotAvailable,
-    AnnotationNotAllowed,
+    AnnotationInWhereClause,
+    MultipleAnnotationWithAllTarget,
 
     LoopInSupertype,
     RecursiveTypealiasExpansion,

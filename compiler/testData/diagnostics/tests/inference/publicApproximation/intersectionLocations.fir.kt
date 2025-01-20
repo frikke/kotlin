@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 fun test() {
     testInv()
@@ -37,7 +38,7 @@ fun testStarProjection() = BiParam(
     intersect(First, Second),
     makeStarProjection()
 )
-fun testErrorType() = BiParam(
+fun testErrorType() = <!CANNOT_INFER_PARAMETER_TYPE!>BiParam<!>(
     intersect(First, Second),
     <!UNRESOLVED_REFERENCE!>unresolved<!>
 )

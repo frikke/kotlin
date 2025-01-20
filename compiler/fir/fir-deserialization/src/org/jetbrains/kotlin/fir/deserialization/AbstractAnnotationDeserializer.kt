@@ -7,18 +7,14 @@ package org.jetbrains.kotlin.fir.deserialization
 
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationUseSiteTarget
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.declarations.FirRegularClass
 import org.jetbrains.kotlin.fir.declarations.FirValueParameter
-import org.jetbrains.kotlin.fir.declarations.collectEnumEntries
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.expressions.builder.*
-import org.jetbrains.kotlin.fir.references.builder.buildFromMissingDependenciesNamedReference
-import org.jetbrains.kotlin.fir.references.builder.buildResolvedNamedReference
 import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.defaultType
 import org.jetbrains.kotlin.fir.resolve.scope
 import org.jetbrains.kotlin.fir.resolve.toSymbol
-import org.jetbrains.kotlin.fir.scopes.FakeOverrideTypeCalculator
+import org.jetbrains.kotlin.fir.scopes.CallableCopyTypeCalculator
 import org.jetbrains.kotlin.fir.scopes.getDeclaredConstructors
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.fir.symbols.lazyDeclarationResolver
@@ -32,6 +28,8 @@ import org.jetbrains.kotlin.metadata.deserialization.TypeTable
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.StandardClassIds
+import org.jetbrains.kotlin.protobuf.GeneratedMessageLite
+import org.jetbrains.kotlin.protobuf.GeneratedMessageLite.ExtendableMessage
 import org.jetbrains.kotlin.protobuf.MessageLite
 import org.jetbrains.kotlin.serialization.SerializerExtensionProtocol
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
@@ -82,27 +80,34 @@ abstract class AbstractAnnotationDeserializer(
         nameResolver: NameResolver,
         typeTable: TypeTable
     ): List<FirAnnotation> {
-        if (!Flags.HAS_ANNOTATIONS.get(propertyProto.flags)) return emptyList()
-        val annotations = propertyProto.getExtension(protocol.propertyAnnotation).orEmpty()
-        return annotations.map { deserializeAnnotation(it, nameResolver, AnnotationUseSiteTarget.PROPERTY) }
+        return propertyProto.loadAnnotations(
+            protocol.propertyAnnotation, propertyProto.flags, nameResolver,
+            AnnotationUseSiteTarget.PROPERTY
+        )
     }
 
     open fun loadPropertyBackingFieldAnnotations(
         containerSource: DeserializedContainerSource?,
         propertyProto: ProtoBuf.Property,
         nameResolver: NameResolver,
-        typeTable: TypeTable
+        typeTable: TypeTable,
     ): List<FirAnnotation> {
-        return emptyList()
+        return propertyProto.loadAnnotations(
+            protocol.propertyBackingFieldAnnotation, propertyProto.flags, nameResolver,
+            AnnotationUseSiteTarget.FIELD
+        )
     }
 
     open fun loadPropertyDelegatedFieldAnnotations(
         containerSource: DeserializedContainerSource?,
         propertyProto: ProtoBuf.Property,
         nameResolver: NameResolver,
-        typeTable: TypeTable
+        typeTable: TypeTable,
     ): List<FirAnnotation> {
-        return emptyList()
+        return propertyProto.loadAnnotations(
+            protocol.propertyDelegatedFieldAnnotation, propertyProto.flags, nameResolver,
+            AnnotationUseSiteTarget.PROPERTY_DELEGATE_FIELD
+        )
     }
 
     open fun loadPropertyGetterAnnotations(
@@ -110,11 +115,12 @@ abstract class AbstractAnnotationDeserializer(
         propertyProto: ProtoBuf.Property,
         nameResolver: NameResolver,
         typeTable: TypeTable,
-        getterFlags: Int
+        getterFlags: Int,
     ): List<FirAnnotation> {
-        if (!Flags.HAS_ANNOTATIONS.get(getterFlags)) return emptyList()
-        val annotations = propertyProto.getExtension(protocol.propertyGetterAnnotation).orEmpty()
-        return annotations.map { deserializeAnnotation(it, nameResolver, AnnotationUseSiteTarget.PROPERTY_GETTER) }
+        return propertyProto.loadAnnotations(
+            protocol.propertyGetterAnnotation, getterFlags, nameResolver,
+            AnnotationUseSiteTarget.PROPERTY_GETTER
+        )
     }
 
     open fun loadPropertySetterAnnotations(
@@ -124,9 +130,10 @@ abstract class AbstractAnnotationDeserializer(
         typeTable: TypeTable,
         setterFlags: Int
     ): List<FirAnnotation> {
-        if (!Flags.HAS_ANNOTATIONS.get(setterFlags)) return emptyList()
-        val annotations = propertyProto.getExtension(protocol.propertySetterAnnotation).orEmpty()
-        return annotations.map { deserializeAnnotation(it, nameResolver, AnnotationUseSiteTarget.PROPERTY_SETTER) }
+        return propertyProto.loadAnnotations(
+            protocol.propertySetterAnnotation, setterFlags, nameResolver,
+            AnnotationUseSiteTarget.PROPERTY_SETTER
+        )
     }
 
     open fun loadConstructorAnnotations(
@@ -135,9 +142,7 @@ abstract class AbstractAnnotationDeserializer(
         nameResolver: NameResolver,
         typeTable: TypeTable
     ): List<FirAnnotation> {
-        if (!Flags.HAS_ANNOTATIONS.get(constructorProto.flags)) return emptyList()
-        val annotations = constructorProto.getExtension(protocol.constructorAnnotation).orEmpty()
-        return annotations.map { deserializeAnnotation(it, nameResolver) }
+        return constructorProto.loadAnnotations(protocol.constructorAnnotation, constructorProto.flags, nameResolver)
     }
 
     open fun loadValueParameterAnnotations(
@@ -150,9 +155,7 @@ abstract class AbstractAnnotationDeserializer(
         kind: CallableKind,
         parameterIndex: Int
     ): List<FirAnnotation> {
-        if (!Flags.HAS_ANNOTATIONS.get(valueParameterProto.flags)) return emptyList()
-        val annotations = valueParameterProto.getExtension(protocol.parameterAnnotation).orEmpty()
-        return annotations.map { deserializeAnnotation(it, nameResolver) }
+        return valueParameterProto.loadAnnotations(protocol.parameterAnnotation, valueParameterProto.flags, nameResolver)
     }
 
     open fun loadExtensionReceiverParameterAnnotations(
@@ -160,10 +163,19 @@ abstract class AbstractAnnotationDeserializer(
         callableProto: MessageLite,
         nameResolver: NameResolver,
         typeTable: TypeTable,
-        kind: CallableKind
+        kind: CallableKind,
     ): List<FirAnnotation> {
-        return emptyList()
+        return when (callableProto) {
+            is ProtoBuf.Property -> callableProto.loadAnnotations(
+                protocol.propertyExtensionReceiverAnnotation, callableProto.flags, nameResolver,
+            )
+            is ProtoBuf.Function -> callableProto.loadAnnotations(
+                protocol.functionExtensionReceiverAnnotation, callableProto.flags, nameResolver,
+            )
+            else -> emptyList()
+        }
     }
+
     open fun loadAnnotationPropertyDefaultValue(
         containerSource: DeserializedContainerSource?,
         propertyProto: ProtoBuf.Property,
@@ -176,8 +188,19 @@ abstract class AbstractAnnotationDeserializer(
 
     abstract fun loadTypeAnnotations(typeProto: ProtoBuf.Type, nameResolver: NameResolver): List<FirAnnotation>
 
-    open fun loadTypeParameterAnnotations(typeParameterProto: ProtoBuf.TypeParameter, nameResolver: NameResolver) =
+    open fun loadTypeParameterAnnotations(typeParameterProto: ProtoBuf.TypeParameter, nameResolver: NameResolver): List<FirAnnotation> =
         emptyList<FirAnnotation>()
+
+    private fun <T : ExtendableMessage<T>> T.loadAnnotations(
+        extension: GeneratedMessageLite.GeneratedExtension<T, List<ProtoBuf.Annotation>>?,
+        flags: Int,
+        nameResolver: NameResolver,
+        useSiteTarget: AnnotationUseSiteTarget? = null
+    ): List<FirAnnotation> {
+        if (extension == null || !Flags.HAS_ANNOTATIONS.get(flags)) return emptyList()
+        val annotations = getExtension(extension)
+        return annotations.map { deserializeAnnotation(it, nameResolver, useSiteTarget) }
+    }
 
     fun deserializeAnnotation(
         proto: ProtoBuf.Annotation,
@@ -187,7 +210,7 @@ abstract class AbstractAnnotationDeserializer(
         val classId = nameResolver.getClassId(proto.id)
         return buildAnnotation {
             annotationTypeRef = buildResolvedTypeRef {
-                type = classId.toLookupTag().constructClassType(emptyArray(), isNullable = false)
+                coneType = classId.toLookupTag().constructClassType()
             }
             session.lazyDeclarationResolver.disableLazyResolveContractChecksInside {
                 this.argumentMapping = createArgumentMapping(proto, classId, nameResolver)
@@ -215,7 +238,7 @@ abstract class AbstractAnnotationDeserializer(
                 val classScope = firAnnotationClass.defaultType().scope(
                     useSiteSession = session,
                     scopeSession = ScopeSession(),
-                    fakeOverrideTypeCalculator = FakeOverrideTypeCalculator.DoNothing,
+                    callableCopyTypeCalculator = CallableCopyTypeCalculator.DoNothing,
                     requiredMembersPhase = null,
                 ) ?: error("Null scope for $classId")
 
@@ -270,48 +293,27 @@ abstract class AbstractAnnotationDeserializer(
             CLASS -> buildGetClassCall {
                 val classId = nameResolver.getClassId(value.classId)
                 val lookupTag = classId.toLookupTag()
-                val referencedType = lookupTag.constructType(emptyArray(), isNullable = false)
-                val resolvedTypeRef = buildResolvedTypeRef {
-                    type = StandardClassIds.KClass.constructClassLikeType(arrayOf(referencedType), false)
-                }
+                val referencedType = lookupTag.constructType()
+                val resolvedType = StandardClassIds.KClass.constructClassLikeType(arrayOf(referencedType), false)
                 argumentList = buildUnaryArgumentList(
                     buildClassReferenceExpression {
-                        classTypeRef = buildResolvedTypeRef { type = referencedType }
-                        typeRef = resolvedTypeRef
+                        classTypeRef = buildResolvedTypeRef { coneType = referencedType }
+                        coneTypeOrNull = resolvedType
                     }
                 )
-                typeRef = resolvedTypeRef
+                coneTypeOrNull = resolvedType
             }
-            ENUM -> buildPropertyAccessExpression {
-                val classId = nameResolver.getClassId(value.classId)
-                val entryName = nameResolver.getName(value.enumValueId)
-
-                val enumLookupTag = classId.toLookupTag()
-                val enumSymbol = enumLookupTag.toSymbol(session)
-                val firClass = enumSymbol?.fir as? FirRegularClass
-                val enumEntries = firClass?.collectEnumEntries() ?: emptyList()
-                val enumEntrySymbol = enumEntries.find { it.name == entryName }
-                calleeReference = enumEntrySymbol?.let {
-                    buildResolvedNamedReference {
-                        name = entryName
-                        resolvedSymbol = it.symbol
-                    }
-                } ?: buildFromMissingDependenciesNamedReference {
-                    name = entryName
-                }
-                if (enumEntrySymbol != null) {
-                    typeRef = enumEntrySymbol.returnTypeRef
-                }
+            ENUM -> buildEnumEntryDeserializedAccessExpression {
+                enumClassId = nameResolver.getClassId(value.classId)
+                enumEntryName = nameResolver.getName(value.enumValueId)
             }
             ARRAY -> {
-                val expectedArrayElementType = expectedType()?.arrayElementType() ?: session.builtinTypes.anyType.type
-                buildArrayOfCall {
+                val expectedArrayElementType = expectedType()?.arrayElementType() ?: session.builtinTypes.anyType.coneType
+                buildArrayLiteral {
                     argumentList = buildArgumentList {
                         value.arrayElementList.mapTo(arguments) { resolveValue(it, nameResolver) { expectedArrayElementType } }
                     }
-                    typeRef = buildResolvedTypeRef {
-                        type = expectedArrayElementType.createArrayType()
-                    }
+                    coneTypeOrNull = expectedArrayElementType.createArrayType()
                 }
             }
 
@@ -319,7 +321,7 @@ abstract class AbstractAnnotationDeserializer(
         }
     }
 
-    private fun <T> const(kind: ConstantValueKind<T>, value: T, typeRef: FirResolvedTypeRef): FirConstExpression<T> {
-        return buildConstExpression(null, kind, value, setType = true).apply { this.replaceTypeRef(typeRef) }
+    private fun const(kind: ConstantValueKind, value: Any?, typeRef: FirResolvedTypeRef): FirLiteralExpression {
+        return buildLiteralExpression(null, kind, value, setType = true).apply { this.replaceConeTypeOrNull(typeRef.coneType) }
     }
 }

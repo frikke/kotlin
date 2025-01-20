@@ -30,8 +30,8 @@ import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.utils.memoryOptimizedPlus
 
-object ES6_BOX_PARAMETER : IrDeclarationOriginImpl("ES6_BOX_PARAMETER")
-object ES6_BOX_PARAMETER_DEFAULT_RESOLUTION : IrStatementOriginImpl("ES6_BOX_PARAMETER_DEFAULT_RESOLUTION")
+val ES6_BOX_PARAMETER by IrDeclarationOriginImpl
+val ES6_BOX_PARAMETER_DEFAULT_RESOLUTION by IrStatementOriginImpl
 
 val IrValueParameter.isBoxParameter: Boolean
     get() = origin == ES6_BOX_PARAMETER
@@ -42,6 +42,9 @@ val IrWhen.isBoxParameterDefaultResolution: Boolean
 val IrFunction.boxParameter: IrValueParameter?
     get() = valueParameters.lastOrNull()?.takeIf { it.isBoxParameter }
 
+/**
+ * Adds box parameter to a constructor if needed.
+ */
 class ES6AddBoxParameterToConstructorsLowering(val context: JsIrBackendContext) : DeclarationTransformer {
     override fun transformFlat(declaration: IrDeclaration): List<IrDeclaration>? {
         if (!context.es6mode || declaration !is IrConstructor || declaration.hasStrictSignature(context)) return null
@@ -77,7 +80,6 @@ class ES6AddBoxParameterToConstructorsLowering(val context: JsIrBackendContext) 
         return JsIrBuilder.buildValueParameter(
             parent = this,
             name = Namer.ES6_BOX_PARAMETER_NAME,
-            index = valueParameters.size,
             type = irClass.defaultType.makeNullable(),
             origin = ES6_BOX_PARAMETER,
             isAssignable = true
@@ -186,4 +188,3 @@ class ES6AddBoxParameterToConstructorsLowering(val context: JsIrBackendContext) 
         }
     }
 }
-

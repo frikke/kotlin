@@ -1,4 +1,7 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+/*
+ * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
 
 package org.jetbrains.kotlin.analysis.decompiler.stub
 
@@ -7,7 +10,6 @@ import com.intellij.psi.stubs.StubElement
 import com.intellij.util.io.StringRef
 import org.jetbrains.kotlin.analysis.decompiler.stub.flags.*
 import org.jetbrains.kotlin.constant.ConstantValue
-import org.jetbrains.kotlin.builtins.StandardNames
 import org.jetbrains.kotlin.descriptors.SourceElement
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationUseSiteTarget
 import org.jetbrains.kotlin.load.kotlin.*
@@ -16,20 +18,17 @@ import org.jetbrains.kotlin.metadata.ProtoBuf.MemberKind
 import org.jetbrains.kotlin.metadata.ProtoBuf.Modality
 import org.jetbrains.kotlin.metadata.deserialization.*
 import org.jetbrains.kotlin.metadata.jvm.JvmProtoBuf
-import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMetadataVersion
+import org.jetbrains.kotlin.metadata.deserialization.MetadataVersion
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.stubs.KotlinPropertyStub
 import org.jetbrains.kotlin.psi.stubs.elements.KtStubElementTypes
 import org.jetbrains.kotlin.psi.stubs.impl.*
-import org.jetbrains.kotlin.resolve.DataClassResolver
 import org.jetbrains.kotlin.resolve.constants.ClassLiteralValue
 import org.jetbrains.kotlin.serialization.deserialization.AnnotatedCallableKind
 import org.jetbrains.kotlin.serialization.deserialization.ProtoContainer
 import org.jetbrains.kotlin.serialization.deserialization.getName
-import org.jetbrains.kotlin.utils.addToStdlib.runIf
-import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.addIfNotNull
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
 
@@ -53,14 +52,18 @@ fun createDeclarationsStubs(
     propertyProtos: List<ProtoBuf.Property>,
 ) {
     for (propertyProto in propertyProtos) {
-        if (!shouldSkip(propertyProto.flags, outerContext.nameResolver.getName(propertyProto.name))) {
-            PropertyClsStubBuilder(parentStub, outerContext, protoContainer, propertyProto).build()
+        if (mustNotBeWrittenToStubs(propertyProto.flags)) {
+            continue
         }
+
+        PropertyClsStubBuilder(parentStub, outerContext, protoContainer, propertyProto).build()
     }
     for (functionProto in functionProtos) {
-        if (!shouldSkip(functionProto.flags, outerContext.nameResolver.getName(functionProto.name))) {
-            FunctionClsStubBuilder(parentStub, outerContext, protoContainer, functionProto).build()
+        if (mustNotBeWrittenToStubs(functionProto.flags)) {
+            continue
         }
+
+        FunctionClsStubBuilder(parentStub, outerContext, protoContainer, functionProto).build()
     }
 }
 
@@ -84,17 +87,11 @@ fun createConstructorStub(
     ConstructorClsStubBuilder(parentStub, outerContext, protoContainer, constructorProto).build()
 }
 
-private fun shouldSkip(flags: Int, name: Name): Boolean {
-    return when (Flags.MEMBER_KIND.get(flags)) {
-        MemberKind.FAKE_OVERRIDE, MemberKind.DELEGATION -> true
-        //TODO: fix decompiler to use sane criteria
-        MemberKind.SYNTHESIZED -> !DataClassResolver.isComponentLike(name) && name !in listOf(
-            OperatorNameConventions.EQUALS,
-            StandardNames.HASHCODE_NAME,
-            OperatorNameConventions.TO_STRING
-        )
-        else -> false
-    }
+/**
+ * @see org.jetbrains.kotlin.analysis.decompiler.psi.text.mustNotBeWrittenToDecompiledText
+ */
+private fun mustNotBeWrittenToStubs(flags: Int): Boolean {
+    return Flags.MEMBER_KIND.get(flags) == MemberKind.FAKE_OVERRIDE
 }
 
 abstract class CallableClsStubBuilder(
@@ -208,7 +205,8 @@ private class FunctionClsStubBuilder(
             mayHaveContract = hasContract,
             runIf(hasContract) {
                 ClsContractBuilder(c, typeStubBuilder).loadContract(functionProto)
-            }
+            },
+            origin = createStubOrigin(protoContainer)
         )
     }
 }
@@ -280,7 +278,8 @@ private class PropertyClsStubBuilder(
             isExtension = propertyProto.hasReceiver(),
             hasReturnTypeRef = true,
             fqName = c.containerFqName.child(callableName),
-            initializer
+            initializer,
+            origin = createStubOrigin(protoContainer)
         )
     }
 
@@ -345,7 +344,7 @@ private class PropertyClsStubBuilder(
     private fun calcInitializer(): ConstantValue<*>? {
         val classFinder = c.components.classFinder
         val containerClass =
-            if (classFinder != null) getSpecialCaseContainerClass(classFinder, c.components.jvmMetadataVersion!!) else null
+            if (classFinder != null) getSpecialCaseContainerClass(classFinder, c.components.metadataVersion!!) else null
         val source = protoContainer.source
         val binaryClass = containerClass ?: (source as? KotlinJvmBinarySourceElement)?.binaryClass
         var constantInitializer: ConstantValue<*>? = null
@@ -403,7 +402,7 @@ private class PropertyClsStubBuilder(
 
     private fun getSpecialCaseContainerClass(
         classFinder: KotlinClassFinder,
-        jvmMetadataVersion: JvmMetadataVersion
+        metadataVersion: MetadataVersion
     ): KotlinJvmBinaryClass? {
         return AbstractBinaryClassAnnotationLoader.getSpecialCaseContainerClass(
             container = protoContainer,
@@ -412,7 +411,7 @@ private class PropertyClsStubBuilder(
             isConst = Flags.IS_CONST.get(propertyProto.flags),
             isMovedFromInterfaceCompanion = JvmProtoBufUtil.isMovedFromInterfaceCompanion(propertyProto),
             kotlinClassFinder = classFinder,
-            jvmMetadataVersion = jvmMetadataVersion
+            metadataVersion = metadataVersion
         )
     }
 }
@@ -458,9 +457,17 @@ private class ConstructorClsStubBuilder(
         // delegated call is not to this (as there is no this keyword) and it has body (while primary does not have one)
         // This info is anyway irrelevant for the purposes these stubs are used
         return if (Flags.IS_SECONDARY.get(constructorProto.flags))
-            KotlinConstructorStubImpl(parent, KtStubElementTypes.SECONDARY_CONSTRUCTOR, name, hasBody = true, isDelegatedCallToThis = false)
+            KotlinConstructorStubImpl(
+                parent, KtStubElementTypes.SECONDARY_CONSTRUCTOR, name, hasBody = true,
+                isDelegatedCallToThis = false,
+                isExplicitDelegationCall = false,
+            )
         else
-            KotlinConstructorStubImpl(parent, KtStubElementTypes.PRIMARY_CONSTRUCTOR, name, hasBody = false, isDelegatedCallToThis = false)
+            KotlinConstructorStubImpl(
+                parent, KtStubElementTypes.PRIMARY_CONSTRUCTOR, name, hasBody = false,
+                isDelegatedCallToThis = false,
+                isExplicitDelegationCall = false,
+            )
     }
 }
 

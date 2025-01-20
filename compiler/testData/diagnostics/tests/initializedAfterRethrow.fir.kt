@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 fun foo(): Int = 42
 
 object ThrowInTryWithCatch {
@@ -26,7 +27,7 @@ object ThrowInTryWithCatchAndFinally {
 }
 
 object ThrowInFinally {
-    private val p: String
+    private <!MUST_BE_INITIALIZED_OR_BE_ABSTRACT!>val p: String<!>
 
     init {
         try {

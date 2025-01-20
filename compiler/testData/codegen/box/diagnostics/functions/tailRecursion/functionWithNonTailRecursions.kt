@@ -1,8 +1,3 @@
-// IGNORE_BACKEND: WASM
-// WASM_MUTE_REASON: IGNORED_IN_JS
-// TODO: muted automatically, investigate should it be ran for JS or not
-// IGNORE_BACKEND: JS
-
 tailrec fun badTails(x : Int) : Int {
     if (x < 50 && x != 10 && x > 0) {
         return 1 + <!NON_TAIL_RECURSIVE_CALL!>badTails<!>(x - 1)

@@ -14,6 +14,7 @@ import org.gradle.util.GradleVersion
 // This script is also being used in the Gradle integration tests which runs older Gradle versions
 fun <T : Any> Provider<T>.forUseAtConfigurationTimeCompat(): Provider<T> =
     if (GradleVersion.current() < GradleVersion.version("7.4")) {
+        @Suppress("DEPRECATION")
         forUseAtConfigurationTime()
     } else {
         this
@@ -92,6 +93,7 @@ val cacheMap: Map<String, String> = mapOf(
     "https://github.com/webassembly/wabt/releases/download" to "https://cache-redirector.jetbrains.com/github.com/webassembly/wabt/releases/download",
     "https://github.com/webassembly/testsuite/zipball" to "https://cache-redirector.jetbrains.com/github.com/webassembly/testsuite/zipball",
     "https://archive.mozilla.org/pub/firefox/nightly" to "https://cache-redirector.jetbrains.com/archive.mozilla.org/pub/firefox/nightly",
+    "https://github.com/WasmEdge/WasmEdge/releases/download" to "https://cache-redirector.jetbrains.com/github.com/WasmEdge/WasmEdge/releases/download",
     "https://storage.googleapis.com/chromium-v8/official/canary" to "https://cache-redirector.jetbrains.com/storage.googleapis.com/chromium-v8/official/canary",
     "https://oss.sonatype.org/content/repositories/snapshots" to "https://cache-redirector.jetbrains.com/oss.sonatype.org/content/repositories/snapshots",
     "https://download.visualstudio.microsoft.com/download/pr" to "https://cache-redirector.jetbrains.com/download.visualstudio.microsoft.com/download/pr",
@@ -190,7 +192,8 @@ val cacheMap: Map<String, String> = mapOf(
     "https://d2xrhe97vsfxuc.cloudfront.net" to "https://cache-redirector.jetbrains.com/intellij-jbr",
     "https://d2xrhe97vsfxuc.cloudfront.net" to "https://cache-redirector.jetbrains.com/intellij-jdk",
     "https://d2xrhe97vsfxuc.cloudfront.net" to "https://cache-redirector.jetbrains.com/jetbrains.bintray.com/intellij-jbr",
-    "https://d2xrhe97vsfxuc.cloudfront.net" to "https://cache-redirector.jetbrains.com/jetbrains.bintray.com/intellij-jdk"
+    "https://d2xrhe97vsfxuc.cloudfront.net" to "https://cache-redirector.jetbrains.com/jetbrains.bintray.com/intellij-jdk",
+    "https://androidx.dev/snapshots/builds" to "https://cache-redirector.jetbrains.com/androidx.dev/snapshots/builds",
 )
 
 val aliases = mapOf(
@@ -232,6 +235,9 @@ fun Project.overrideNativeCompilerDownloadUrl() {
 
 fun Project.addCheckRepositoriesTask() {
     val checkRepoTask = tasks.register("checkRepositories") {
+        if (GradleVersion.current() >= GradleVersion.version("7.4")) {
+            withGroovyBuilder { "notCompatibleWithConfigurationCache"("Uses project in task action") }
+        }
         val isTeamcityBuildInput = providers
             .provider {
                 project.hasProperty("teamcity") || System.getenv("TEAMCITY_VERSION") != null
@@ -275,7 +281,8 @@ fun Project.addCheckRepositoriesTask() {
 fun URI.isCachedOrLocal() = scheme == "file" ||
         host == "cache-redirector.jetbrains.com" ||
         host == "teamcity.jetbrains.com" ||
-        host == "buildserver.labs.intellij.net"
+        host == "buildserver.labs.intellij.net" ||
+        host == "packages.jetbrains.team"
 
 fun RepositoryHandler.findNonCachedRepositories(): List<String> {
     val mavenNonCachedRepos = filterIsInstance<MavenArtifactRepository>()
@@ -312,7 +319,7 @@ fun Task.logNonCachedRepo(
 ) {
     val msg = "Repository $repoUrl in ${project.displayName} should be cached with cache-redirector"
     val details = "Using non cached repository may lead to download failures in CI builds." +
-            " Check https://github.com/JetBrains/kotlin/blob/master/gradle/cacheRedirector.gradle.kts for details."
+            " Check https://github.com/JetBrains/kotlin/blob/master/repo/scripts/cache-redirector.settings.gradle.kts for details."
 
     if (isTeamcityBuild) {
         testFailed(testName, msg, details)
@@ -341,6 +348,7 @@ if (cacheRedirectorEnabled.get()) {
     logger.info("Redirecting repositories for settings in ${settingsDir.absolutePath}")
 
     pluginManagement.repositories.redirect()
+    dependencyResolutionManagement.repositories.redirect()
     buildscript.repositories.redirect()
 
     gradle.beforeProject {

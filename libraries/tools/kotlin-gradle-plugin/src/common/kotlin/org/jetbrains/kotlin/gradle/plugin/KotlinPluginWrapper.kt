@@ -17,44 +17,43 @@
 package org.jetbrains.kotlin.gradle.plugin
 
 import org.gradle.api.GradleException
-import org.gradle.api.NamedDomainObjectFactory
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.artifacts.ExternalDependency
 import org.gradle.api.logging.Logger
 import org.gradle.api.logging.Logging
-import org.gradle.api.model.ObjectFactory
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
 import org.jetbrains.kotlin.compilerRunner.maybeCreateCommonizerClasspathConfiguration
-import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.*
+import org.jetbrains.kotlin.gradle.fus.BuildUidService
 import org.jetbrains.kotlin.gradle.internal.KOTLIN_BUILD_TOOLS_API_IMPL
 import org.jetbrains.kotlin.gradle.internal.KOTLIN_COMPILER_EMBEDDABLE
 import org.jetbrains.kotlin.gradle.internal.KOTLIN_MODULE_GROUP
+import org.jetbrains.kotlin.gradle.internal.attributes.setupAttributesMatchingStrategy
+import org.jetbrains.kotlin.gradle.internal.diagnostics.AgpCompatibilityCheck.runAgpCompatibilityCheckIfAgpIsApplied
+import org.jetbrains.kotlin.gradle.internal.diagnostics.GradleCompatibilityCheck.runGradleCompatibilityCheck
+import org.jetbrains.kotlin.gradle.internal.diagnostics.KotlinCompilerEmbeddableCheck.checkCompilerEmbeddableInClasspath
+import org.jetbrains.kotlin.gradle.internal.properties.PropertiesBuildService
 import org.jetbrains.kotlin.gradle.logging.kotlinDebug
-import org.jetbrains.kotlin.gradle.plugin.KotlinMultiplatformAndroidGradlePluginCompatibilityHealthCheck.runMultiplatformAndroidGradlePluginCompatibilityHealthCheckWhenAndroidIsApplied
 import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.kotlinPropertiesProvider
-import org.jetbrains.kotlin.gradle.plugin.diagnostics.*
+import org.jetbrains.kotlin.gradle.plugin.attributes.KlibPackaging
 import org.jetbrains.kotlin.gradle.plugin.internal.*
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinMultiplatformPlugin
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinUsages
-import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.KotlinPm20GradlePlugin
-import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.KotlinPm20ProjectExtension
-import org.jetbrains.kotlin.gradle.plugin.sources.DefaultKotlinSourceSetFactory
-import org.jetbrains.kotlin.gradle.plugin.statistics.KotlinBuildStatsService
+import org.jetbrains.kotlin.gradle.plugin.mpp.*
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.swiftexport.internal.initSwiftExportClasspathConfigurations
+import org.jetbrains.kotlin.gradle.plugin.mpp.resources.resolve.KotlinTargetResourcesResolutionStrategy
+import org.jetbrains.kotlin.gradle.plugin.statistics.BuildFusService
 import org.jetbrains.kotlin.gradle.report.BuildMetricsService
-import org.jetbrains.kotlin.gradle.plugin.statistics.BuildFlowService
 import org.jetbrains.kotlin.gradle.targets.js.KotlinJsCompilerAttribute
 import org.jetbrains.kotlin.gradle.targets.js.KotlinJsPlugin
-import org.jetbrains.kotlin.gradle.targets.js.nodejs.DefaultUnameExecutorVariantFactory
-import org.jetbrains.kotlin.gradle.targets.js.nodejs.UnameExecutor
-import org.jetbrains.kotlin.gradle.targets.js.npm.addNpmDependencyExtension
+import org.jetbrains.kotlin.gradle.targets.js.KotlinWasmTargetAttribute
 import org.jetbrains.kotlin.gradle.targets.metadata.isKotlinGranularMetadataEnabled
+import org.jetbrains.kotlin.gradle.targets.native.internal.CInteropCommonizerArtifactTypeAttribute
 import org.jetbrains.kotlin.gradle.targets.native.internal.CInteropKlibLibraryElements
+import org.jetbrains.kotlin.gradle.targets.native.internal.CommonizerTargetAttribute
+import org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleBuildService
 import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompileTool
 import org.jetbrains.kotlin.gradle.testing.internal.KotlinTestsRegistry
-import org.jetbrains.kotlin.gradle.tooling.registerBuildKotlinToolingMetadataTask
 import org.jetbrains.kotlin.gradle.utils.*
-import org.jetbrains.kotlin.statistics.metrics.StringMetrics
 import org.jetbrains.kotlin.tooling.core.KotlinToolingVersion
 import kotlin.reflect.KClass
 
@@ -68,13 +67,16 @@ abstract class DefaultKotlinBasePlugin : KotlinBasePlugin {
     override val pluginVersion: String = getKotlinPluginVersion(logger)
 
     override fun apply(project: Project) {
-        checkGradleCompatibility()
-
+        project.checkCompilerEmbeddableInClasspath()
         project.registerDefaultVariantImplementations()
-        KotlinBuildStatsService.getOrCreateInstance(project)?.apply {
-            report(StringMetrics.KOTLIN_COMPILER_VERSION, pluginVersion)
+        project.runGradleCompatibilityCheck()
+        project.runAgpCompatibilityCheckIfAgpIsApplied()
+
+        val buildUidService = BuildUidService.registerIfAbsent(project)
+        if (project.kotlinPropertiesProvider.enableFusMetricsCollection) {
+            BuildFusService.registerIfAbsent(project, pluginVersion, buildUidService)
         }
-        BuildFlowService.registerIfAbsent(project)
+        PropertiesBuildService.registerIfAbsent(project)
 
         project.gradle.projectsEvaluated {
             whenBuildEvaluated(project)
@@ -82,29 +84,24 @@ abstract class DefaultKotlinBasePlugin : KotlinBasePlugin {
 
         addKotlinCompilerConfiguration(project)
 
-
-        project.configurations.maybeCreate(PLUGIN_CLASSPATH_CONFIGURATION_NAME).apply {
+        project.configurations.maybeCreateResolvable(PLUGIN_CLASSPATH_CONFIGURATION_NAME).apply {
             isVisible = false
-            isCanBeConsumed = false
-            isCanBeResolved = true
             addGradlePluginMetadataAttributes(project)
         }
 
-        val kotlinGradleBuildServices = KotlinGradleBuildServices.registerIfAbsent(project.gradle).get()
+        val kotlinGradleBuildServices = KotlinGradleBuildServices.registerIfAbsent(project).get()
         if (!project.isProjectIsolationEnabled) {
             kotlinGradleBuildServices.detectKotlinPluginLoadedInMultipleProjects(project, pluginVersion)
         }
 
         BuildMetricsService.registerIfAbsent(project)
-
-        project.warnExperimentalTryK2IsEnabled()
+        KotlinNativeBundleBuildService.registerIfAbsent(project)
     }
 
     private fun addKotlinCompilerConfiguration(project: Project) {
         project
             .configurations
-            .maybeCreate(COMPILER_CLASSPATH_CONFIGURATION_NAME)
-            .markResolvable()
+            .maybeCreateResolvable(COMPILER_CLASSPATH_CONFIGURATION_NAME)
             .defaultDependencies {
                 it.add(
                     project.dependencies.create("$KOTLIN_MODULE_GROUP:$KOTLIN_COMPILER_EMBEDDABLE:${project.getKotlinPluginVersion()}")
@@ -112,12 +109,18 @@ abstract class DefaultKotlinBasePlugin : KotlinBasePlugin {
             }
         project
             .configurations
-            .maybeCreate(BUILD_TOOLS_API_CLASSPATH_CONFIGURATION_NAME)
-            .markResolvable()
-            .defaultDependencies {
-                it.add(
-                    project.dependencies.create("$KOTLIN_MODULE_GROUP:$KOTLIN_BUILD_TOOLS_API_IMPL:${project.getKotlinPluginVersion()}")
-                )
+            .maybeCreateResolvable(BUILD_TOOLS_API_CLASSPATH_CONFIGURATION_NAME)
+            .also {
+                project.dependencies.add(it.name, "$KOTLIN_MODULE_GROUP:$KOTLIN_BUILD_TOOLS_API_IMPL")
+                it.withDependencies { dependencies ->
+                    dependencies
+                        .withType<ExternalDependency>()
+                        .configureEach { dependency ->
+                            dependency.version { versionConstraint ->
+                                versionConstraint.strictly(project.kotlinExtensionOrNull?.compilerVersion?.get() ?: pluginVersion)
+                            }
+                        }
+                }
             }
         project
             .tasks
@@ -137,49 +140,10 @@ abstract class DefaultKotlinBasePlugin : KotlinBasePlugin {
 
     private fun Project.registerDefaultVariantImplementations() {
         val factories = VariantImplementationFactoriesConfigurator.get(project.gradle)
-        factories.putIfAbsent(
-            MavenPluginConfigurator.MavenPluginConfiguratorVariantFactory::class,
-            MavenPluginConfigurator.DefaultMavenPluginConfiguratorVariantFactory()
-        )
-
-        factories.putIfAbsent(
-            JavaSourceSetsAccessor.JavaSourceSetsAccessorVariantFactory::class,
-            DefaultJavaSourceSetsAccessorVariantFactory()
-        )
-
-        factories.putIfAbsent(
-            BasePluginConfiguration.BasePluginConfigurationVariantFactory::class,
-            DefaultBasePluginConfigurationVariantFactory()
-        )
-
-        factories.putIfAbsent(
-            IdeaSyncDetector.IdeaSyncDetectorVariantFactory::class,
-            DefaultIdeaSyncDetectorVariantFactory()
-        )
-
-        factories.putIfAbsent(
-            ConfigurationTimePropertiesAccessor.ConfigurationTimePropertiesAccessorVariantFactory::class,
-            DefaultConfigurationTimePropertiesAccessorVariantFactory()
-        )
-
-        factories.putIfAbsent(
-            MppTestReportHelper.MppTestReportHelperVariantFactory::class,
-            DefaultMppTestReportHelperVariantFactory()
-        )
-
-        factories.putIfAbsent(
-            KotlinTestReportCompatibilityHelper.KotlinTestReportCompatibilityHelperVariantFactory::class,
-            DefaultKotlinTestReportCompatibilityHelperVariantFactory()
-        )
-
-        factories.putIfAbsent(
-            ArtifactTypeAttributeAccessor.ArtifactTypeAttributeAccessorVariantFactory::class,
-            DefaultArtifactTypeAttributeAccessorVariantFactory()
-        )
 
         factories.putIfAbsent(
             ProjectIsolationStartParameterAccessor.Factory::class,
-            DefaultProjectIsolationStartParameterAccessorVariantFactory()
+            DefaultProjectIsolationStartParameterAccessor.Factory()
         )
 
         factories.putIfAbsent(
@@ -188,8 +152,18 @@ abstract class DefaultKotlinBasePlugin : KotlinBasePlugin {
         )
 
         factories.putIfAbsent(
-            UnameExecutor.UnameExecutorVariantFactory::class,
-            DefaultUnameExecutorVariantFactory()
+            ConfigurationCacheStartParameterAccessor.Factory::class,
+            DefaultConfigurationCacheStartParameterAccessorVariantFactory()
+        )
+
+        factories.putIfAbsent(
+            MavenPublicationComponentAccessor.Factory::class,
+            DefaultMavenPublicationComponentAccessorFactory()
+        )
+
+        factories.putIfAbsent(
+            JavaExecTaskParametersCompatibility.Factory::class,
+            DefaultJavaExecTaskParametersCompatibility.Factory()
         )
     }
 
@@ -198,10 +172,26 @@ abstract class DefaultKotlinBasePlugin : KotlinBasePlugin {
         isKotlinGranularMetadata: Boolean = project.isKotlinGranularMetadataEnabled,
     ) = with(project.dependencies.attributesSchema) {
         KotlinPlatformType.setupAttributesMatchingStrategy(this)
-        KotlinUsages.setupAttributesMatchingStrategy(this, isKotlinGranularMetadata)
-        KotlinJsCompilerAttribute.setupAttributesMatchingStrategy(project.dependencies.attributesSchema)
+        KotlinUsages.setupAttributesMatchingStrategy(
+            this,
+            isKotlinGranularMetadata,
+            project.kotlinPropertiesProvider.mppResourcesResolutionStrategy == KotlinTargetResourcesResolutionStrategy.ResourcesConfiguration
+        )
         ProjectLocalConfigurations.setupAttributesMatchingStrategy(this)
-        CInteropKlibLibraryElements.setupAttributesMatchingStrategy(this)
+
+        project.whenJsOrMppEnabled {
+            KotlinJsCompilerAttribute.setupAttributesMatchingStrategy(project.dependencies.attributesSchema)
+            KotlinWasmTargetAttribute.setupAttributesMatchingStrategy(project.dependencies.attributesSchema)
+            if (project.kotlinPropertiesProvider.useNonPackedKlibs) {
+                KlibPackaging.setupAttributesMatchingStrategy(project.dependencies.attributesSchema)
+            }
+        }
+
+        project.whenMppEnabled {
+            CInteropKlibLibraryElements.setupAttributesMatchingStrategy(this)
+            CommonizerTargetAttribute.setupAttributesMatchingStrategy(this)
+            CInteropCommonizerArtifactTypeAttribute.setupTransform(project)
+        }
     }
 
     open fun whenBuildEvaluated(project: Project) {
@@ -211,36 +201,24 @@ abstract class DefaultKotlinBasePlugin : KotlinBasePlugin {
 
 abstract class KotlinBasePluginWrapper : DefaultKotlinBasePlugin() {
 
-    open val projectExtensionClass: KClass<out KotlinTopLevelExtension> get() = KotlinProjectExtension::class
+    open val projectExtensionClass: KClass<out KotlinBaseExtension> get() = KotlinProjectExtension::class
 
     abstract val pluginVariant: String
 
-    internal open fun kotlinSourceSetFactory(project: Project): NamedDomainObjectFactory<KotlinSourceSet> =
-        DefaultKotlinSourceSetFactory(project)
-
     override fun apply(project: Project) {
         super.apply(project)
-
         project.logger.info("Using Kotlin Gradle Plugin $pluginVariant variant")
 
-        project.configurations.maybeCreate(NATIVE_COMPILER_PLUGIN_CLASSPATH_CONFIGURATION_NAME).apply {
+        project.configurations.maybeCreateResolvable(NATIVE_COMPILER_PLUGIN_CLASSPATH_CONFIGURATION_NAME).apply {
             isVisible = false
-            isCanBeConsumed = false
             isTransitive = false
             addGradlePluginMetadataAttributes(project)
         }
         project.maybeCreateCommonizerClasspathConfiguration()
+        project.initSwiftExportClasspathConfigurations()
 
         project.createKotlinExtension(projectExtensionClass).apply {
             coreLibrariesVersion = pluginVersion
-
-            fun kotlinSourceSetContainer(factory: NamedDomainObjectFactory<KotlinSourceSet>) =
-                project.container(KotlinSourceSet::class.java, factory)
-
-            val topLevelExtension = project.topLevelExtension
-            if (topLevelExtension is KotlinProjectExtension) {
-                project.kotlinExtension.sourceSets = kotlinSourceSetContainer(kotlinSourceSetFactory(project))
-            }
         }
 
         project.extensions.add(KotlinTestsRegistry.PROJECT_EXTENSION_NAME, createTestRegistry(project))
@@ -249,15 +227,13 @@ abstract class KotlinBasePluginWrapper : DefaultKotlinBasePlugin() {
 
         setupAttributeMatchingStrategy(project)
 
+        project.registerKotlinPluginExtensions()
+
         project.startKotlinPluginLifecycle()
 
         plugin.apply(project)
 
-        project.addNpmDependencyExtension()
-
-        project.registerBuildKotlinToolingMetadataTask()
-
-        project.launchDiagnosticChecksAndReporting()
+        project.runKotlinProjectSetupActions()
     }
 
     internal open fun createTestRegistry(project: Project) = KotlinTestsRegistry(project)
@@ -265,18 +241,6 @@ abstract class KotlinBasePluginWrapper : DefaultKotlinBasePlugin() {
     internal abstract fun getPlugin(
         project: Project,
     ): Plugin<Project>
-}
-
-private fun Project.launchDiagnosticChecksAndReporting() {
-    project.launchKotlinGradleProjectCheckers()
-    project.launch {
-        project.configurationResult.await()
-        renderReportedDiagnostics(
-            project.kotlinToolingDiagnosticsCollector.getDiagnosticsForProject(project),
-            project.logger,
-            project.kotlinPropertiesProvider.internalVerboseDiagnostics
-        )
-    }
 }
 
 abstract class AbstractKotlinPluginWrapper(
@@ -289,16 +253,6 @@ abstract class AbstractKotlinPluginWrapper(
         get() = KotlinJvmProjectExtension::class
 }
 
-abstract class AbstractKotlinCommonPluginWrapper(
-    protected val registry: ToolingModelBuilderRegistry,
-) : KotlinBasePluginWrapper() {
-    override fun getPlugin(project: Project): Plugin<Project> =
-        KotlinCommonPlugin(registry)
-
-    override val projectExtensionClass: KClass<out KotlinCommonProjectExtension>
-        get() = KotlinCommonProjectExtension::class
-}
-
 abstract class AbstractKotlinAndroidPluginWrapper(
     protected val registry: ToolingModelBuilderRegistry,
 ) : KotlinBasePluginWrapper() {
@@ -309,22 +263,6 @@ abstract class AbstractKotlinAndroidPluginWrapper(
         get() = KotlinAndroidProjectExtension::class
 }
 
-@Deprecated(
-    message = "Should be removed with JS platform plugin",
-    level = DeprecationLevel.ERROR
-)
-abstract class AbstractKotlin2JsPluginWrapper(
-    protected val registry: ToolingModelBuilderRegistry,
-) : KotlinBasePluginWrapper() {
-
-    @Suppress("DEPRECATION_ERROR")
-    override fun getPlugin(project: Project): Plugin<Project> =
-        Kotlin2JsPlugin(registry)
-
-    override val projectExtensionClass: KClass<out Kotlin2JsProjectExtension>
-        get() = Kotlin2JsProjectExtension::class
-}
-
 abstract class AbstractKotlinJsPluginWrapper : KotlinBasePluginWrapper() {
     override fun getPlugin(project: Project): Plugin<Project> =
         KotlinJsPlugin()
@@ -333,8 +271,7 @@ abstract class AbstractKotlinJsPluginWrapper : KotlinBasePluginWrapper() {
         get() = KotlinJsProjectExtension::class
 
     override fun whenBuildEvaluated(project: Project) = project.runProjectConfigurationHealthCheck {
-        val isJsTargetUninitialized = (project.kotlinExtension as KotlinJsProjectExtension)
-            ._target == null
+        val isJsTargetUninitialized = !(project.kotlinExtension as KotlinJsProjectExtension).targetFuture.isCompleted
 
         if (isJsTargetUninitialized) {
             throw GradleException(
@@ -357,37 +294,11 @@ abstract class AbstractKotlinJsPluginWrapper : KotlinBasePluginWrapper() {
 }
 
 abstract class AbstractKotlinMultiplatformPluginWrapper : KotlinBasePluginWrapper() {
-    override fun getPlugin(project: Project): Plugin<Project> =
-        KotlinMultiplatformPlugin()
-
-    override fun apply(project: Project) {
-        super.apply(project)
-        project.runMultiplatformAndroidGradlePluginCompatibilityHealthCheckWhenAndroidIsApplied()
-    }
+    @Suppress("DEPRECATION")
+    override fun getPlugin(project: Project): Plugin<Project> = KotlinMultiplatformPlugin()
 
     override val projectExtensionClass: KClass<out KotlinMultiplatformExtension>
         get() = KotlinMultiplatformExtension::class
-
-    override fun whenBuildEvaluated(project: Project) {
-        project.runMissingAndroidTargetProjectConfigurationHealthCheck()
-        project.runMissingKotlinTargetsProjectConfigurationHealthCheck()
-        project.runDisabledCInteropCommonizationOnHmppProjectConfigurationHealthCheck()
-    }
-}
-
-abstract class AbstractKotlinPm20PluginWrapper(
-    private val objectFactory: ObjectFactory,
-) : KotlinBasePluginWrapper() {
-    override fun apply(project: Project) {
-        super.apply(project)
-        project.runMultiplatformAndroidGradlePluginCompatibilityHealthCheckWhenAndroidIsApplied()
-    }
-
-    override fun getPlugin(project: Project): Plugin<Project> =
-        objectFactory.newInstance(KotlinPm20GradlePlugin::class.java)
-
-    override val projectExtensionClass: KClass<out KotlinPm20ProjectExtension>
-        get() = KotlinPm20ProjectExtension::class
 }
 
 fun Project.getKotlinPluginVersion() = getKotlinPluginVersion(project.logger)
@@ -400,12 +311,9 @@ fun getKotlinPluginVersion(logger: Logger): String {
     return kotlinPluginVersionFromResources.value
 }
 
-@ExperimentalKotlinGradlePluginApi
-val Project.kotlinToolingVersion: KotlinToolingVersion
-    get() = extensions.extraProperties.getOrPut("kotlinToolingVersion") {
-        KotlinToolingVersion(getKotlinPluginVersion())
-    }
-
+val Project.kotlinToolingVersion: KotlinToolingVersion by projectStoredProperty {
+    KotlinToolingVersion(getKotlinPluginVersion())
+}
 
 private fun loadKotlinPluginVersionFromResourcesOf(any: Any) =
     any.loadPropertyFromResources("project.properties", "project.version")

@@ -69,7 +69,7 @@ class KonanBCEForLoopBodyTransformer : ForLoopBodyTransformer() {
     private fun IrExpression.compareIntegerNumericConst(compare: (Long) -> Boolean): Boolean {
         @Suppress("UNCHECKED_CAST")
         return when (this) {
-            is IrConst<*> -> value is Number && compare((value as Number).toLong())
+            is IrConst -> value is Number && compare((value as Number).toLong())
             is IrGetValue -> compareConstValue { it.compareIntegerNumericConst(compare) }
             else -> false
         }
@@ -78,7 +78,7 @@ class KonanBCEForLoopBodyTransformer : ForLoopBodyTransformer() {
     private fun IrExpression.compareFloatNumericConst(compare: (Double) -> Boolean): Boolean {
         @Suppress("UNCHECKED_CAST")
         return when (this) {
-            is IrConst<*> -> value is Number && compare((value as Number).toDouble())
+            is IrConst -> value is Number && compare((value as Number).toDouble())
             is IrGetValue -> compareConstValue { it.compareFloatNumericConst(compare) }
             else -> false
         }
@@ -300,8 +300,8 @@ class KonanBCEForLoopBodyTransformer : ForLoopBodyTransformer() {
             } ?: return expression
             return IrCallImpl(
                     expression.startOffset, expression.endOffset, expression.type, operatorWithoutBoundCheck.symbol,
-                    typeArgumentsCount = expression.typeArgumentsCount,
-                    valueArgumentsCount = expression.valueArgumentsCount).apply {
+                    typeArgumentsCount = expression.typeArguments.size
+            ).apply {
                 dispatchReceiver = expression.dispatchReceiver
                 for (argIndex in 0 until expression.valueArgumentsCount) {
                     putValueArgument(argIndex, expression.getValueArgument(argIndex))
@@ -345,4 +345,8 @@ class KonanBCEForLoopBodyTransformer : ForLoopBodyTransformer() {
             else -> newExpression
         }
     }
+}
+
+class NativeForLoopsLowering(context: CommonBackendContext) : ForLoopsLowering(context) {
+    override val loopBodyTransformer: ForLoopBodyTransformer = KonanBCEForLoopBodyTransformer()
 }

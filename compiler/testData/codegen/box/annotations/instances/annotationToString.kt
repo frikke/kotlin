@@ -1,6 +1,5 @@
 // IGNORE_BACKEND: JVM
 // IGNORE_BACKEND: WASM
-// DONT_TARGET_EXACT_BACKEND: JS
 
 // This test fails on Native with test grouping and package renaming enabled,
 // because the latter doesn't yet handle annotation toString implementations properly.
@@ -8,7 +7,8 @@
 // NATIVE_STANDALONE
 
 // WITH_STDLIB
-// !LANGUAGE: +InstantiationOfAnnotationClasses
+// LANGUAGE: +InstantiationOfAnnotationClasses
+
 
 package test
 

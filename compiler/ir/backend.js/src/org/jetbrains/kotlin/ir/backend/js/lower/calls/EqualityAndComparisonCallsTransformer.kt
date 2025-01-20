@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.utils.atMostOne
 
@@ -53,8 +54,7 @@ class EqualityAndComparisonCallsTransformer(context: JsIrBackendContext) : Calls
             call.endOffset,
             comparator.owner.returnType,
             comparator,
-            typeArgumentsCount = 0,
-            valueArgumentsCount = 2
+            typeArgumentsCount = 0
         ).apply {
             putValueArgument(0, irCall(call, intrinsics.longCompareToLong, argumentsAsReceivers = true))
             putValueArgument(1, JsIrBuilder.buildInt(irBuiltIns.intType, 0))
@@ -207,7 +207,9 @@ class EqualityAndComparisonCallsTransformer(context: JsIrBackendContext) : Calls
 
     private fun IrExpression.unboxParamWithInlinedClass(): Pair<IrExpression, IrClass?> {
         val unboxed = (this as IrFunctionAccessExpression).getValueArgument(0)
-            ?: error("Boxed expression is expected")
+            ?: irError("Boxed expression is expected") {
+                withIrEntry("this", this@unboxParamWithInlinedClass)
+            }
         return Pair(unboxed, icUtils.getInlinedClass(unboxed.type))
     }
 

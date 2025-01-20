@@ -8,16 +8,26 @@ package org.jetbrains.kotlin.gradle.plugin.ide
 import com.google.gson.*
 import org.gradle.api.DefaultTask
 import org.gradle.api.Project
-import org.gradle.api.tasks.TaskAction
-import org.gradle.api.tasks.TaskProvider
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.tasks.*
+import org.gradle.work.DisableCachingByDefault
+import org.gradle.work.NormalizeLineEndings
 import org.jetbrains.kotlin.gradle.dsl.kotlinExtension
 import org.jetbrains.kotlin.gradle.idea.tcs.IdeaKotlinDependencyCoordinates
+import org.jetbrains.kotlin.gradle.plugin.KotlinProjectSetupAction
+import org.jetbrains.kotlin.gradle.plugin.sources.internal
 import org.jetbrains.kotlin.gradle.tasks.locateOrRegisterTask
 import org.jetbrains.kotlin.gradle.utils.appendLine
+import org.jetbrains.kotlin.gradle.utils.filesProvider
+import org.jetbrains.kotlin.gradle.utils.lenientArtifactsView
 import org.jetbrains.kotlin.gradle.utils.notCompatibleWithConfigurationCacheCompat
 import org.jetbrains.kotlin.tooling.core.Extras
 import java.io.File
 import java.lang.reflect.Type
+
+internal val IdeResolveDependenciesTaskSetupAction = KotlinProjectSetupAction {
+    locateOrRegisterIdeResolveDependenciesTask()
+}
 
 internal fun Project.locateOrRegisterIdeResolveDependenciesTask(): TaskProvider<IdeResolveDependenciesTask> {
     return locateOrRegisterTask("resolveIdeDependencies") { task ->
@@ -32,13 +42,13 @@ internal fun Project.locateOrRegisterIdeResolveDependenciesTask(): TaskProvider<
  * This will invoke the [IdeMultiplatformImport] to resolve all dependencies (like the IDE would).
  * Outputs are written as json and protobufs
  */
+@DisableCachingByDefault(because = "Used for debugging/diagnostic purpose.")
 internal open class IdeResolveDependenciesTask : DefaultTask() {
-
     @TaskAction
     fun resolveDependencies() {
-        val outputDirectory = project.buildDir.resolve("ide/dependencies")
+        val outputDirectory = project.layout.buildDirectory.dir("ide/dependencies").get().asFile
         outputDirectory.deleteRecursively()
-        val gson = GsonBuilder().setLenient().setPrettyPrinting()
+        val gson = GsonBuilder().setStrictness(Strictness.LENIENT).setPrettyPrinting()
             .registerTypeHierarchyAdapter(IdeDependencyResolver::class.java, IdeDependencyResolverAdapter)
             .registerTypeHierarchyAdapter(Extras::class.java, ExtrasAdapter)
             .registerTypeHierarchyAdapter(IdeaKotlinDependencyCoordinates::class.java, IdeaKotlinDependencyCoordinatesAdapter)

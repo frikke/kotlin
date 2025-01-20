@@ -1,4 +1,5 @@
 
+
 // FILE: test.kt
 
 fun box() {
@@ -19,27 +20,43 @@ inline fun baz() {
 
 fun nop() {}
 
-// EXPECTATIONS JVM JVM_IR
-// test.kt:5 box
-// test.kt:12 box
-// test.kt:20 nop
-// test.kt:13 box
+// EXPECTATIONS JVM_IR
 // test.kt:6 box
-// test.kt:20 nop
-// test.kt:7 box
-// test.kt:17 box
-// test.kt:20 nop
-// test.kt:18 box
-// test.kt:8 box
 // test.kt:13 box
+// test.kt:21 nop
 // test.kt:14 box
+// test.kt:7 box
+// test.kt:21 nop
+// test.kt:8 box
+// test.kt:18 box
+// test.kt:21 nop
+// test.kt:19 box
 // test.kt:9 box
+// test.kt:14 box
+// test.kt:15 box
+// test.kt:10 box
 
 // EXPECTATIONS JS_IR
-// test.kt:12 box
-// test.kt:20 nop
-// test.kt:6 box
-// test.kt:20 nop
-// test.kt:17 box
-// test.kt:20 nop
-// test.kt:9 box
+// test.kt:13 box
+// test.kt:21 nop
+// test.kt:7 box
+// test.kt:21 nop
+// test.kt:18 box
+// test.kt:21 nop
+// test.kt:10 box
+
+// EXPECTATIONS WASM
+// test.kt:6 $box (4)
+// test.kt:13 $box (4)
+// test.kt:21 $nop (12)
+// test.kt:14 $box (4)
+// test.kt:7 $box (8)
+// test.kt:21 $nop (12)
+// test.kt:8 $box (8)
+// test.kt:18 $box (4)
+// test.kt:21 $nop (12)
+// test.kt:18 $box (4)
+// test.kt:19 $box (1)
+// test.kt:9 $box (5)
+// test.kt:15 $box (1)
+// test.kt:10 $box (1)

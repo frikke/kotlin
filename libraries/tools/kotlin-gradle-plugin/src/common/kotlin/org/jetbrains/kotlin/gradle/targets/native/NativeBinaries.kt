@@ -13,14 +13,16 @@ import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.attributes.HasAttributes
-import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.AbstractExecTask
 import org.gradle.api.tasks.TaskProvider
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.dsl.KotlinGradlePluginPublicDsl
 import org.jetbrains.kotlin.gradle.tasks.KotlinNativeLink
-import org.jetbrains.kotlin.gradle.utils.Xcode
+import org.jetbrains.kotlin.gradle.utils.attributeOf
 import org.jetbrains.kotlin.gradle.utils.lowerCamelCaseName
+import org.jetbrains.kotlin.gradle.utils.maybeCreateResolvable
 import org.jetbrains.kotlin.konan.target.KonanTarget
 import org.jetbrains.kotlin.util.capitalizeDecapitalize.toUpperCaseAsciiOnly
 import java.io.File
@@ -33,19 +35,15 @@ import java.io.File
  * @param compilation - a compilation used to produce this binary.
  *
  */
+@KotlinGradlePluginPublicDsl
 sealed class NativeBinary(
     private val name: String,
-    baseNameProvided: String,
+    open var baseName: String,
     val buildType: NativeBuildType,
     @Transient
     var compilation: KotlinNativeCompilation
 ) : Named {
-    open var baseName: String
-        get() = baseNameProvider.get()
-        set(value) {
-            baseNameProvider = project.provider { value }
-        }
-    internal var baseNameProvider: Provider<String> = project.provider { baseNameProvided }
+    internal val baseNameProvider: Provider<String> = project.provider { baseName }
 
     internal val konanTarget: KonanTarget
         get() = compilation.konanTarget
@@ -83,6 +81,7 @@ sealed class NativeBinary(
     }
 
     /** Additional arguments passed to the Kotlin/Native compiler. */
+    @Suppress("DEPRECATION")
     var freeCompilerArgs: List<String>
         get() = linkTask.kotlinOptions.freeCompilerArgs
         set(value) {
@@ -93,6 +92,7 @@ sealed class NativeBinary(
     val linkTaskName: String
         get() = lowerCamelCaseName("link", name, target.targetName)
 
+    @Deprecated("Use 'linkTaskProvider' instead", ReplaceWith("linkTaskProvider"))
     val linkTask: KotlinNativeLink
         get() = linkTaskProvider.get()
 
@@ -110,14 +110,18 @@ sealed class NativeBinary(
         objects.directoryProperty().convention(layout.buildDirectory.dir("bin/$targetSubDirectory${this@NativeBinary.name}"))
     }
 
-    val outputFile: File by lazy {
-        linkTask.outputFile.get()
+    private val outputFileProvider: Provider<File> by lazy {
+        linkTaskProvider.flatMap { it.outputFile }
     }
+
+    val outputFile: File
+        get() = outputFileProvider.get()
 
     // Named implementation.
     override fun getName(): String = name
 }
 
+@KotlinGradlePluginPublicDsl
 abstract class AbstractExecutable(
     name: String,
     baseName: String,
@@ -125,6 +129,7 @@ abstract class AbstractExecutable(
     compilation: KotlinNativeCompilation
 ) : NativeBinary(name, baseName, buildType, compilation)
 
+@KotlinGradlePluginPublicDsl
 class Executable constructor(
     name: String,
     baseName: String,
@@ -188,6 +193,7 @@ class Executable constructor(
         get() = runTaskProvider?.get()
 }
 
+@KotlinGradlePluginPublicDsl
 class TestExecutable(
     name: String,
     baseName: String,
@@ -199,6 +205,7 @@ class TestExecutable(
         get() = NativeOutputKind.TEST
 }
 
+@KotlinGradlePluginPublicDsl
 abstract class AbstractNativeLibrary(
     name: String,
     baseName: String,
@@ -212,10 +219,11 @@ abstract class AbstractNativeLibrary(
     /**
      * If dependencies added by the [export] method are resolved transitively or not.
      */
+    @ExperimentalKotlinGradlePluginApi
     var transitiveExport: Boolean
-        get() = project.configurations.maybeCreate(exportConfigurationName).isTransitive
+        get() = project.configurations.maybeCreateResolvable(exportConfigurationName).isTransitive
         set(value) {
-            project.configurations.maybeCreate(exportConfigurationName).isTransitive = value
+            project.configurations.maybeCreateResolvable(exportConfigurationName).isTransitive = value
         }
 
     /**
@@ -242,6 +250,7 @@ abstract class AbstractNativeLibrary(
     }
 }
 
+@KotlinGradlePluginPublicDsl
 class StaticLibrary(
     name: String,
     baseName: String,
@@ -252,6 +261,7 @@ class StaticLibrary(
         get() = NativeOutputKind.STATIC
 }
 
+@KotlinGradlePluginPublicDsl
 class SharedLibrary(
     name: String,
     baseName: String,
@@ -262,6 +272,7 @@ class SharedLibrary(
         get() = NativeOutputKind.DYNAMIC
 }
 
+@KotlinGradlePluginPublicDsl
 class Framework(
     name: String,
     baseName: String,
@@ -269,7 +280,6 @@ class Framework(
     compilation: KotlinNativeCompilation
 ) : AbstractNativeLibrary(name, baseName, buildType, compilation), HasAttributes {
 
-    @Transient // Is required configuration cache support for KotlinNative tasks that capture whole binary object as task state
     private val attributeContainer = HierarchyAttributeContainer(parent = compilation.attributes)
 
     override fun getAttributes() = attributeContainer
@@ -278,40 +288,29 @@ class Framework(
         get() = NativeOutputKind.FRAMEWORK
 
     // Embedding bitcode.
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE)
     /**
      * Embed bitcode for the framework or not. See [BitcodeEmbeddingMode].
      */
-    val embedBitcodeMode = project.objects.property(org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode::class.java).apply {
-        convention(project.provider {
-            Xcode?.defaultBitcodeEmbeddingMode(konanTarget, buildType)
-                ?: org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.DISABLE
-        })
-    }
+    val embedBitcodeMode = project.objects.property(org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode::class.java)
 
-    @Deprecated("Use 'embedBitcodeMode' property instead.")
-    var embedBitcode: org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode
-        get() = embedBitcodeMode.get()
-        set(value) {
-            embedBitcodeMode.set(value)
-        }
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE)
+    var embedBitcode: org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.DISABLE
 
     /**
      * Enable or disable embedding bitcode for the framework. See [BitcodeEmbeddingMode].
      */
+    @Suppress("DEPRECATION")
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE, replaceWith = ReplaceWith(""))
     fun embedBitcode(mode: org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode) {
         embedBitcodeMode.set(mode)
     }
 
     /**
-     * Enable or disable embedding bitcode for the framework.
-     * The parameter [mode] is one of the following string constants:
-     *
-     *     disable - Don't embed LLVM IR bitcode.
-     *     bitcode - Embed LLVM IR bitcode as data.
-     *               Has the same effect as the -Xembed-bitcode command line option.
-     *     marker - Embed placeholder LLVM IR data as a marker.
-     *              Has the same effect as the -Xembed-bitcode-marker command line option.
+     * [embedBitcode] is deprecated and has no effect
      */
+    @Suppress("DEPRECATION")
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE, replaceWith = ReplaceWith(""))
     fun embedBitcode(mode: String) = embedBitcode(org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.valueOf(mode.toUpperCaseAsciiOnly()))
 
     /**
@@ -319,6 +318,7 @@ class Framework(
      */
     var isStatic = false
 
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE)
     object BitcodeEmbeddingMode {
         val DISABLE = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.DISABLE
         val BITCODE = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.BITCODE
@@ -326,9 +326,8 @@ class Framework(
     }
 
     companion object {
-        val frameworkTargets: Attribute<Set<*>> = Attribute.of(
-            "org.jetbrains.kotlin.native.framework.targets",
-            Set::class.java
+        val frameworkTargets: Attribute<Set<String>> = attributeOf<Set<String>>(
+            "org.jetbrains.kotlin.native.framework.targets"
         )
     }
 }

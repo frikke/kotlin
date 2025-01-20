@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 
+import org.jetbrains.kotlin.backend.js.TsCompilationStrategy
 import org.jetbrains.kotlin.ir.backend.js.export.TypeScriptFragment
 import org.jetbrains.kotlin.ir.backend.js.export.toTypeScript
 import org.jetbrains.kotlin.js.backend.ast.ESM_EXTENSION
@@ -29,17 +30,26 @@ abstract class CompilationOutputs {
 
     abstract fun writeJsCode(outputJsFile: File, outputJsMapFile: File)
 
-    fun writeAll(outputDir: File, outputName: String, genDTS: Boolean, moduleName: String, moduleKind: ModuleKind): Collection<File> {
-        val writtenFiles = LinkedHashSet<File>(2 * (dependencies.size + 1) + 1)
+    fun createWrittenFilesContainer(): MutableSet<File> = LinkedHashSet(2 * (dependencies.size + 1) + 1)
+
+    open fun writeAll(outputDir: File, outputName: String, dtsStrategy: TsCompilationStrategy, moduleName: String, moduleKind: ModuleKind): Collection<File> {
+        val writtenFiles = createWrittenFilesContainer()
 
         fun File.writeAsJsFile(out: CompilationOutputs) {
             parentFile.mkdirs()
             val jsMapFile = mapForJsFile
             val jsFile = normalizedAbsoluteFile
+
             out.writeJsCode(jsFile, jsMapFile)
 
             writtenFiles += jsFile
             writtenFiles += jsMapFile
+
+            out.tsDefinitions.takeIf { dtsStrategy == TsCompilationStrategy.EACH_FILE }?.let {
+                val tsFile = jsFile.dtsForJsFile
+                tsFile.writeText(listOf(it).toTypeScript(name, moduleKind))
+                writtenFiles += tsFile
+            }
         }
 
         dependencies.forEach { (name, content) ->
@@ -49,15 +59,17 @@ abstract class CompilationOutputs {
         val outputJsFile = outputDir.resolve("$outputName${moduleKind.extension}")
         outputJsFile.writeAsJsFile(this)
 
-        if (genDTS) {
+        if (dtsStrategy == TsCompilationStrategy.MERGED) {
             val dtsFile = outputJsFile.dtsForJsFile
             dtsFile.writeText(getFullTsDefinition(moduleName, moduleKind))
             writtenFiles += dtsFile
         }
 
-        Files.walk(outputDir.toPath()).map { it.toFile() }.filter { it != outputDir && it !in writtenFiles }.forEach(File::delete)
+        return writtenFiles.also { deleteNonWrittenFiles(outputDir, it) }
+    }
 
-        return writtenFiles
+    fun deleteNonWrittenFiles(outputDir: File, writtenFiles: Set<File>) {
+        Files.walk(outputDir.toPath()).map { it.toFile() }.filter { it != outputDir && it !in writtenFiles }.forEach(File::delete)
     }
 
     fun getFullTsDefinition(moduleName: String, moduleKind: ModuleKind): String {
@@ -65,13 +77,13 @@ abstract class CompilationOutputs {
         return allTsDefinitions.toTypeScript(moduleName, moduleKind)
     }
 
-    private val File.normalizedAbsoluteFile
+    protected val File.normalizedAbsoluteFile
         get() = absoluteFile.normalize()
 
-    private val File.mapForJsFile
+    protected val File.mapForJsFile
         get() = resolveSibling("$name.map").normalizedAbsoluteFile
 
-    private val File.dtsForJsFile
+    protected val File.dtsForJsFile
         get() = resolveSibling("$nameWithoutExtension.d.ts").normalizedAbsoluteFile
 }
 
@@ -100,8 +112,8 @@ class CompilationOutputsBuilt(
         outputJsFile.writeText(rawJsCode + sourceMappingUrl)
     }
 
-    fun writeJsCodeIntoModuleCache(outputJsFile: File, outputJsMapFile: File): CompilationOutputsBuiltForCache {
-        sourceMap?.let { outputJsMapFile.writeText(it) }
+    fun writeJsCodeIntoModuleCache(outputJsFile: File, outputJsMapFile: File?): CompilationOutputsBuiltForCache {
+        sourceMap?.let { outputJsMapFile?.writeText(it) }
         outputJsFile.writeText(rawJsCode)
         return CompilationOutputsBuiltForCache(outputJsFile, outputJsMapFile, this)
     }
@@ -142,7 +154,7 @@ class CompilationOutputsCached(
 
 class CompilationOutputsBuiltForCache(
     private val jsCodeFile: File,
-    private val sourceMapFile: File,
+    private val sourceMapFile: File?,
     private val outputBuilt: CompilationOutputsBuilt
 ) : CompilationOutputs() {
 
@@ -160,6 +172,6 @@ class CompilationOutputsBuiltForCache(
         outputBuilt.writeJsCode(outputJsFile, outputJsMapFile)
 
         jsCodeFile.copyModificationTimeFrom(outputJsFile)
-        sourceMapFile.copyModificationTimeFrom(outputJsMapFile)
+        sourceMapFile?.copyModificationTimeFrom(outputJsMapFile)
     }
 }

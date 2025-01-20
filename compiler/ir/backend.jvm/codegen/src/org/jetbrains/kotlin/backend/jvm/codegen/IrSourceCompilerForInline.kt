@@ -11,6 +11,7 @@ import org.jetbrains.kotlin.backend.jvm.hasMangledReturnType
 import org.jetbrains.kotlin.backend.jvm.ir.*
 import org.jetbrains.kotlin.codegen.inline.*
 import org.jetbrains.kotlin.codegen.state.GenerationState
+import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.diagnostics.DiagnosticUtils
 import org.jetbrains.kotlin.incremental.components.LocationInfo
 import org.jetbrains.kotlin.incremental.components.Position
@@ -50,7 +51,7 @@ class IrSourceCompilerForInline(
                     codegen.methodSignatureMapper.mapAsmMethod(rootFunction),
                 rootFunction.inlineScopeVisibility,
                 rootFunction.fileParent.getIoFile(),
-                callElement.psiElement?.let { CodegenUtil.getLineNumberForElement(it, false) } ?: 0
+                codegen.irFunction.fileParent.fileEntry.getLineNumber(callElement.startOffset),
             )
         }
 
@@ -88,7 +89,14 @@ class IrSourceCompilerForInline(
             }
         }
         callee.parentClassId?.let {
-            return loadCompiledInlineFunction(it, jvmSignature.asmMethod, callee.isSuspend, callee.hasMangledReturnType, state)
+            return loadCompiledInlineFunction(
+                it,
+                jvmSignature.asmMethod,
+                callee.isSuspend,
+                callee.hasMangledReturnType,
+                codegen.context.evaluatorData != null && callee.visibility == DescriptorVisibilities.INTERNAL,
+                state
+            )
         }
         return ClassCodegen.getOrCreate(callee.parentAsClass, codegen.context).generateMethodNode(callee)
     }
@@ -106,7 +114,25 @@ class IrSourceCompilerForInline(
 
     @OptIn(ObsoleteDescriptorBasedAPI::class)
     override val isCallInsideSameModuleAsCallee: Boolean
-        get() = callee.module == codegen.irFunction.module
+        get() {
+            val inlineFunModule = callee.fileOrNull?.module
+            val currentlyGeneratedFunModule = codegen.irFunction.fileOrNull?.module
+            check(currentlyGeneratedFunModule != null) {
+                "There is no module for function ${codegen.irFunction.name}:\n${codegen.irFunction.render()}"
+            }
+
+            return if (inlineFunModule == null) {
+                callee.module == codegen.irFunction.module
+            } else {
+                // Check by IR is needed for the evaluate expression in IDE.
+                // When we compile some code fragment with inline function call
+                // that has an anonymous object in callee, we will get incorrect behavior.
+                // Code fragment is wrapped in `EvaluatorModuleDescriptor` and we accidentally
+                // think that inline call and callee are in different modules that leads to an error in
+                // `AnonymousObjectTransformer.doTransform`.
+                inlineFunModule == currentlyGeneratedFunModule
+            }
+        }
 
     override val isFinallyMarkerRequired: Boolean
         get() = codegen.isFinallyMarkerRequired

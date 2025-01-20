@@ -9,11 +9,10 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.getFirResolveSession
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.resolveToFirSymbol
-import org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSourcesSession
+import org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSession
 import org.jetbrains.kotlin.analysis.low.level.api.fir.util.getContainingFile
-import org.jetbrains.kotlin.analysis.project.structure.ProjectStructureProvider
-import org.jetbrains.kotlin.analysis.providers.KotlinAnnotationsResolver
-import org.jetbrains.kotlin.analysis.providers.KotlinDeclarationProvider
+import org.jetbrains.kotlin.analysis.api.platform.projectStructure.KotlinProjectStructureProvider
+import org.jetbrains.kotlin.analysis.api.platform.declarations.KotlinAnnotationsResolver
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.caches.FirCache
 import org.jetbrains.kotlin.fir.caches.createCache
@@ -41,11 +40,10 @@ import org.jetbrains.kotlin.psi.*
  * PSI index based implementation of [FirPredicateBasedProvider].
  */
 internal class LLFirIdePredicateBasedProvider(
-    private val session: LLFirSourcesSession,
+    private val session: LLFirSession,
     private val annotationsResolver: KotlinAnnotationsResolver,
-    private val declarationProvider: KotlinDeclarationProvider,
 ) : FirPredicateBasedProvider() {
-    private val projectStructureProvider by lazy { ProjectStructureProvider.getInstance(session.project) }
+    private val projectStructureProvider by lazy { KotlinProjectStructureProvider.getInstance(session.project) }
 
     private val registeredPluginAnnotations: FirRegisteredPluginAnnotations
         get() = session.registeredPluginAnnotations
@@ -174,7 +172,7 @@ internal class LLFirIdePredicateBasedProvider(
         val firResolvedAnnotations = declaration.annotations
             .asSequence()
             .mapNotNull { it.annotationTypeRef as? FirResolvedTypeRef }
-            .mapNotNull { it.type.classId }
+            .mapNotNull { it.coneType.classId }
             .map { it.asSingleFqName() }
             .toSet()
 

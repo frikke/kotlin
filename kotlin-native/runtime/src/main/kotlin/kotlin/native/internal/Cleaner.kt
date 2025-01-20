@@ -8,10 +8,9 @@ package kotlin.native.internal
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.concurrent.*
 import kotlin.native.runtime.GC
-import kotlinx.cinterop.NativePtr
 
 @Deprecated("Use kotlin.native.ref.Cleaner instead.", ReplaceWith("kotlin.native.ref.Cleaner"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
+@DeprecatedSinceKotlin(warningSince = "1.9", errorSince = "2.1")
 public interface Cleaner
 
 /**
@@ -72,12 +71,12 @@ public interface Cleaner
 // TODO: Consider just annotating the lambda argument rather than hardcoding checking
 // by function name in the compiler.
 @Deprecated("Use kotlin.native.ref.createCleaner instead.", ReplaceWith("kotlin.native.ref.createCleaner(argument, block)"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
-@Suppress("DEPRECATION")
+@DeprecatedSinceKotlin(warningSince = "1.9", errorSince = "2.1")
+@Suppress("DEPRECATION_ERROR")
 @ExperimentalStdlibApi
 @ExportForCompiler
-@OptIn(ExperimentalNativeApi::class, ObsoleteWorkersApi::class)
-fun <T> createCleaner(argument: T, block: (T) -> Unit): Cleaner =
+@OptIn(ExperimentalNativeApi::class)
+public fun <T> createCleaner(argument: T, block: (T) -> Unit): Cleaner =
         kotlin.native.ref.createCleanerImpl(argument, block) as Cleaner
 
 /**
@@ -85,7 +84,7 @@ fun <T> createCleaner(argument: T, block: (T) -> Unit): Cleaner =
  */
 @InternalForKotlinNative
 @OptIn(kotlin.native.runtime.NativeRuntimeApi::class, ObsoleteWorkersApi::class)
-fun performGCOnCleanerWorker() =
+public fun performGCOnCleanerWorker(): Unit =
     getCleanerWorker().execute(TransferMode.SAFE, {}) {
         GC.collect()
     }.result
@@ -95,14 +94,14 @@ fun performGCOnCleanerWorker() =
  */
 @InternalForKotlinNative
 @OptIn(ObsoleteWorkersApi::class)
-fun waitCleanerWorker() =
+public fun waitCleanerWorker(): Unit =
     getCleanerWorker().execute(TransferMode.SAFE, {}) {
         Unit
     }.result
 
 @GCUnsafeCall("Kotlin_CleanerImpl_getCleanerWorker")
 @OptIn(ObsoleteWorkersApi::class)
-external internal fun getCleanerWorker(): Worker
+internal external fun getCleanerWorker(): Worker
 
 @ExportForCppRuntime("Kotlin_CleanerImpl_shutdownCleanerWorker")
 @OptIn(ObsoleteWorkersApi::class)

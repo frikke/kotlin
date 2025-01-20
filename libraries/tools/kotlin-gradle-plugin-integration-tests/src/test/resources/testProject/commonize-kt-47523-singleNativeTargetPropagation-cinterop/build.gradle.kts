@@ -1,6 +1,5 @@
-
-import org.jetbrains.kotlin.com.intellij.openapi.util.SystemInfo.*
 import org.jetbrains.kotlin.gradle.plugin.sources.DefaultKotlinSourceSet
+import org.jetbrains.kotlin.konan.target.HostManager
 
 plugins {
     kotlin("multiplatform") apply true
@@ -13,9 +12,9 @@ repositories {
 
 kotlin {
     val nativePlatform = when {
-        isMac -> macosX64("nativePlatform")
-        isLinux -> linuxX64("nativePlatform")
-        isWindows -> mingwX64("nativePlatform")
+        HostManager.hostIsMac -> macosX64("nativePlatform")
+        HostManager.hostIsLinux -> linuxX64("nativePlatform")
+        HostManager.hostIsMingw -> mingwX64("nativePlatform")
         else -> throw IllegalStateException("Unsupported host")
     }
 
@@ -35,11 +34,11 @@ kotlin {
 fun createListDependenciesTask(sourceSetName: String) {
     tasks.create("list${sourceSetName.capitalize()}Dependencies") {
         val sourceSet = kotlin.sourceSets[sourceSetName] as DefaultKotlinSourceSet
-        val metadataConfiguration = project.configurations[sourceSet.intransitiveMetadataConfigurationName]
-        dependsOn(metadataConfiguration)
+        val metadataFiles = project.configurations[sourceSet.intransitiveMetadataConfigurationName].incoming.artifacts.artifactFiles
+        dependsOn(metadataFiles)
         dependsOn("cinteropDummyNativePlatform")
         doFirst {
-            metadataConfiguration.files.forEach { dependencyFile ->
+            metadataFiles.forEach { dependencyFile ->
                 logger.quiet("Dependency: $dependencyFile")
             }
         }

@@ -1,6 +1,4 @@
-// TARGET_BACKEND: JVM_IR
-// TARGET_BACKEND: JS_IR
-// TARGET_BACKEND: NATIVE
+// DONT_TARGET_EXACT_BACKEND: JVM
 fun <T> T.id() = this
 
 const val trueVal = <!EVALUATED("true")!>true<!>

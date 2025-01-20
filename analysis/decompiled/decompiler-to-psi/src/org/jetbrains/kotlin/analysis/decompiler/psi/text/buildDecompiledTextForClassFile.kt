@@ -12,14 +12,17 @@ import org.jetbrains.kotlin.analysis.decompiler.stub.file.ClsClassFinder.findMul
 import org.jetbrains.kotlin.analysis.decompiler.stub.file.ClsKotlinBinaryClassCache
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
-import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMetadataVersion
+import org.jetbrains.kotlin.metadata.deserialization.MetadataVersion
 import org.jetbrains.kotlin.renderer.DescriptorRenderer
 import org.jetbrains.kotlin.types.asFlexibleType
+import org.jetbrains.kotlin.types.error.ErrorType
+import org.jetbrains.kotlin.types.error.ErrorTypeKind
+import org.jetbrains.kotlin.types.error.ErrorUtils
 import org.jetbrains.kotlin.types.isFlexible
 
 fun buildDecompiledTextForClassFile(
     classFile: VirtualFile,
-    resolver: ResolverForDecompiler = DeserializerForClassfileDecompiler(classFile)
+    resolver: ResolverForDecompiler = DeserializerForClassfileDecompiler(classFile),
 ): DecompiledText {
     val classHeader =
         ClsKotlinBinaryClassCache.getInstance().getKotlinBinaryClassHeaderData(classFile)
@@ -28,7 +31,7 @@ fun buildDecompiledTextForClassFile(
     val classId = classHeader.classId
 
     if (!classHeader.metadataVersion.isCompatibleWithCurrentCompilerVersion()) {
-        return createIncompatibleAbiVersionDecompiledText(JvmMetadataVersion.INSTANCE, classHeader.metadataVersion)
+        return createIncompatibleAbiVersionDecompiledText(MetadataVersion.INSTANCE, classHeader.metadataVersion)
     }
 
     fun buildText(declarations: List<DeclarationDescriptor>) = buildDecompiledText(
@@ -56,5 +59,11 @@ fun buildDecompiledTextForClassFile(
 
 private val decompilerRendererForClassFiles = DescriptorRenderer.withOptions {
     defaultDecompilerRendererOptions()
-    typeNormalizer = { type -> if (type.isFlexible()) type.asFlexibleType().lowerBound else type }
+    typeNormalizer = { type ->
+        val kotlinType = if (type.isFlexible()) type.asFlexibleType().lowerBound else type
+        if (kotlinType is ErrorType) ErrorUtils.createErrorType(
+            ErrorTypeKind.UNRESOLVED_TYPE,
+            "`${kotlinType.debugMessage.replace("`", "\'")}`"
+        ) else kotlinType
+    }
 }

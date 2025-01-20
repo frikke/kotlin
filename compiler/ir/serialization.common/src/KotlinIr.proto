@@ -20,7 +20,9 @@ message IrFile {
   repeated int32 fq_name = 3 [packed=true];
   repeated IrConstructorCall annotation = 4;
   repeated int64 explicitly_exported_to_compiler = 5 [packed=true];
-  repeated Actual actual = 6;
+
+  // WARNING: Don't occupy index 6 which was previously used for storing expect/actual table.
+  // repeated Actual actual = 6;
 }
 
 /* ------ IdSignature -------------------------------------------- */
@@ -30,6 +32,7 @@ message CommonIdSignature {
   repeated int32 declaration_fq_name = 2 [packed = true];
   optional int64 member_uniq_id = 3;
   optional int64 flags = 4 [default = 0];
+  optional int32 debug_info = 5;
 }
 
 message AccessorIdSignature {
@@ -37,6 +40,7 @@ message AccessorIdSignature {
   required int32 name = 2;
   required int64 accessor_hash_id = 3;
   optional int64 flags = 4 [default = 0];
+  optional int32 debug_info = 5;
 }
 
 message FileLocalIdSignature {
@@ -68,13 +72,6 @@ message IdSignature {
     LocalSignature local_sig = 6;
     FileSignature file_sig = 7;
   }
-}
-
-/* ------ IrSymbols --------------------------------------------- */
-
-message Actual {
-    required int64 actual_symbol = 1;
-    required int64 expect_symbol = 2;
 }
 
 /* ------ IrTypes --------------------------------------------- */
@@ -147,6 +144,19 @@ message IrBlock {
   optional int32 origin_name = 2;
 }
 
+message IrReturnableBlock {
+  required int64 symbol = 1;
+  required IrBlock base = 2;
+}
+
+message IrInlinedFunctionBlock {
+  optional int64 inlined_function_symbol = 1;
+  required FileEntry inlined_function_file_entry = 2;
+  required IrBlock base = 3;
+  required int32 inlined_function_start_offset = 4;
+  required int32 inlined_function_end_offset = 5;
+}
+
 message MemberAccessCommon {
   optional IrExpression dispatch_receiver = 1;
   optional IrExpression extension_receiver = 2;
@@ -190,6 +200,23 @@ message IrPropertyReference {
   optional int32 origin_name = 4;
   required MemberAccessCommon member_access = 5;
   required int64 symbol = 6;
+}
+
+message IrRichFunctionReference {
+  repeated IrExpression bound_values = 1;
+  optional int64 reflection_target_symbol = 2;
+  required int64 overridden_function_symbol = 3;
+  required IrFunction invoke_function = 4;
+  optional int64 flags = 5 [default = 0];
+  optional int32 origin_name = 6;
+}
+
+message IrRichPropertyReference {
+  repeated IrExpression bound_values = 1;
+  optional int64 reflection_target_symbol = 2;
+  required IrFunction getter_function = 3;
+  optional IrFunction setter_function = 4;
+  optional int32 origin_name = 5;
 }
 
 message IrComposite {
@@ -442,6 +469,11 @@ message IrOperation {
     // Error code
     IrErrorExpression error_expression = 34;
     IrErrorCallExpression error_call_expression = 35;
+    // Operations again
+    IrReturnableBlock returnable_block = 36;
+    IrInlinedFunctionBlock inlined_function_block = 37;
+    IrRichFunctionReference rich_function_reference = 38;
+    IrRichPropertyReference rich_property_reference = 39;
   }
 }
 

@@ -5,12 +5,19 @@
 
 package org.jetbrains.kotlin.fir.renderer
 
-import org.jetbrains.kotlin.fir.types.ConeAttributes
+import org.jetbrains.kotlin.fir.types.ConeAttribute
+import org.jetbrains.kotlin.utils.addToStdlib.ifNotEmpty
 
 abstract class ConeAttributeRenderer {
-    abstract fun render(attributes: ConeAttributes): String
+    abstract fun render(attributes: Iterable<ConeAttribute<*>>): String
 
     object ToString : ConeAttributeRenderer() {
-        override fun render(attributes: ConeAttributes): String = attributes.joinToString(separator = " ", postfix = " ") { it.toString() }
+        override fun render(attributes: Iterable<ConeAttribute<*>>): String =
+            attributes.joinToString(separator = " ", postfix = " ") { it.toString() }
+    }
+
+    object ForReadability : ConeAttributeRenderer() {
+        override fun render(attributes: Iterable<ConeAttribute<*>>): String =
+            attributes.mapNotNull { it.renderForReadability() }.ifNotEmpty { joinToString(separator = " ", postfix = " ") } ?: ""
     }
 }

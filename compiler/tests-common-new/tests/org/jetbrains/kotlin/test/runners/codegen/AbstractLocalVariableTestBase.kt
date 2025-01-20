@@ -8,28 +8,37 @@ package org.jetbrains.kotlin.test.runners.codegen
 import org.jetbrains.kotlin.test.Constructor
 import org.jetbrains.kotlin.test.TargetBackend
 import org.jetbrains.kotlin.test.backend.BlackBoxCodegenSuppressor
+import org.jetbrains.kotlin.test.backend.BlackBoxInlinerCodegenSuppressor
+import org.jetbrains.kotlin.test.backend.handlers.LocalVariableDebugRunner
+import org.jetbrains.kotlin.test.backend.ir.IrBackendInput
 import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
+import org.jetbrains.kotlin.test.builders.configureJvmArtifactsHandlersStep
+import org.jetbrains.kotlin.test.configuration.commonConfigurationForTest
+import org.jetbrains.kotlin.test.configuration.commonHandlersForCodegenTest
 import org.jetbrains.kotlin.test.directives.CodegenTestDirectives.REQUIRES_SEPARATE_PROCESS
 import org.jetbrains.kotlin.test.directives.DiagnosticsDirectives.REPORT_ONLY_EXPLICITLY_DEFINED_DEBUG_INFO
-import org.jetbrains.kotlin.test.model.*
+import org.jetbrains.kotlin.test.model.Frontend2BackendConverter
+import org.jetbrains.kotlin.test.model.FrontendFacade
+import org.jetbrains.kotlin.test.model.FrontendKind
+import org.jetbrains.kotlin.test.model.ResultingArtifact
 import org.jetbrains.kotlin.test.runners.AbstractKotlinCompilerWithTargetBackendTest
+import org.jetbrains.kotlin.test.services.sourceProviders.MainFunctionForDebugTestsSourceProvider
 
-abstract class AbstractLocalVariableTestBase<R : ResultingArtifact.FrontendOutput<R>, I : ResultingArtifact.BackendInput<I>>(
+abstract class AbstractLocalVariableTestBase<R : ResultingArtifact.FrontendOutput<R>>(
     val targetFrontend: FrontendKind<R>,
-    targetBackend: TargetBackend
-) : AbstractKotlinCompilerWithTargetBackendTest(targetBackend) {
+) : AbstractKotlinCompilerWithTargetBackendTest(TargetBackend.JVM_IR) {
     abstract val frontendFacade: Constructor<FrontendFacade<R>>
-    abstract val frontendToBackendConverter: Constructor<Frontend2BackendConverter<R, I>>
-    abstract val backendFacade: Constructor<BackendFacade<I, BinaryArtifacts.Jvm>>
+    abstract val frontendToBackendConverter: Constructor<Frontend2BackendConverter<R, IrBackendInput>>
 
-    override fun TestConfigurationBuilder.configuration() {
-        commonConfigurationForTest(targetFrontend, frontendFacade, frontendToBackendConverter, backendFacade) {
-            commonServicesConfigurationForDebugTest(it)
+    override fun configure(builder: TestConfigurationBuilder) = with(builder) {
+        commonConfigurationForTest(targetFrontend, frontendFacade, frontendToBackendConverter, ::MainFunctionForDebugTestsSourceProvider)
+
+        commonHandlersForCodegenTest()
+        configureJvmArtifactsHandlersStep {
+            useHandlers(::LocalVariableDebugRunner)
         }
 
-        configureCommonHandlersForLocalVariableTest()
-
-        useAfterAnalysisCheckers(::BlackBoxCodegenSuppressor)
+        useAfterAnalysisCheckers(::BlackBoxCodegenSuppressor, ::BlackBoxInlinerCodegenSuppressor)
 
         defaultDirectives {
             +REPORT_ONLY_EXPLICITLY_DEFINED_DEBUG_INFO

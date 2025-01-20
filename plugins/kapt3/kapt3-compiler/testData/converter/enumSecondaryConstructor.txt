@@ -1,4 +1,3 @@
-@kotlin.Metadata()
 public enum Foo {
     /*public static final*/ BLA /* = new Foo() */;
     @org.jetbrains.annotations.NotNull()
@@ -10,5 +9,10 @@ public enum Foo {
     }
 
     Foo(java.lang.String bla) {
+    }
+
+    @org.jetbrains.annotations.NotNull()
+    public static kotlin.enums.EnumEntries<Foo> getEntries() {
+        return null;
     }
 }

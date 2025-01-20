@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FILE: a.kt
 package boundsWithSubstitutors
     open class A<T>
@@ -34,7 +35,7 @@ fun test() {
     bar<Int>()
     bar<<!UPPER_BOUND_VIOLATED!>Double?<!>>()
     bar<<!UPPER_BOUND_VIOLATED!>Double<!>>()
-    1.buzz<<!UPPER_BOUND_VIOLATED!>Double<!>>()
+    1.<!INAPPLICABLE_CANDIDATE!>buzz<!><<!UPPER_BOUND_VIOLATED!>Double<!>>()
 }
 
 fun <T : Any> foo() {}

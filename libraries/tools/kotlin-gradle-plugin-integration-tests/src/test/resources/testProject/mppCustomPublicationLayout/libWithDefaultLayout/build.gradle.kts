@@ -6,12 +6,8 @@ plugins {
 group = "test"
 version = "1.0"
 
-repositories {
-    maven("<localRepo>")
-}
-
 kotlin {
-    targetHierarchy.default()
+    applyDefaultHierarchyTemplate()
 
     jvm()
     linuxX64()

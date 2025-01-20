@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -19,10 +19,8 @@ import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 interface IrElement {
     /**
      * The start offset of the syntax node from which this IR node was generated,
-     * in number of characters from the start of the source file. If there is no source information
-     * for this IR node,
-     * the [UNDEFINED_OFFSET] constant is used. In order to get the line number and the column
-     * number from this offset,
+     * in number of characters from the start of the source file. If there is no source information for this IR node,
+     * the [UNDEFINED_OFFSET] constant is used. In order to get the line number and the column number from this offset,
      * [IrFileEntry.getLineNumber] and [IrFileEntry.getColumnNumber] can be used.
      *
      * @see IrFileEntry.getSourceRangeInfo
@@ -31,15 +29,19 @@ interface IrElement {
 
     /**
      * The end offset of the syntax node from which this IR node was generated,
-     * in number of characters from the start of the source file. If there is no source information
-     * for this IR node,
-     * the [UNDEFINED_OFFSET] constant is used. In order to get the line number and the column
-     * number from this offset,
+     * in number of characters from the start of the source file. If there is no source information for this IR node,
+     * the [UNDEFINED_OFFSET] constant is used. In order to get the line number and the column number from this offset,
      * [IrFileEntry.getLineNumber] and [IrFileEntry.getColumnNumber] can be used.
      *
      * @see IrFileEntry.getSourceRangeInfo
      */
     val endOffset: Int
+
+    /**
+     * Original element before copying. Always satisfies the following
+     * invariant: `this.attributeOwnerId == this.attributeOwnerId.attributeOwnerId`.
+     */
+    var attributeOwnerId: IrElement
 
     /**
      * Runs the provided [visitor] on the IR subtree with the root at this node.
@@ -74,8 +76,7 @@ interface IrElement {
     /**
      * Recursively transforms this node's children *in place* using [transformer].
      *
-     * Basically, executes `this.child = this.child.transform(transformer, data)` for each child
-     * of this node.
+     * Basically, executes `this.child = this.child.transform(transformer, data)` for each child of this node.
      *
      * Does **not** run [transformer] on this node itself.
      *

@@ -22,9 +22,9 @@ import org.jetbrains.kotlin.load.java.structure.JavaTypeParameter
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.util.javaslang.ImmutableHashMap
-import org.jetbrains.kotlin.util.javaslang.ImmutableMap
-import org.jetbrains.kotlin.util.javaslang.getOrNull
+import org.jetbrains.kotlin.util.vavr.ImmutableHashMap
+import org.jetbrains.kotlin.util.vavr.ImmutableMap
+import org.jetbrains.kotlin.util.vavr.getOrNull
 import org.jetbrains.kotlin.utils.SmartList
 
 typealias ClassIdToJavaClass = (ClassId) -> JavaClass?
@@ -92,7 +92,7 @@ class ClassifierResolutionContext private constructor(
         val packageFqName = outerFqName.parent()
         val relativeName = FqName(outerFqName.shortName().asString() + "." + substrings.subList(1, substrings.size).joinToString("."))
 
-        return ClassId(packageFqName, relativeName, false)
+        return ClassId(packageFqName, relativeName, isLocal = false)
     }
 
     internal fun resolveByInternalName(internalName: String): Result {

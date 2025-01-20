@@ -12,16 +12,15 @@ import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.testing.AbstractTestTask
 import org.gradle.process.internal.ExecHandleFactory
+import org.gradle.work.DisableCachingByDefault
 import org.jetbrains.kotlin.gradle.internal.testing.KotlinTestRunnerListener
 import org.jetbrains.kotlin.gradle.internal.testing.TCServiceMessagesTestExecutor
 import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider
-import org.jetbrains.kotlin.gradle.plugin.UsesVariantImplementationFactories
-import org.jetbrains.kotlin.gradle.plugin.internal.MppTestReportHelper
-import org.jetbrains.kotlin.gradle.plugin.variantImplementationFactoryProvider
 import org.jetbrains.kotlin.gradle.utils.injected
 import javax.inject.Inject
 
-abstract class KotlinTest : AbstractTestTask(), UsesVariantImplementationFactories {
+@DisableCachingByDefault(because = "Abstract super-class, not to be instantiated directly")
+abstract class KotlinTest : AbstractTestTask() {
     @Input
     @Optional
     var targetName: String? = null
@@ -61,20 +60,13 @@ abstract class KotlinTest : AbstractTestTask(), UsesVariantImplementationFactori
         runListeners.add(listener)
     }
 
-    private val ignoreTcsmOverflow by lazy {
-        PropertiesProvider(project).ignoreTcsmOverflow
-    }
+    private val ignoreTcsmOverflow = PropertiesProvider(project).ignoreTcsmOverflow
 
-    private val testReporter = project
-        .variantImplementationFactoryProvider<MppTestReportHelper.MppTestReportHelperVariantFactory>()
-        .map { it.getInstance() }
-
+    // This method is called on execution time
     override fun createTestExecuter() = TCServiceMessagesTestExecutor(
         execHandleFactory,
-        buildOperationExecutor,
         runListeners,
-        ignoreTcsmOverflow,
+        ignoreTcsmOverflow.get(),
         ignoreRunFailures,
-        testReporter.get(),
     )
 }

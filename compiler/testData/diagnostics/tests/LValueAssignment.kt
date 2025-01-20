@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
+
 package lvalue_assignment
 
 open class B() {

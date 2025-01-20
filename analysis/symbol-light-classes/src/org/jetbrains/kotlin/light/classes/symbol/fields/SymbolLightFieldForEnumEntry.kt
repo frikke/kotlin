@@ -1,23 +1,20 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.light.classes.symbol.fields
 
 import com.intellij.psi.*
-import org.jetbrains.kotlin.analysis.api.KtAnalysisSession
-import org.jetbrains.kotlin.analysis.api.annotations.FieldAnnotationUseSiteTargetFilter
-import org.jetbrains.kotlin.analysis.api.annotations.NoAnnotationUseSiteTargetFilter
-import org.jetbrains.kotlin.analysis.api.annotations.PropertyAnnotationUseSiteTargetFilter
-import org.jetbrains.kotlin.analysis.api.symbols.KtEnumEntrySymbol
-import org.jetbrains.kotlin.analysis.api.symbols.pointers.symbolPointerOfType
+import org.jetbrains.kotlin.analysis.api.KaImplementationDetail
+import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.symbols.KaEnumEntrySymbol
+import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaPsiSymbolPointerCreator
 import org.jetbrains.kotlin.asJava.classes.cannotModify
 import org.jetbrains.kotlin.asJava.classes.lazyPub
 import org.jetbrains.kotlin.light.classes.symbol.analyzeForLightClasses
 import org.jetbrains.kotlin.light.classes.symbol.annotations.GranularAnnotationsBox
 import org.jetbrains.kotlin.light.classes.symbol.annotations.SymbolAnnotationsProvider
-import org.jetbrains.kotlin.light.classes.symbol.annotations.annotationUseSiteTargetFilterOf
 import org.jetbrains.kotlin.light.classes.symbol.cachedValue
 import org.jetbrains.kotlin.light.classes.symbol.classes.SymbolLightClassForClassOrObject
 import org.jetbrains.kotlin.light.classes.symbol.classes.SymbolLightClassForEnumEntry
@@ -33,11 +30,12 @@ internal class SymbolLightFieldForEnumEntry(
     private val enumEntryName: String,
     containingClass: SymbolLightClassForClassOrObject,
 ) : SymbolLightField(containingClass = containingClass, lightMemberOrigin = null), PsiEnumConstant {
-    internal inline fun <T> withEnumEntrySymbol(crossinline action: KtAnalysisSession.(KtEnumEntrySymbol) -> T): T =
+    internal inline fun <T> withEnumEntrySymbol(crossinline action: KaSession.(KaEnumEntrySymbol) -> T): T =
         analyzeForLightClasses(ktModule) {
-            action(enumEntry.getEnumEntrySymbol())
+            action(enumEntry.symbol)
         }
 
+    @OptIn(KaImplementationDetail::class)
     private val _modifierList by lazyPub {
         SymbolLightMemberModifierList(
             containingDeclaration = this,
@@ -45,12 +43,7 @@ internal class SymbolLightFieldForEnumEntry(
             annotationsBox = GranularAnnotationsBox(
                 annotationsProvider = SymbolAnnotationsProvider(
                     ktModule = ktModule,
-                    annotatedSymbolPointer = enumEntry.symbolPointerOfType<KtEnumEntrySymbol>(),
-                    annotationUseSiteTargetFilter = annotationUseSiteTargetFilterOf(
-                        NoAnnotationUseSiteTargetFilter,
-                        FieldAnnotationUseSiteTargetFilter,
-                        PropertyAnnotationUseSiteTargetFilter,
-                    ),
+                    annotatedSymbolPointer = KaPsiSymbolPointerCreator.symbolPointerOfType<KaEnumEntrySymbol>(enumEntry),
                 )
             ),
         )
@@ -94,7 +87,11 @@ internal class SymbolLightFieldForEnumEntry(
     private val _type: PsiType by lazyPub {
         withEnumEntrySymbol { enumEntrySymbol ->
             enumEntrySymbol.returnType
-                .asPsiType(this@SymbolLightFieldForEnumEntry, allowErrorTypes = true)
+                .asPsiType(
+                    this@SymbolLightFieldForEnumEntry,
+                    allowErrorTypes = true,
+                    allowNonJvmPlatforms = true,
+                )
                 ?: nonExistentType()
         }
     }

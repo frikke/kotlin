@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm")
     id("jps-compatible")
+    id("gradle-plugin-compiler-dependency-configuration")
 }
 
 dependencies {
@@ -13,8 +14,8 @@ dependencies {
     api(project(":compiler:plugin-api"))
     compileOnly(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
     compileOnly(intellijCore())
-    compileOnly(commonDependency("com.google.guava:guava"))
-    compileOnly(commonDependency("org.jetbrains.intellij.deps:asm-all"))
+    compileOnly(libs.guava)
+    compileOnly(libs.intellij.asm)
 }
 
 sourceSets {

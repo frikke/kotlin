@@ -5,7 +5,6 @@
 @file:OptIn(ExperimentalForeignApi::class)
 package kotlinx.cinterop
 
-import kotlin.native.*
 import kotlin.native.internal.GCUnsafeCall
 
 @GCUnsafeCall("Kotlin_Interop_createStablePointer")

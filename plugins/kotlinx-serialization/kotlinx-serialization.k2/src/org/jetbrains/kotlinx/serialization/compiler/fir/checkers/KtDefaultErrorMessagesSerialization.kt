@@ -5,9 +5,7 @@
 
 package org.jetbrains.kotlinx.serialization.compiler.fir.checkers
 
-import org.jetbrains.kotlin.diagnostics.KtDiagnostic
 import org.jetbrains.kotlin.diagnostics.KtDiagnosticFactoryToRendererMap
-import org.jetbrains.kotlin.diagnostics.KtDiagnosticRenderer
 import org.jetbrains.kotlin.diagnostics.rendering.BaseDiagnosticRendererFactory
 import org.jetbrains.kotlin.diagnostics.rendering.CommonRenderers
 import org.jetbrains.kotlin.fir.analysis.diagnostics.FirDiagnosticRenderers
@@ -42,7 +40,7 @@ object KtDefaultErrorMessagesSerialization : BaseDiagnosticRendererFactory() {
         )
         put(
             FirSerializationErrors.COMPANION_OBJECT_SERIALIZER_INSIDE_OTHER_SERIALIZABLE_CLASS,
-            "This class is a Companion object for @Serializable class {0}, but itself is an external serializer for another class {1}. " +
+            "This class is a companion object for @Serializable class {0}, but itself is an external serializer for another class {1}. " +
                     "Such declarations are potentially problematic and user-confusing and therefore are deprecated. " +
                     "Please define external serializers as non-companion, preferably top-level objects. " +
                     "For more details, refer to this YouTrack ticket: https://youtrack.jetbrains.com/issue/KT-54441",
@@ -51,12 +49,20 @@ object KtDefaultErrorMessagesSerialization : BaseDiagnosticRendererFactory() {
         )
         put(
             FirSerializationErrors.COMPANION_OBJECT_SERIALIZER_INSIDE_NON_SERIALIZABLE_CLASS,
-            "This class is a Companion object for non-serializable class {0}, but itself is an external serializer for another class {1}. " +
+            "This class is a companion object for non-serializable class {0}, but itself is an external serializer for another class {1}. " +
                     "Such declarations are potentially problematic and user-confusing and therefore are deprecated. " +
                     "Please define external serializers as non-companion, preferably top-level objects. " +
                     "For more details, refer to this YouTrack ticket: https://youtrack.jetbrains.com/issue/KT-54441",
             FirDiagnosticRenderers.RENDER_TYPE,
             FirDiagnosticRenderers.RENDER_TYPE
+        )
+        put(
+            FirSerializationErrors.COMPANION_OBJECT_IS_SERIALIZABLE_INSIDE_SERIALIZABLE_CLASS,
+            "This class is a companion object for a @Serializable class {0}. Companion objects of serializable classes can't be serializable with other serializers," +
+                    "because this may lead to runtime errors and incorrect results. The only case where this is allowed is when both class {0} and its companion" +
+                    "have the same serializer specified in @Serializable(with = ...) annotation. " +
+                    "This warning will be promoted to error in the future. See https://youtrack.jetbrains.com/issue/KT-70110 for details.",
+            FirDiagnosticRenderers.DECLARATION_NAME
         )
         put(
             FirSerializationErrors.EXPLICIT_SERIALIZABLE_IS_REQUIRED,
@@ -107,9 +113,29 @@ object KtDefaultErrorMessagesSerialization : BaseDiagnosticRendererFactory() {
             FirDiagnosticRenderers.RENDER_TYPE
         )
         put(
+            FirSerializationErrors.ABSTRACT_SERIALIZER_TYPE,
+            "Custom serializer ''{1}'' on serializable type ''{0}'' can not be instantiated. It is not allowed to specify the interface, abstract or sealed class as a custom serializer.",
+            FirDiagnosticRenderers.RENDER_TYPE,
+            FirDiagnosticRenderers.RENDER_TYPE
+        )
+        put(
             FirSerializationErrors.LOCAL_SERIALIZER_USAGE,
             "Class ''{0}'' can't be used as a serializer since it is local",
             FirDiagnosticRenderers.RENDER_TYPE
+        )
+        put(
+            FirSerializationErrors.CUSTOM_SERIALIZER_PARAM_ILLEGAL_COUNT,
+            "Custom serializer ''{0}'' can not be used for ''{1}'' since it has an invalid number of parameters in primary constructor: {2}",
+            FirDiagnosticRenderers.RENDER_TYPE,
+            FirDiagnosticRenderers.RENDER_TYPE,
+            CommonRenderers.STRING
+        )
+        put(
+            FirSerializationErrors.CUSTOM_SERIALIZER_PARAM_ILLEGAL_TYPE,
+            "Custom serializer ''{0}'' can not be used for ''{1}'', type of parameter ''{2}'' in serializer's primary constructor should be ''KSerializer''",
+            FirDiagnosticRenderers.RENDER_TYPE,
+            FirDiagnosticRenderers.RENDER_TYPE,
+            CommonRenderers.STRING
         )
         put(
             FirSerializationErrors.TRANSIENT_MISSING_INITIALIZER,
@@ -178,6 +204,32 @@ object KtDefaultErrorMessagesSerialization : BaseDiagnosticRendererFactory() {
             "Cannot generate external serializer ''{0}'': class ''{1}'' is defined in another module",
             FirDiagnosticRenderers.SYMBOL,
             FirDiagnosticRenderers.RENDER_TYPE
+        )
+
+        put(
+            FirSerializationErrors.EXTERNAL_SERIALIZER_NO_SUITABLE_CONSTRUCTOR,
+            "Cannot generate external serializer ''{0}'': it must have a constructor with {2} value parameters, because class ''{1}'' has type parameters",
+            FirDiagnosticRenderers.SYMBOL,
+            FirDiagnosticRenderers.RENDER_TYPE,
+            CommonRenderers.STRING
+        )
+
+        put(
+            FirSerializationErrors.KEEP_SERIALIZER_ANNOTATION_USELESS,
+            "@KeepGeneratedSerializer annotation is useless here, it is acceptable to use it only on classes marked with @Serializable(CustomSerializer::class)"
+        )
+        put(
+            FirSerializationErrors.KEEP_SERIALIZER_ANNOTATION_ON_POLYMORPHIC,
+            "@KeepGeneratedSerializer annotation is not applicable for abstract or sealed classes and interfaces"
+        )
+
+        put(
+            FirSerializationErrors.JSON_FORMAT_REDUNDANT_DEFAULT,
+            "Redundant creation of Json default format. Creating instances for each usage can be slow."
+        )
+        put(
+            FirSerializationErrors.JSON_FORMAT_REDUNDANT,
+            "Redundant creation of Json format. Creating instances for each usage can be slow."
         )
     }
 }

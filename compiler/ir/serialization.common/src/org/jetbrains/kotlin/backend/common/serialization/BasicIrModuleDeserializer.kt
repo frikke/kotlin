@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.backend.common.serialization
 
+import org.jetbrains.kotlin.backend.common.serialization.IrDeserializationSettings.DeserializeFunctionBodies
 import org.jetbrains.kotlin.backend.common.serialization.encodings.BinarySymbolData
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.ir.declarations.IrFile
@@ -69,25 +70,6 @@ abstract class BasicIrModuleDeserializer(
         if (shouldSaveDeserializationState) {
             this.fileDeserializationStates = fileDeserializationStates
         }
-
-        fileToDeserializerMap.values.forEach { it.symbolDeserializer.deserializeExpectActualMapping() }
-    }
-
-    private fun IrSymbolDeserializer.deserializeExpectActualMapping() {
-        actuals.forEach {
-            val expectSymbol = parseSymbolData(it.expectSymbol)
-            val actualSymbol = parseSymbolData(it.actualSymbol)
-
-            val expect = deserializeIdSignature(expectSymbol.signatureId)
-            val actual = deserializeIdSignature(actualSymbol.signatureId)
-
-            assert(linker.expectIdSignatureToActualIdSignature[expect] == null) {
-                "Expect signature $expect is already actualized by ${linker.expectIdSignatureToActualIdSignature[expect]}, while we try to record $actual"
-            }
-            linker.expectIdSignatureToActualIdSignature[expect] = actual
-            // Non-null only for topLevel declarations.
-            findModuleDeserializerForTopLevelId(actual)?.let { md -> linker.topLevelActualIdSignatureToModuleDeserializer[actual] = md }
-        }
     }
 
     override fun referenceSimpleFunctionByLocalSignature(file: IrFile, idSignature: IdSignature) : IrSimpleFunctionSymbol =
@@ -115,7 +97,7 @@ abstract class BasicIrModuleDeserializer(
         error("No file for ${idSig.topLevelSignature()} (@ $idSig) in module $moduleDescriptor")
     }
 
-    override val moduleFragment: IrModuleFragment = IrModuleFragmentImpl(moduleDescriptor, linker.builtIns, emptyList())
+    override val moduleFragment: IrModuleFragment = IrModuleFragmentImpl(moduleDescriptor)
 
     private fun deserializeIrFile(
         fileProto: ProtoFile, file: IrFile, fileReader: IrLibraryFileFromBytes,
@@ -129,35 +111,44 @@ abstract class BasicIrModuleDeserializer(
             file,
             fileReader,
             fileProto,
-            fileStrategy.needBodies,
-            allowErrorNodes,
-            fileStrategy.inlineBodies,
+            IrDeserializationSettings(
+                allowErrorNodes = allowErrorNodes,
+                deserializeFunctionBodies = when {
+                    fileStrategy.needBodies -> DeserializeFunctionBodies.ALL
+                    fileStrategy.inlineBodies -> DeserializeFunctionBodies.ONLY_INLINE
+                    else -> DeserializeFunctionBodies.NONE
+                }
+            ),
             moduleDeserializer,
         )
 
         fileToDeserializerMap[file] = fileDeserializationState.fileDeserializer
 
-        if (!fileStrategy.onDemand) {
-            val topLevelDeclarations = fileDeserializationState.fileDeserializer.reversedSignatureIndex.keys
-            topLevelDeclarations.forEach {
-                moduleReversedFileIndex.putIfAbsent(it, fileDeserializationState) // TODO Why not simple put?
-            }
+        val topLevelDeclarations = fileDeserializationState.fileDeserializer.reversedSignatureIndex.keys
+        topLevelDeclarations.forEach {
+            moduleReversedFileIndex.putIfAbsent(it, fileDeserializationState) // TODO Why not simple put?
+        }
 
-            if (fileStrategy.theWholeWorld) {
-                fileDeserializationState.enqueueAllDeclarations()
-            }
-            if (fileStrategy.theWholeWorld || fileStrategy.explicitlyExported) {
-                moduleDeserializationState.enqueueFile(fileDeserializationState)
-            }
+        if (fileStrategy.theWholeWorld) {
+            fileDeserializationState.enqueueAllDeclarations()
+        }
+        if (fileStrategy.theWholeWorld || fileStrategy.explicitlyExported) {
+            moduleDeserializationState.enqueueFile(fileDeserializationState)
         }
 
         return fileDeserializationState
     }
 
-    override fun addModuleReachableTopLevel(idSig: IdSignature) {
-        moduleDeserializationState.addIdSignature(idSig)
+    /**
+     * Schedule deserialization of the top-level declaration with the given signature in the given file.
+     */
+    override fun addModuleReachableTopLevel(topLevelDeclarationSignature: IdSignature) {
+        moduleDeserializationState.addIdSignature(topLevelDeclarationSignature)
     }
 
+    /**
+     * Run deserialization of top-level declarations previously scheduled for deserialization in the current module.
+     */
     override fun deserializeReachableDeclarations() {
         moduleDeserializationState.deserializeReachableDeclarations()
     }
@@ -172,25 +163,58 @@ abstract class BasicIrModuleDeserializer(
     override val kind get() = IrModuleDeserializerKind.DESERIALIZED
 
     private inner class ModuleDeserializationState {
+        /**
+         * This is the queue of files containing top-level declarations to be deserialized. This is
+         * the second-layer queue on top of [FileDeserializationState.reachableTopLevels].
+         *
+         * A file can be enqueued using one of the available ways: [enqueueFile], [addIdSignature].
+         *
+         * The deserialization happens on invocation of [deserializeReachableDeclarations]. This in its turn
+         * invokes [FileDeserializationState.deserializeAllFileReachableTopLevel] for each scheduled file.
+         *
+         * Note: A file is removed from the queue after all top-level declarations scheduled for
+         * deserialization in that file have been actually deserialized. Later the file can be enqueued
+         * once again to deserialize other top-level declaration(s). This process can be repeated multiple times.
+         */
         private val filesWithPendingTopLevels = mutableSetOf<FileDeserializationState>()
 
+        /**
+         * Enqueue the given file for deserialization of (some) top-level declarations.
+         *
+         * Note: The declarations that need to be deserialized should be enqueued separately using
+         * [FileDeserializationState.addIdSignature] call.
+         */
         fun enqueueFile(fileDeserializationState: FileDeserializationState) {
             filesWithPendingTopLevels.add(fileDeserializationState)
             linker.modulesWithReachableTopLevels.add(this@BasicIrModuleDeserializer)
         }
 
-        fun addIdSignature(key: IdSignature) {
-            val fileLocalDeserializationState = moduleReversedFileIndex[key] ?: error("No file found for key $key")
-            fileLocalDeserializationState.addIdSignature(key)
+        /**
+         * Schedule deserialization of the top-level declaration with the given signature in the given file.
+         */
+        fun addIdSignature(topLevelDeclarationSignature: IdSignature) {
+            val fileLocalDeserializationState = moduleReversedFileIndex[topLevelDeclarationSignature]
+                ?: error("No IR file found for top-level declaration signature $topLevelDeclarationSignature")
+            fileLocalDeserializationState.addIdSignature(topLevelDeclarationSignature)
 
             enqueueFile(fileLocalDeserializationState)
         }
 
+        /**
+         * Run deserialization of top-level declarations previously scheduled for deserialization in the current module.
+         */
         fun deserializeReachableDeclarations() {
             while (filesWithPendingTopLevels.isNotEmpty()) {
                 val pendingFileDeserializationState = filesWithPendingTopLevels.first()
 
-                pendingFileDeserializationState.fileDeserializer.deserializeFileImplicitDataIfFirstUse()
+                if (pendingFileDeserializationState.fileDeserializer.deserializeFileImplicitDataIfFirstUse()) {
+                    // Schedule the IR file for processing by the PL engine only when the implicit file data
+                    // is deserialized for the first time.
+                    //
+                    // Note: Enqueueing the file does not mean all top-level declarations in this file are
+                    // also enqueued. This is done separately in `FileDeserializationState.deserializeAllFileReachableTopLevel()`.
+                    linker.partialLinkageSupport.enqueueFile(pendingFileDeserializationState.file)
+                }
                 pendingFileDeserializationState.deserializeAllFileReachableTopLevel()
 
                 filesWithPendingTopLevels.remove(pendingFileDeserializationState)

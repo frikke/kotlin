@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.backend.common
 
+import org.jetbrains.kotlin.config.DuplicatedUniqueNameStrategy
 import org.jetbrains.kotlin.konan.file.File
 import org.jetbrains.kotlin.konan.file.ZipFileSystemAccessor
 import org.jetbrains.kotlin.library.KotlinLibrary
@@ -20,31 +21,39 @@ object CommonKLibResolver {
     fun resolve(
         libraries: Collection<String>,
         logger: Logger,
-        zipAccessor: ZipFileSystemAccessor? = null
+        zipAccessor: ZipFileSystemAccessor? = null,
+        lenient: Boolean = false,
+        knownIrProviders: List<String> = listOf(),
+        duplicatedUniqueNameStrategy: DuplicatedUniqueNameStrategy = DuplicatedUniqueNameStrategy.DENY,
     ): KotlinLibraryResolveResult =
         resolveWithoutDependencies(
             libraries,
             logger,
-            zipAccessor
+            zipAccessor,
+            lenient,
+            knownIrProviders,
+            duplicatedUniqueNameStrategy,
         ).resolveWithDependencies()
 
     fun resolveWithoutDependencies(
         libraries: Collection<String>,
         logger: Logger,
-        zipAccessor: ZipFileSystemAccessor?
+        zipAccessor: ZipFileSystemAccessor?,
+        lenient: Boolean = false,
+        knownIrProviders: List<String> = listOf(),
+        duplicatedUniqueNameStrategy: DuplicatedUniqueNameStrategy,
     ): KLibResolution {
-        val unresolvedLibraries = libraries.map { UnresolvedLibrary(it, null) }
+        val unresolvedLibraries = libraries.map { UnresolvedLibrary(it, lenient) }
         val libraryAbsolutePaths = libraries.map { File(it).absolutePath }
         // Configure the resolver to only work with absolute paths for now.
         val libraryResolver = KLibResolverHelper(
-            repositories = emptyList(),
             directLibs = libraryAbsolutePaths,
             distributionKlib = null,
-            localKotlinDir = null,
             skipCurrentDir = false,
             logger = logger,
-            zipAccessor = zipAccessor
-        ).libraryResolver()
+            zipAccessor = zipAccessor,
+            knownIrProviders = knownIrProviders,
+        ).libraryResolver(resolveManifestDependenciesLenient = true)
 
         return KLibResolution(
             libraryResolver,
@@ -52,7 +61,8 @@ object CommonKLibResolver {
                 unresolvedLibraries = unresolvedLibraries,
                 noStdLib = true,
                 noDefaultLibs = true,
-                noEndorsedLibs = true
+                noEndorsedLibs = true,
+                duplicatedUniqueNameStrategy = duplicatedUniqueNameStrategy,
             )
         )
     }
@@ -70,21 +80,18 @@ class KLibResolution(
 }
 
 private class KLibResolverHelper(
-    repositories: List<String>,
     directLibs: List<String>,
     distributionKlib: String?,
-    localKotlinDir: String?,
     skipCurrentDir: Boolean,
     logger: Logger,
-    private val zipAccessor: ZipFileSystemAccessor?
+    private val zipAccessor: ZipFileSystemAccessor?,
+    knownIrProviders: List<String>,
 ) : KotlinLibraryProperResolverWithAttributes<KotlinLibrary>(
-    repositories,
-    directLibs,
-    distributionKlib,
-    localKotlinDir,
-    skipCurrentDir,
-    logger,
-    emptyList()
+    directLibs = directLibs,
+    distributionKlib = distributionKlib,
+    skipCurrentDir = skipCurrentDir,
+    logger = logger,
+    knownIrProviders = knownIrProviders,
 ) {
     // Stick with the default KotlinLibrary for now.
     override fun libraryComponentBuilder(file: File, isDefault: Boolean) = createKotlinLibraryComponents(file, isDefault, zipAccessor)

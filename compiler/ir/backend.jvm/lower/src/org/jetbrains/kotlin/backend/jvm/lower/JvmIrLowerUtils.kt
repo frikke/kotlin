@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.ir.declarations.IrProperty
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.util.getPackageFragment
+import org.jetbrains.kotlin.ir.util.shallowCopyOrNull
 import org.jetbrains.kotlin.ir.util.statements
 
 internal val IrSimpleFunction.returnsResultOfStdlibCall: Boolean
@@ -24,7 +25,8 @@ internal val IrSimpleFunction.returnsResultOfStdlibCall: Boolean
             is IrExpressionBody -> body.expression.isStdlibCall()
             is IrBlockBody -> body.statements.singleOrNull()
                 ?.let { it.isStdlibCall() || (it is IrReturn && it.value.isStdlibCall()) } == true
-            else -> false
+            is IrSyntheticBody -> false
+            null -> false
         }
     }
 
@@ -45,7 +47,7 @@ internal fun IrProperty.getPropertyReferenceForOptimizableDelegatedProperty(): I
 internal fun IrProperty.getSingletonOrConstantForOptimizableDelegatedProperty(): IrExpression? {
     fun IrExpression.isInlineable(): Boolean =
         when (this) {
-            is IrConst<*>, is IrGetSingletonValue -> true
+            is IrConst, is IrGetSingletonValue -> true
             is IrCall ->
                 dispatchReceiver?.isInlineable() != false
                         && extensionReceiver?.isInlineable() != false
@@ -68,3 +70,14 @@ internal fun IrProperty.getSingletonOrConstantForOptimizableDelegatedProperty():
 fun IrProperty.isJvmOptimizableDelegate(): Boolean =
     isDelegated && !isFakeOverride && backingField != null && // fast path
             (getPropertyReferenceForOptimizableDelegatedProperty() != null || getSingletonOrConstantForOptimizableDelegatedProperty() != null)
+
+internal val IrMemberAccessExpression<*>.constInitializer: IrExpression?
+    get() {
+        if (this !is IrPropertyReference) return null
+        val constPropertyField = if (field == null) {
+            symbol.owner.takeIf { it.isConst }?.backingField
+        } else {
+            field!!.owner.takeIf { it.isFinal && it.isStatic }
+        }
+        return constPropertyField?.initializer?.expression?.shallowCopyOrNull()
+    }

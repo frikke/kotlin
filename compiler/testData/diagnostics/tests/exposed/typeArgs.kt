@@ -1,3 +1,7 @@
+// RUN_PIPELINE_TILL: FRONTEND
+// RENDER_DIAGNOSTICS_FULL_TEXT
+
+// FILE: case1.kt
 internal open class My
 
 abstract class Your {
@@ -15,3 +19,15 @@ interface Our {
     // invalid, Generic<My> is effectively internal
     fun <!EXPOSED_FUNCTION_RETURN_TYPE!>foo<!>(): Generic<*>
 }
+
+// FILE: case2.kt
+
+internal interface Inter {
+    fun foo() = 10
+}
+
+class Wrapper<T>(val it: T)
+
+fun <T: Inter?> public(a: T & Any) = Wrapper(a)
+
+fun <!EXPOSED_FUNCTION_RETURN_TYPE!>other<!>() = public(object : Inter {})

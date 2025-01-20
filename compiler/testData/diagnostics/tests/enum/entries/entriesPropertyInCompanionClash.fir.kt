@@ -1,4 +1,5 @@
-// !LANGUAGE: -EnumEntries
+// RUN_PIPELINE_TILL: FRONTEND
+// LANGUAGE: -EnumEntries, -PrioritizedEnumEntries
 // WITH_STDLIB
 
 enum class A {
@@ -10,10 +11,10 @@ enum class A {
 }
 
 fun test() {
-    A.entries
+    <!DEPRECATED_ACCESS_TO_ENUM_ENTRY_COMPANION_PROPERTY!>A.entries<!>
     A.Companion.entries
 
-    with(A) {
+    <!CANNOT_INFER_PARAMETER_TYPE!>with<!>(A) {
         entries
         this.entries
         <!UNRESOLVED_REFERENCE!>values<!>() // to be sure that we don't resolve into synthetic 'values'

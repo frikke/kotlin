@@ -1,13 +1,12 @@
 /*
- * Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
-import org.jetbrains.kotlin.backend.common.ir.isFunctionInlining
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrFile
@@ -17,31 +16,30 @@ import org.jetbrains.kotlin.ir.expressions.impl.IrReturnImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrTypeOperatorCallImpl
 import org.jetbrains.kotlin.ir.types.isUnit
 import org.jetbrains.kotlin.ir.util.fqNameWhenAvailable
+import org.jetbrains.kotlin.ir.util.isFunctionInlining
 import org.jetbrains.kotlin.ir.util.isSuspend
 import org.jetbrains.kotlin.ir.util.parentAsClass
-import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
+import org.jetbrains.kotlin.ir.visitors.IrTransformer
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 
-internal val tailCallOptimizationPhase = makeIrFilePhase(
-    ::TailCallOptimizationLowering,
-    "TailCallOptimization",
-    "Add or move returns to suspension points on tail-call positions"
-)
-
-// Find all tail-calls inside suspend function. We should add IrReturn before them, so the codegen will generate
-// code which is understandable by old BE's tail-call optimizer.
-private class TailCallOptimizationLowering(private val context: JvmBackendContext) : FileLoweringPass {
+/**
+ * Adds or moves returns to suspension points on tail-call positions.
+ *
+ * This is needed so that the codegen would be able to generate code which is understandable by the old backend's tail-call optimizer.
+ */
+@PhaseDescription(name = "TailCallOptimization")
+internal class TailCallOptimizationLowering(private val context: JvmBackendContext) : FileLoweringPass {
     override fun lower(irFile: IrFile) {
-        irFile.transformChildren(object : IrElementTransformer<TailCallOptimizationData?> {
+        irFile.transformChildren(object : IrTransformer<TailCallOptimizationData?>() {
             override fun visitSimpleFunction(declaration: IrSimpleFunction, data: TailCallOptimizationData?) =
                 super.visitSimpleFunction(declaration, if (declaration.isSuspend) TailCallOptimizationData(declaration) else null)
 
-            override fun visitContainerExpression(expression: IrContainerExpression, data: TailCallOptimizationData?): IrExpression {
-                if (expression is IrInlinedFunctionBlock && expression.isFunctionInlining()) {
-                    return expression
+            override fun visitInlinedFunctionBlock(inlinedBlock: IrInlinedFunctionBlock, data: TailCallOptimizationData?): IrExpression {
+                if (inlinedBlock.isFunctionInlining()) {
+                    return inlinedBlock
                 }
-                return super.visitContainerExpression(expression, data)
+                return super.visitInlinedFunctionBlock(inlinedBlock, data)
             }
 
             override fun visitCall(expression: IrCall, data: TailCallOptimizationData?): IrExpression {
@@ -85,6 +83,8 @@ private class TailCallOptimizationData(val function: IrSimpleFunction) {
         when (val body = function.body) {
             is IrBlockBody -> body.statements.findTailCall(returnsUnit)?.findCallsOnTailPositionWithoutImmediateReturn()
             is IrExpressionBody -> body.expression.findCallsOnTailPositionWithoutImmediateReturn(immediateReturn = true)
+            is IrSyntheticBody -> {}
+            null -> {}
         }
     }
 }
