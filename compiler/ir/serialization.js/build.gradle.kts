@@ -11,9 +11,13 @@ dependencies {
 
     implementation(project(":compiler:ir.backend.common"))
     implementation(project(":compiler:fir:fir-serialization"))
+    implementation(project(":wasm:wasm.config"))
 
     compileOnly(intellijCore())
+    compileOnly(project(":compiler:cli-common"))
 }
+
+optInToUnsafeDuringIrConstructionAPI()
 
 sourceSets {
     "main" { projectDefault() }

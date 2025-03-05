@@ -6,6 +6,8 @@
 
 package org.jetbrains.kotlin.buildtools.api
 
+import org.jetbrains.kotlin.buildtools.internal.KotlinBuildToolsInternalJdkUtils
+import org.jetbrains.kotlin.buildtools.internal.getJdkClassesClassLoader
 import java.util.*
 import kotlin.reflect.KClass
 
@@ -14,11 +16,11 @@ import kotlin.reflect.KClass
  * This way an API implementation can be loaded with almost fully isolated classpath, sharing only the classes from `org.jetbrains.kotlin.buildtools.api`,
  * so a caller still able to pass API parameters in a compatible way.
  */
+@ExperimentalBuildToolsApi
 @Suppress("FunctionName")
 @JvmName("newInstance")
 public fun SharedApiClassesClassLoader(): ClassLoader = SharedApiClassesClassLoaderImpl(
     SharedApiClassesClassLoaderImpl::class.java.classLoader,
-    ClassLoader.getSystemClassLoader(),
     SharedApiClassesClassLoaderImpl::class.java.`package`.name,
 )
 
@@ -31,9 +33,8 @@ internal fun <T : Any> loadImplementation(cls: KClass<T>, classLoader: ClassLoad
 
 private class SharedApiClassesClassLoaderImpl(
     private val parent: ClassLoader,
-    fallback: ClassLoader,
     private val allowedPackage: String,
-) : ClassLoader(fallback) {
+) : ClassLoader(@OptIn(KotlinBuildToolsInternalJdkUtils::class) getJdkClassesClassLoader()) {
     override fun loadClass(name: String, resolve: Boolean): Class<*> {
         return if (name.startsWith(allowedPackage)) {
             parent.loadClass(name)

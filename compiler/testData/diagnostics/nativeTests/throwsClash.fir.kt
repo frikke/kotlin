@@ -1,4 +1,4 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// DIAGNOSTICS: -UNUSED_PARAMETER
 // FILE: throws.kt
 package kotlin
 
@@ -23,17 +23,17 @@ fun foo1() {}
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
 fun foo5(x: Throws) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main2.kt
 package abc2
 
-import kotlin.native.Throws
+import <!DEPRECATION!>kotlin.native.Throws<!>
 
 @<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo1() {}
@@ -41,12 +41,12 @@ fun foo1() {}
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
 fun foo5(x: <!DEPRECATION!>Throws<!>) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main3.kt
 package abc3
@@ -59,31 +59,31 @@ fun foo1() {}
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
 fun foo5(x: Throws) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main4.kt
 package abc4
 
 import kotlin.<!CONFLICTING_IMPORT!>Throws<!>
-import kotlin.native.<!CONFLICTING_IMPORT!>Throws<!>
+import <!DEPRECATION!>kotlin.native.<!CONFLICTING_IMPORT!>Throws<!><!>
 
-@<!OVERLOAD_RESOLUTION_AMBIGUITY!>Throws<!>(Throwable::class)
+@Throws(Throwable::class)
 fun foo1() {}
 
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
-fun foo5(x: <!OVERLOAD_RESOLUTION_AMBIGUITY!>Throws<!>) {}
+fun foo5(x: Throws) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main5.kt
 package abc5
@@ -96,12 +96,12 @@ fun foo1() {}
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
 fun foo5(x: <!DEPRECATION!>Throws<!>) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main6.kt
 package abc6
@@ -114,12 +114,12 @@ fun foo1() {}
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
 fun foo5(x: Throws) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main7.kt
 package abc7
@@ -127,24 +127,24 @@ package abc7
 import kotlin.*
 import kotlin.native.*
 
-@<!OVERLOAD_RESOLUTION_AMBIGUITY!>Throws<!>(Throwable::class)
+@Throws(Throwable::class)
 fun foo1() {}
 
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
-fun foo5(x: <!OVERLOAD_RESOLUTION_AMBIGUITY!>Throws<!>) {}
+fun foo5(x: Throws) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main8.kt
 package abc8
 
 import kotlin.*
-import kotlin.native.Throws
+import <!DEPRECATION!>kotlin.native.Throws<!>
 
 @<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo1() {}
@@ -152,12 +152,12 @@ fun foo1() {}
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
 fun foo5(x: <!DEPRECATION!>Throws<!>) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}
 
 // FILE: main9.kt
 package abc9
@@ -171,9 +171,9 @@ fun foo1() {}
 @kotlin.Throws(Throwable::class)
 fun foo2() {}
 
-@<!DEPRECATION!>kotlin.native.Throws<!>(Throwable::class)
+@kotlin.native.<!DEPRECATION!>Throws<!>(Throwable::class)
 fun foo3() {}
 
 fun foo5(x: Throws) {}
 fun foo6(x: kotlin.Throws) {}
-fun foo7(x: <!DEPRECATION!>kotlin.native.Throws<!>) {}
+fun foo7(x: kotlin.native.<!DEPRECATION!>Throws<!>) {}

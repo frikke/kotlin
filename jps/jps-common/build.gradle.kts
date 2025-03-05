@@ -28,10 +28,12 @@ dependencies {
     compileOnly(jpsModel())
     compileOnly(jpsModelImpl())
     compileOnly(jpsModelSerialization())
+    compileOnly(intellijJDom())
+    testCompileOnly(intellijJDom())
 
     testImplementation(project(":compiler:cli-common"))
     testImplementation(jpsModelSerialization())
-    testImplementation(commonDependency("junit:junit"))
+    testImplementation(libs.junit4)
     testImplementation(kotlin("test-junit"))
 }
 
@@ -46,6 +48,9 @@ sourceSets {
 runtimeJar()
 
 tasks.withType<KotlinCompilationTask<*>>().configureEach {
+    @Suppress("DEPRECATION")
     compilerOptions.apiVersion.value(KotlinVersion.KOTLIN_1_8).finalizeValueOnRead()
+    @Suppress("DEPRECATION")
     compilerOptions.languageVersion.value(KotlinVersion.KOTLIN_1_8).finalizeValueOnRead()
+    compilerOptions.freeCompilerArgs.add("-Xsuppress-version-warnings")
 }

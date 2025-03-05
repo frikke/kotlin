@@ -5,9 +5,15 @@
 
 package org.jetbrains.kotlin.fir.pipeline
 
-import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
+import org.jetbrains.kotlin.diagnostics.KtDiagnostic
+import org.jetbrains.kotlin.diagnostics.impl.BaseDiagnosticsCollector
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.analysis.collectors.FirDiagnosticsCollector
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
+import org.jetbrains.kotlin.fir.analysis.collectors.DiagnosticCollectorComponents
+import org.jetbrains.kotlin.fir.analysis.collectors.CliDiagnosticsCollector
+import org.jetbrains.kotlin.fir.analysis.collectors.components.DiagnosticComponentsFactory
+import org.jetbrains.kotlin.fir.analysis.collectors.components.LossDiagnosticCollectorComponent
+import org.jetbrains.kotlin.fir.analysis.collectors.components.ReportCommitterDiagnosticComponent
 import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.transformers.FirTotalResolveProcessor
@@ -19,11 +25,39 @@ fun FirSession.runResolution(firFiles: List<FirFile>): Pair<ScopeSession, List<F
     return resolveProcessor.scopeSession to firFiles
 }
 
-fun FirSession.runCheckers(scopeSession: ScopeSession, firFiles: List<FirFile>, reporter: DiagnosticReporter) {
-    val collector = FirDiagnosticsCollector.create(this, scopeSession)
+fun FirSession.runCheckers(
+    scopeSession: ScopeSession,
+    firFiles: Collection<FirFile>,
+    reporter: BaseDiagnosticsCollector,
+    mppCheckerKind: MppCheckerKind
+): Map<FirFile, List<KtDiagnostic>> {
+    val collector = DiagnosticComponentsFactory.create(this, scopeSession, mppCheckerKind)
     for (file in firFiles) {
         withFileAnalysisExceptionWrapping(file) {
             collector.collectDiagnostics(file, reporter)
         }
     }
+    collector.collectDiagnosticsInSettings(reporter)
+    return firFiles.associateWith {
+        val path = it.sourceFile?.path ?: return@associateWith emptyList()
+        reporter.diagnosticsByFilePath[path] ?: emptyList()
+    }
+}
+
+fun FirSession.collectLostDiagnosticsOnFile(
+    scopeSession: ScopeSession,
+    file: FirFile,
+    reporter: BaseDiagnosticsCollector,
+): List<KtDiagnostic> {
+    val collector = CliDiagnosticsCollector(this, scopeSession) { reporter ->
+        DiagnosticCollectorComponents(
+            arrayOf(LossDiagnosticCollectorComponent(this, reporter)),
+            ReportCommitterDiagnosticComponent(this, reporter)
+        )
+    }
+    withFileAnalysisExceptionWrapping(file) {
+        collector.collectDiagnostics(file, reporter)
+    }
+    val path = file.sourceFile?.path ?: return emptyList()
+    return reporter.diagnosticsByFilePath[path] ?: emptyList()
 }

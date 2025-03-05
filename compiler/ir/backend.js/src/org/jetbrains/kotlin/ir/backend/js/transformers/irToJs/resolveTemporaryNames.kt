@@ -41,7 +41,7 @@ private fun JsNode.resolveNames(): Map<JsName, JsName> {
         for (temporaryName in scope.declaredNames.asSequence().filter { it.isTemporary }) {
             var resolvedName = temporaryName.ident
             var suffix = nextSuffix.getOrDefault(temporaryName.ident, 0)
-            while (resolvedName in JsDeclarationScope.RESERVED_WORDS || !occupiedNames.add(resolvedName)) {
+            while (resolvedName in JsDeclarationScope.RESERVED_WORDS || resolvedName in occupiedNames) {
                 resolvedName = "${temporaryName.ident}_${suffix++}"
             }
             nextSuffix[temporaryName.ident] = suffix
@@ -79,6 +79,7 @@ private fun JsNode.computeScopes(): Scope {
             // We need it to not rename methods and fields inside class body
             // Because if they are in clash with something, it means overriding
             x.constructor?.accept(this)
+            x.baseClass?.accept(this)
             x.members.forEach { visitFunction(it, shouldReserveName = false) }
         }
 
@@ -118,6 +119,7 @@ private fun JsNode.computeScopes(): Scope {
 
         override fun visitImport(import: JsImport) {
             when (val target = import.target) {
+                is JsImport.Target.Effect -> {}
                 is JsImport.Target.All -> target.alias.name?.let { currentScope.declaredNames += it }
                 is JsImport.Target.Default -> target.name.name?.let { currentScope.declaredNames += it }
                 is JsImport.Target.Elements -> target.elements.forEach {

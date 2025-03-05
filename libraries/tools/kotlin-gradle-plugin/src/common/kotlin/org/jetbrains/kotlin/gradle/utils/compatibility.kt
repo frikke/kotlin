@@ -16,55 +16,20 @@
 
 package org.jetbrains.kotlin.gradle.utils
 
-import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.artifacts.ArtifactCollection
 import org.gradle.api.artifacts.result.ResolvedArtifactResult
-import org.gradle.api.file.ArchiveOperations
-import org.gradle.api.file.CopySpec
-import org.gradle.api.file.FileSystemOperations
-import org.gradle.api.file.FileTree
-import org.gradle.api.internal.project.ProjectInternal
-import org.gradle.api.internal.tasks.testing.TestDescriptorInternal
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
 import org.gradle.api.specs.Spec
-import org.gradle.api.tasks.WorkResult
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
-import org.gradle.api.tasks.testing.TestDescriptor
 import org.gradle.util.GradleVersion
 import java.io.File
-import java.io.Serializable
-
-const val minSupportedGradleVersion = "6.8.3"
-
-internal fun checkGradleCompatibility(
-    withComponent: String = "the Kotlin Gradle plugin",
-    minSupportedVersion: GradleVersion = GradleVersion.version(minSupportedGradleVersion)
-) {
-    val currentVersion = GradleVersion.current()
-    if (currentVersion < minSupportedVersion) {
-        throw GradleException(
-            "The current Gradle version ${currentVersion.version} is not compatible with $withComponent. " +
-                    "Please use Gradle ${minSupportedVersion.version} or newer, or the previous version of the Kotlin plugin."
-        )
-    }
-}
 
 internal val AbstractArchiveTask.archivePathCompatible: File
     get() = archiveFile.get().asFile
-
-// Gradle dropped out getOwnerBuildOperationId. Workaround to build correct plugin for Gradle < 6.8
-// See https://github.com/gradle/gradle/commit/0296f4441ae69ad608cfef6a90fef3fdf314fa2c
-internal interface LegacyTestDescriptorInternal : TestDescriptor {
-    override fun getParent(): TestDescriptorInternal?
-
-    fun getId(): Any?
-
-    fun getOwnerBuildOperationId(): Any?
-
-    fun getClassDisplayName(): String?
-}
 
 /**
  * According to [Gradle 7.3 release notes](https://docs.gradle.org/7.3/release-notes.html#allow-plugin-authors-to-declare-tasks-as-untracked)
@@ -100,3 +65,18 @@ internal fun ArtifactCollection.getResolvedArtifactsCompat(project: Project): Pr
     } else {
         project.provider { artifacts }
     }
+
+/**
+ * ValueSources with injected ExecOperations are supported with Configuration Cache in Gradle 7.5+
+ * https://docs.gradle.org/7.5/release-notes.html#running-external-processes-at-configuration-time
+ */
+internal fun <T> Project.valueSourceWithExecProviderCompat(
+    clazz: Class<out ValueSource<T, ValueSourceParameters.None>>
+): Provider<T> {
+    return if (GradleVersion.current() < GradleVersion.version("7.5")) {
+        val vs = project.objects.newInstance(clazz)
+        project.provider { vs.obtain() }
+    } else {
+        providers.of(clazz) { }
+    }
+}

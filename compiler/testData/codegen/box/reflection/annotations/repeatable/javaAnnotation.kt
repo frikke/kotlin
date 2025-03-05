@@ -1,8 +1,9 @@
-// !LANGUAGE: +RepeatableAnnotations
+// LANGUAGE: +RepeatableAnnotations
 // TARGET_BACKEND: JVM_IR
 // JVM_TARGET: 1.8
 // FULL_JDK
 // WITH_REFLECT
+
 // FILE: box.kt
 
 import kotlin.reflect.full.findAnnotation

@@ -10,13 +10,14 @@ import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.fir.analysis.diagnostics.FirErrors
 import org.jetbrains.kotlin.diagnostics.reportOn
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.getChild
 import org.jetbrains.kotlin.fir.expressions.FirWhenExpression
 import org.jetbrains.kotlin.lexer.KtTokens
 
-object FirWhenSubjectChecker : FirWhenExpressionChecker() {
+object FirWhenSubjectChecker : FirWhenExpressionChecker(MppCheckerKind.Common) {
     override fun check(expression: FirWhenExpression, context: CheckerContext, reporter: DiagnosticReporter) {
-        val subject = expression.subject
+        val subject = expression.subjectVariable?.initializer
         val subjectVariable = expression.subjectVariable
         val source = (subjectVariable ?: subject)?.source ?: return
         when {

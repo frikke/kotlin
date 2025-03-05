@@ -1,6 +1,8 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
 // FIR_DUMP
-// FILE: javapackage/PackagePrivateGrandparentAbstractClass.java
+
+// FILE: javapackage/PackagePrivateGrandparentInterface.java
 
 package javapackage;
 

@@ -29,13 +29,15 @@ import java.util.Objects;
 public class GroupingMessageCollector implements MessageCollector {
     private final MessageCollector delegate;
     private final boolean treatWarningsAsErrors;
+    private final boolean reportAllWarnings;
 
     // Note that the key in this map can be null
     private final Multimap<CompilerMessageSourceLocation, Message> groupedMessages = LinkedHashMultimap.create();
 
-    public GroupingMessageCollector(@NotNull MessageCollector delegate, boolean treatWarningsAsErrors) {
+    public GroupingMessageCollector(@NotNull MessageCollector delegate, boolean treatWarningsAsErrors, boolean reportAllWarnings) {
         this.delegate = delegate;
         this.treatWarningsAsErrors = treatWarningsAsErrors;
+        this.reportAllWarnings = reportAllWarnings;
     }
 
     @Override
@@ -59,21 +61,21 @@ public class GroupingMessageCollector implements MessageCollector {
 
     @Override
     public boolean hasErrors() {
-        return hasExplicitErrors() || (treatWarningsAsErrors && hasWarnings());
+        return delegate.hasErrors() || hasExplicitErrors() || (treatWarningsAsErrors && hasRegularWarnings());
     }
 
     private boolean hasExplicitErrors() {
         return groupedMessages.entries().stream().anyMatch(entry -> entry.getValue().severity.isError());
     }
 
-    private boolean hasWarnings() {
-        return groupedMessages.entries().stream().anyMatch(entry -> entry.getValue().severity.isWarning());
+    private boolean hasRegularWarnings() {
+        return groupedMessages.entries().stream().anyMatch(entry -> entry.getValue().severity.isRegularWarning());
     }
 
     public void flush() {
         boolean hasExplicitErrors = hasExplicitErrors();
 
-        if (treatWarningsAsErrors && !hasExplicitErrors && hasWarnings()) {
+        if (treatWarningsAsErrors && !hasExplicitErrors && hasRegularWarnings()) {
             report(CompilerMessageSeverity.ERROR, "warnings found and -Werror specified", null);
         }
 
@@ -81,7 +83,7 @@ public class GroupingMessageCollector implements MessageCollector {
                 CollectionsKt.sortedWith(groupedMessages.keySet(), Comparator.nullsFirst(CompilerMessageLocationComparator.INSTANCE));
         for (CompilerMessageSourceLocation location : sortedKeys) {
             for (Message message : groupedMessages.get(location)) {
-                if (!hasExplicitErrors || message.severity.isError() || message.severity == CompilerMessageSeverity.STRONG_WARNING) {
+                if (!hasExplicitErrors || reportAllWarnings || message.severity.isError() || message.severity == CompilerMessageSeverity.STRONG_WARNING) {
                     delegate.report(message.severity, message.message, message.location);
                 }
             }

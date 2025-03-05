@@ -120,6 +120,10 @@ class DefFile(val file:File?, val config:DefFileConfig, val manifestAddendProper
             properties.getSpaceSeparated("exportForwardDeclarations")
         }
 
+        val allowedOverloadsForCFunctions by lazy {
+            properties.getSpaceSeparated("allowedOverloadsForCFunctions")
+        }
+
         val disableDesignatedInitializerChecks by lazy {
             properties.getProperty("disableDesignatedInitializerChecks")?.toBoolean() ?: false
         }
@@ -128,12 +132,12 @@ class DefFile(val file:File?, val config:DefFileConfig, val manifestAddendProper
             properties.getProperty("foreignExceptionMode")
         }
 
-        val pluginName by lazy {
-            properties.getProperty("plugin")
-        }
-
         val objcClassesIncludingCategories by lazy {
             properties.getSpaceSeparated("objcClassesIncludingCategories")
+        }
+
+        val allowIncludingObjCCategoriesFromDefFile by lazy {
+            properties.getProperty("allowIncludingObjCCategoriesFromDefFile")?.toBoolean() ?: false
         }
 
         val userSetupHint by lazy {

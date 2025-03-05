@@ -5,8 +5,9 @@
 
 package org.jetbrains.kotlin.test.frontend.fir
 
+import org.jetbrains.kotlin.backend.common.CommonKLibResolver
+import org.jetbrains.kotlin.cli.common.messages.getLogger
 import org.jetbrains.kotlin.config.CompilerConfiguration
-import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.deserialization.ModuleDataProvider
 import org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar
@@ -26,19 +27,28 @@ object TestFirNativeSessionFactory {
         moduleDataProvider: ModuleDataProvider,
         configuration: CompilerConfiguration,
         extensionRegistrars: List<FirExtensionRegistrar>,
-        languageVersionSettings: LanguageVersionSettings,
-        registerExtraComponents: (FirSession) -> Unit = {},
     ): FirSession {
-        val resolvedLibraries = resolveLibraries(configuration, getAllNativeDependenciesPaths(module, testServices))
+        val resolvedLibraries = CommonKLibResolver.resolve(
+            getAllNativeDependenciesPaths(module, testServices),
+            configuration.getLogger(treatWarningsAsErrors = true),
+            knownIrProviders = listOf("kotlin.native.cinterop"), // FIXME use KonanLibraryProperResolver instead, as in production.
+        ).getFullResolvedList().map { it.library }
 
-        return FirNativeSessionFactory.createLibrarySession(
+        val sharedLibrarySession = FirNativeSessionFactory.createSharedLibrarySession(
             mainModuleName,
-            resolvedLibraries,
             sessionProvider,
             moduleDataProvider,
+            configuration,
             extensionRegistrars,
-            languageVersionSettings,
-            registerExtraComponents,
+        )
+
+        return FirNativeSessionFactory.createLibrarySession(
+            resolvedLibraries,
+            sessionProvider,
+            sharedLibrarySession,
+            moduleDataProvider,
+            extensionRegistrars,
+            configuration,
         )
     }
 }

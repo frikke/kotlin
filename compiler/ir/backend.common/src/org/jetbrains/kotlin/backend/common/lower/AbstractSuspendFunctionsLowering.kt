@@ -5,26 +5,35 @@
 
 package org.jetbrains.kotlin.backend.common.lower
 
-import org.jetbrains.kotlin.backend.common.*
+import org.jetbrains.kotlin.backend.common.CommonBackendContext
+import org.jetbrains.kotlin.backend.common.FileLoweringPass
+import org.jetbrains.kotlin.backend.common.collectTailSuspendCalls
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.builders.*
-import org.jetbrains.kotlin.ir.builders.declarations.*
+import org.jetbrains.kotlin.ir.builders.declarations.buildClass
+import org.jetbrains.kotlin.ir.builders.declarations.buildConstructor
+import org.jetbrains.kotlin.ir.builders.declarations.buildField
+import org.jetbrains.kotlin.ir.builders.declarations.buildFun
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.expressions.*
+import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrStatementOriginImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrInstanceInitializerCallImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.utils.*
 import org.jetbrains.kotlin.ir.visitors.*
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.utils.memoryOptimizedMap
+import org.jetbrains.kotlin.utils.memoryOptimizedPlus
 
 abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val context: C) : FileLoweringPass {
-
-    protected object STATEMENT_ORIGIN_COROUTINE_IMPL : IrStatementOriginImpl("COROUTINE_IMPL")
-    protected object DECLARATION_ORIGIN_COROUTINE_IMPL : IrDeclarationOriginImpl("COROUTINE_IMPL")
+    protected companion object {
+        val STATEMENT_ORIGIN_COROUTINE_IMPL = IrStatementOriginImpl("COROUTINE_IMPL")
+        val DECLARATION_ORIGIN_COROUTINE_IMPL = IrDeclarationOriginImpl("COROUTINE_IMPL")
+    }
 
     protected abstract val stateMachineMethodName: Name
     protected abstract fun getCoroutineBaseClass(function: IrFunction): IrClassSymbol
@@ -45,7 +54,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
 
     override fun lower(irFile: IrFile) {
         irFile.transformDeclarationsFlat(::tryTransformSuspendFunction)
-        irFile.acceptVoid(object : IrElementVisitorVoid {
+        irFile.acceptVoid(object : IrVisitorVoid() {
             override fun visitElement(element: IrElement) {
                 element.acceptChildrenVoid(this)
             }
@@ -74,7 +83,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
     }
 
     protected fun IrCall.isReturnIfSuspendedCall() =
-        symbol == context.ir.symbols.returnIfSuspended
+        symbol == context.symbols.returnIfSuspended
 
     private fun simplifyTailSuspendCalls(irFunction: IrSimpleFunction, tailSuspendCalls: Set<IrCall>) {
         if (tailSuspendCalls.isEmpty()) return
@@ -83,7 +92,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
         irFunction.body!!.transformChildrenVoid(object : IrElementTransformerVoid() {
             override fun visitCall(expression: IrCall): IrExpression {
                 val shortCut = if (expression.isReturnIfSuspendedCall())
-                    expression.getValueArgument(0)!!
+                    expression.arguments[0]!!
                 else expression
 
                 shortCut.transformChildrenVoid(this)
@@ -97,7 +106,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
         })
     }
 
-    private val symbols = context.ir.symbols
+    private val symbols = context.symbols
     private val getContinuationSymbol = symbols.getContinuation
     private val continuationClassSymbol = getContinuationSymbol.owner.returnType.classifierOrFail as IrClassSymbol
 
@@ -111,18 +120,16 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
                                        irCallConstructor(constructor.symbol, irFunction.typeParameters.map {
                                            it.defaultType.makeNullable()
                                        }).apply {
-                                           val functionParameters = irFunction.explicitParameters
+                                           val functionParameters = irFunction.parameters
                                            functionParameters.forEachIndexed { index, argument ->
-                                               putValueArgument(index, irGet(argument))
+                                               arguments[index] = irGet(argument)
                                            }
-                                           putValueArgument(
-                                               functionParameters.size,
+                                           arguments[functionParameters.size] =
                                                irCall(
                                                    getContinuationSymbol,
                                                    getContinuationSymbol.owner.returnType,
                                                    listOf(irFunction.returnType)
                                                )
-                                           )
                                        })
             }
         }
@@ -130,7 +137,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
     private class BuiltCoroutine(val clazz: IrClass, val constructor: IrConstructor, val stateMachineFunction: IrFunction)
 
     private inner class CoroutineBuilder(val irFunction: IrFunction) {
-        private val functionParameters = irFunction.explicitParameters
+        private val functionParameters = irFunction.parameters
 
         private val coroutineClass: IrClass =
             context.irFactory.buildClass {
@@ -141,7 +148,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
                 visibility = DescriptorVisibilities.PRIVATE
             }.apply {
                 parent = irFunction.parent
-                createParameterDeclarations()
+                createThisReceiverParameter()
                 typeParameters = irFunction.typeParameters.memoryOptimizedMap { typeParam ->
                     typeParam.copyToWithoutSuperTypes(this).apply { superTypes = superTypes memoryOptimizedPlus typeParam.superTypes }
                 }
@@ -155,7 +162,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
         private val argumentToPropertiesMap = functionParameters.associateWith { coroutineClass.addField(it.name, it.type, false) }
 
         private val coroutineBaseClass = getCoroutineBaseClass(irFunction)
-        private val coroutineBaseClassConstructor = coroutineBaseClass.owner.constructors.single { it.valueParameters.size == 1 }
+        private val coroutineBaseClassConstructor = coroutineBaseClass.owner.constructors.single { it.hasShape(regularParameters = 1) }
 
         private val coroutineConstructors = mutableListOf<IrConstructor>()
 
@@ -187,20 +194,20 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
                 coroutineClass.declarations += this
                 coroutineConstructors += this
 
-                valueParameters = functionParameters.memoryOptimizedMapIndexed { index, parameter ->
-                    parameter.copyTo(this, DECLARATION_ORIGIN_COROUTINE_IMPL, index)
+                parameters = functionParameters.memoryOptimizedMap { parameter ->
+                    parameter.copyTo(this, DECLARATION_ORIGIN_COROUTINE_IMPL, kind = IrParameterKind.Regular)
                 }
-                val continuationParameter = coroutineBaseClassConstructor.valueParameters[0]
-                valueParameters = valueParameters memoryOptimizedPlus continuationParameter.copyTo(
+                val continuationParameter = coroutineBaseClassConstructor.parameters[0]
+                parameters = parameters memoryOptimizedPlus continuationParameter.copyTo(
                     this, DECLARATION_ORIGIN_COROUTINE_IMPL,
-                    index = valueParameters.size, type = continuationType
+                    type = continuationType
                 )
 
                 val irBuilder = context.createIrBuilder(symbol, startOffset, endOffset)
                 body = irBuilder.irBlockBody {
-                    val completionParameter = valueParameters.last()
+                    val completionParameter = parameters.last()
                     +irDelegatingConstructorCall(coroutineBaseClassConstructor).apply {
-                        putValueArgument(0, irGet(completionParameter))
+                        arguments[0] = irGet(completionParameter)
                     }
                     +IrInstanceInitializerCallImpl(startOffset, endOffset, coroutineClass.symbol, context.irBuiltIns.unitType)
 
@@ -208,7 +215,7 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
                         +irSetField(
                             irGet(coroutineClassThis),
                             argumentToPropertiesMap.getValue(parameter),
-                            irGet(valueParameters[index])
+                            irGet(parameters[index])
                         )
                     }
                 }
@@ -241,45 +248,18 @@ abstract class AbstractSuspendFunctionsLowering<C : CommonBackendContext>(val co
                         .apply { superTypes = superTypes memoryOptimizedPlus parameter.superTypes }
                 }
 
-                valueParameters = stateMachineFunction.valueParameters.memoryOptimizedMapIndexed { index, parameter ->
-                    parameter.copyTo(this, DECLARATION_ORIGIN_COROUTINE_IMPL, index)
-                }
+                this.parameters += this.createDispatchReceiverParameterWithClassParent()
 
-                this.createDispatchReceiverParameter()
+                this.parameters += stateMachineFunction.nonDispatchParameters
+                    .memoryOptimizedMap { parameter ->
+                        parameter.copyTo(this, DECLARATION_ORIGIN_COROUTINE_IMPL)
+                    }
 
                 overriddenSymbols = overriddenSymbols memoryOptimizedPlus stateMachineFunction.symbol
             }
 
             buildStateMachine(function, irFunction, argumentToPropertiesMap)
             return function
-        }
-    }
-
-    protected open class VariablesScopeTracker : IrElementVisitorVoid {
-
-        protected val scopeStack = mutableListOf<MutableSet<IrVariable>>(mutableSetOf())
-
-        override fun visitElement(element: IrElement) {
-            element.acceptChildrenVoid(this)
-        }
-
-        override fun visitContainerExpression(expression: IrContainerExpression) {
-            if (!expression.isTransparentScope)
-                scopeStack.push(mutableSetOf())
-            super.visitContainerExpression(expression)
-            if (!expression.isTransparentScope)
-                scopeStack.pop()
-        }
-
-        override fun visitCatch(aCatch: IrCatch) {
-            scopeStack.push(mutableSetOf())
-            super.visitCatch(aCatch)
-            scopeStack.pop()
-        }
-
-        override fun visitVariable(declaration: IrVariable) {
-            super.visitVariable(declaration)
-            scopeStack.peek()!!.add(declaration)
         }
     }
 

@@ -1,4 +1,5 @@
-// ISSUE: KT-57911
+// RUN_PIPELINE_TILL: FRONTEND
+// ISSUES: KT-57911, KT-56744
 
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.contract

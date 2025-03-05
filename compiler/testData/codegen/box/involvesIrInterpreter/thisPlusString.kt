@@ -1,12 +1,11 @@
-// TARGET_BACKEND: JVM_IR
-// TARGET_BACKEND: NATIVE
-// TARGET_BACKEND: JS_IR
+// IGNORE_IR_DESERIALIZATION_TEST: NATIVE
+// ^^^ KT-73621: EVALUATED{IR} is missing
 // WITH_STDLIB
 
 object Test {
     fun foo(): String = "foo " + this
 
-    fun bar(): String = "<!EVALUATED("bar ")!>bar <!>$this"
+    fun bar(): String = "<!EVALUATED{IR}("bar ")!>bar <!>$this"
 
     fun baz(): String = "baz " + this.toString()
 }

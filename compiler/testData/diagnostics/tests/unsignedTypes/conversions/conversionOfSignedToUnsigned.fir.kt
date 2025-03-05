@@ -1,5 +1,6 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER
-// !LANGUAGE: +ImplicitSignedToUnsignedIntegerConversion
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNUSED_PARAMETER
+// LANGUAGE: +ImplicitSignedToUnsignedIntegerConversion
 // ALLOW_KOTLIN_PACKAGE
 
 // FILE: annotation.kt
@@ -57,7 +58,7 @@ fun test() {
 
     <!OPT_IN_USAGE!>takeUBytes<!>(IMPLICIT_INT, EXPLICIT_INT, 42u)
 
-    takeLong(IMPLICIT_INT)
+    takeLong(<!ARGUMENT_TYPE_MISMATCH!>IMPLICIT_INT<!>)
 
     takeIntWithoutAnnotation(IMPLICIT_INT)
 

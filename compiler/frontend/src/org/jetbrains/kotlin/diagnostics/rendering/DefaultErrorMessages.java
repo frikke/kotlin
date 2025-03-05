@@ -16,8 +16,7 @@ import org.jetbrains.kotlin.diagnostics.Errors;
 import org.jetbrains.kotlin.diagnostics.UnboundDiagnostic;
 import org.jetbrains.kotlin.metadata.deserialization.VersionRequirement;
 import org.jetbrains.kotlin.resolve.VarianceConflictDiagnosticData;
-import org.jetbrains.kotlin.resolve.multiplatform.ExpectActualCompatibility;
-import org.jetbrains.kotlin.resolve.multiplatform.ExpectActualCompatibility.Incompatible;
+import org.jetbrains.kotlin.resolve.multiplatform.K1ExpectActualCompatibility.Incompatible;
 import org.jetbrains.kotlin.types.KotlinTypeKt;
 import org.jetbrains.kotlin.util.OperatorNameConventions;
 import org.jetbrains.kotlin.utils.addToStdlib.AddToStdlibKt;
@@ -28,6 +27,7 @@ import java.util.*;
 
 import static org.jetbrains.kotlin.diagnostics.Errors.*;
 import static org.jetbrains.kotlin.diagnostics.rendering.CommonRenderers.*;
+import static org.jetbrains.kotlin.diagnostics.rendering.Renderers.NAME;
 import static org.jetbrains.kotlin.diagnostics.rendering.Renderers.*;
 import static org.jetbrains.kotlin.diagnostics.rendering.RenderingContext.of;
 
@@ -197,6 +197,9 @@ public class DefaultErrorMessages {
         MAP.put(OPT_IN_USAGE_ERROR, "{1}", TO_STRING, STRING);
         MAP.put(OPT_IN_USAGE_FUTURE_ERROR, "{1}", TO_STRING, STRING);
 
+        MAP.put(OPT_IN_TO_INHERITANCE, "{1}", TO_STRING, STRING);
+        MAP.put(OPT_IN_TO_INHERITANCE_ERROR, "{1}", TO_STRING, STRING);
+
         MAP.put(OPT_IN_OVERRIDE, "{1}", TO_STRING, STRING);
         MAP.put(OPT_IN_OVERRIDE_ERROR, "{1}", TO_STRING, STRING);
 
@@ -214,6 +217,7 @@ public class DefaultErrorMessages {
         MAP.put(OPT_IN_MARKER_ON_OVERRIDE_WARNING, "Opt-in requirement marker annotation on override makes no sense without the same marker on base declaration");
 
         MAP.put(SUBCLASS_OPT_IN_INAPPLICABLE, "@SubclassOptInRequired is inapplicable on {0}", STRING);
+        MAP.put(SUBCLASS_OPT_IN_ARGUMENT_IS_NOT_MARKER, "Annotation ''{0}'' is not annotated with ''@RequiresOptIn''.", TO_STRING);
 
         MAP.put(EXPERIMENTAL_UNSIGNED_LITERALS, "{0}", STRING);
         MAP.put(EXPERIMENTAL_UNSIGNED_LITERALS_ERROR, "{0}", STRING);
@@ -361,6 +365,8 @@ public class DefaultErrorMessages {
         MAP.put(ACTUAL_TYPE_ALIAS_TO_CLASS_WITH_DECLARATION_SITE_VARIANCE, "Aliased class should not have type parameters with declaration-site variance");
         MAP.put(ACTUAL_TYPE_ALIAS_WITH_USE_SITE_VARIANCE, "Right-hand side of actual type alias cannot contain use-site variance or star projections");
         MAP.put(ACTUAL_TYPE_ALIAS_WITH_COMPLEX_SUBSTITUTION, "Type arguments in the right-hand side of actual type alias should be its type parameters in the same order, e.g. 'actual typealias Foo<A, B> = Bar<A, B>'");
+        MAP.put(ACTUAL_TYPE_ALIAS_TO_NULLABLE_TYPE, "Right-hand side of actual type alias cannot be a nullable type");
+        MAP.put(ACTUAL_TYPE_ALIAS_TO_NOTHING, "Right-hand side of actual type alias cannot be of type kotlin.Nothing");
         MAP.put(ACTUAL_FUNCTION_WITH_DEFAULT_ARGUMENTS, "Actual function cannot have default argument values, they should be declared in the expected function");
         MAP.put(ACTUAL_ANNOTATION_CONFLICTING_DEFAULT_ARGUMENT_VALUE, "Parameter ''{0}'' has conflicting values in the expected and actual annotation", NAME);
         MAP.put(DEFAULT_ARGUMENTS_IN_EXPECT_WITH_ACTUAL_TYPEALIAS,
@@ -368,12 +374,12 @@ public class DefaultErrorMessages {
                 "Possible fix is to remove default argument values in members:{1}",
                 NAME, DESCRIPTORS_ON_NEWLINE_WITH_INDENT);
 
-        MAP.put(EXPECTED_FUNCTION_SOURCE_WITH_DEFAULT_ARGUMENTS_NOT_FOUND,
-                "Expected function source is not found, therefore it's impossible to generate default argument values declared there. " +
-                "Please add the corresponding file to compilation sources");
-
         MAP.put(NO_ACTUAL_FOR_EXPECT, "Expected {0} has no actual declaration in module {1}{2}", DECLARATION_NAME_WITH_KIND,
                 MODULE_WITH_PLATFORM, adaptGenerics1(PlatformIncompatibilityDiagnosticRenderer.TEXT));
+        MAP.put(IMPLICIT_JVM_ACTUALIZATION, "Expected {0} is implicitly actualized by Java declaration in module {1}. " +
+                                            "Please migrate to explicit ''actual typealias''. See: https://youtrack.jetbrains.com/issue/KT-58545",
+                DECLARATION_NAME_WITH_KIND,
+                MODULE_WITH_PLATFORM);
         MAP.put(ACTUAL_WITHOUT_EXPECT, "{0} has no corresponding expected declaration{1}", CAPITALIZED_DECLARATION_NAME_WITH_KIND_AND_PLATFORM,
                 adaptGenerics1(PlatformIncompatibilityDiagnosticRenderer.TEXT));
         MAP.put(AMBIGUOUS_ACTUALS, "{0} has several compatible actual declarations in modules {1}", CAPITALIZED_DECLARATION_NAME_WITH_KIND_AND_PLATFORM, CommonRenderers.commaSeparated(
@@ -388,9 +394,66 @@ public class DefaultErrorMessages {
                 "{0}: expect and corresponding actual are declared in the same module, which will be prohibited in Kotlin 2.0. See https://youtrack.jetbrains.com/issue/KT-55177",
                 CAPITALIZED_DECLARATION_NAME_WITH_KIND_AND_PLATFORM);
 
+        MAP.put(ACTUAL_CLASSIFIER_MUST_HAVE_THE_SAME_MEMBERS_AS_NON_FINAL_EXPECT_CLASSIFIER_WARNING,
+                "{0}: actual class and its non-final expect class must declare exactly the same non-private members. " +
+                "The following non-private members in actual class are mismatched:{1}\n" +
+                "This error happens because the expect class ''{2}'' is non-final. " +
+                "This warning will become an error in future releases.\n" +
+                "Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                CAPITALIZED_DECLARATION_NAME_WITH_KIND_AND_PLATFORM,
+                ExpectActualScopeDiffsRenderer.TEXT,
+                NAME);
+        MAP.put(UNKNOWN_PROBLEM_DURING_NON_FINAL_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(RETURN_TYPE_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(MODALITY_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(VISIBILITY_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(PARAMETER_NAME_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(PROPERTY_KIND_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(LATEINIT_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(VARARG_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(SETTER_VISIBILITY_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+        MAP.put(TYPE_PARAMETER_NAMES_CHANGED_IN_NON_FINAL_EXPECT_CLASSIFIER_ACTUALIZATION_WARNING,
+                "{0}. This warning will become an error in future releases. Also see https://youtrack.jetbrains.com/issue/KT-22841 for more details",
+                ExpectActualScopeDiffRenderer.INSTANCE);
+
+        MAP.put(EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING,
+                "'expect'/'actual' classes (including interfaces, objects, annotations, enums, and 'actual' typealiases) are in Beta. " +
+                "You can use -Xexpect-actual-classes flag to suppress this warning. " +
+                "Also see: https://youtrack.jetbrains.com/issue/KT-61573");
+
         MAP.put(OPTIONAL_EXPECTATION_NOT_ON_EXPECTED, "'@OptionalExpectation' can only be used on an expected annotation class");
         MAP.put(OPTIONAL_DECLARATION_OUTSIDE_OF_ANNOTATION_ENTRY, "Declaration annotated with '@OptionalExpectation' can only be used inside an annotation entry");
         MAP.put(OPTIONAL_DECLARATION_USAGE_IN_NON_COMMON_SOURCE, "Declaration annotated with '@OptionalExpectation' can only be used in common module sources");
+        MAP.put(NOT_A_MULTIPLATFORM_COMPILATION, "'expect' and 'actual' declarations can be used only in multiplatform projects. Learn more about Kotlin Multiplatform: https://kotl.in/multiplatform-setup");
+        MAP.put(EXPECT_ACTUAL_OPT_IN_ANNOTATION, "Opt-in annotations are prohibited to be `expect` or `actual`. Instead, declare annotation once in common sources.");
+        MAP.put(ACTUAL_TYPEALIAS_TO_SPECIAL_ANNOTATION,
+                "`actual typealias` to annotation which affects code compilation can lead to incorrect behavior. Instead, use ''{0}'' annotation directly.",
+                TO_STRING);
+        MAP.put(ACTUAL_ANNOTATIONS_NOT_MATCH_EXPECT,
+                "{3}.\n" +
+                "All annotations from expect `{0}` must be present with the same arguments on actual `{1}`, otherwise they might behave incorrectly.",
+                ExpectActualAnnotationIncompatibilityDiagnosticRenderers.DESCRIPTOR_RENDERER,
+                ExpectActualAnnotationIncompatibilityDiagnosticRenderers.DESCRIPTOR_RENDERER,
+                NOT_RENDERED,
+                ExpectActualAnnotationIncompatibilityDiagnosticRenderers.INCOMPATIBILITY);
 
         MAP.put(PROJECTION_ON_NON_CLASS_TYPE_ARGUMENT, "Projections are not allowed on type arguments of functions and properties");
         MAP.put(SUPERTYPE_NOT_INITIALIZED, "This type has a constructor, and thus must be initialized here");
@@ -559,11 +622,6 @@ public class DefaultErrorMessages {
         MAP.put(FORBIDDEN_IDENTITY_EQUALS, "Identity equality for arguments of types {0} and {1} is forbidden", RENDER_TYPE, RENDER_TYPE);
         MAP.put(FORBIDDEN_SYNCHRONIZED_BY_VALUE_CLASSES_OR_PRIMITIVES, "Synchronizing by {0} is forbidden", RENDER_TYPE);
 
-        MAP.put(DEPRECATED_BINARY_MOD, "Deprecated convention for ''{0}''. Use ''{1}''", NAME, STRING);
-        MAP.put(FORBIDDEN_BINARY_MOD, "Convention for ''{0}'' is forbidden. Use ''{1}''", NAME, STRING);
-        MAP.put(DEPRECATED_BINARY_MOD_AS_REM, "''%'' is resolved to deprecated ''{0}'' operator. Replace with ''.{0}'' or add operator ''{1}''", NAME, STRING);
-        MAP.put(FORBIDDEN_BINARY_MOD_AS_REM, "''%'' is resolved to forbidden ''{0}'' operator. Replace with ''.{0}'' or add operator ''{1}''", NAME, STRING);
-
         MAP.put(NO_GET_METHOD, "No get method providing array access");
         MAP.put(NO_SET_METHOD, "No set method providing array access");
 
@@ -710,6 +768,7 @@ public class DefaultErrorMessages {
         MAP.put(DEPRECATED_SYNTAX_WITH_DEFINITELY_NOT_NULL, "Applying '!!' to the whole as/is expression without parentheses is deprecated. Please, put parentheses explicitly");
 
         MAP.put(MODIFIER_LIST_NOT_ALLOWED, "Modifiers and annotations are not allowed here, because there are other modifiers or annotations outside of parenthesis");
+        MAP.put(MULTIPLE_CONTEXT_LISTS, "Multiple context receiver lists.");
         MAP.put(PROGRESSIONS_CHANGING_RESOLVE, "Progressions and ranges types will start implementing Collection interface soon. " +
                                                "This call will resolve to another declaration: {0}. " +
                                                "See https://youtrack.jetbrains.com/issue/KT-49276 for more details. " +
@@ -824,6 +883,13 @@ public class DefaultErrorMessages {
         MAP.put(EXPERIMENTAL_FEATURE_WARNING, "{0}", new LanguageFeatureMessageRenderer(LanguageFeatureMessageRenderer.Type.WARNING));
 
         MAP.put(EXPLICIT_BACKING_FIELDS_UNSUPPORTED, "Explicit backing field declarations are not supported in FE 1.0");
+
+        MAP.put(UNSUPPORTED_INHERITANCE_FROM_JAVA_MEMBER_REFERENCING_KOTLIN_FUNCTION, "Inheritance of a Java member referencing 'kotlin.jvm.functions.FunctionN': {0} is unsupported", STRING);
+        MAP.put(UNSUPPORTED_SEALED_WHEN, "'sealed' in front of 'when' is reserved");
+        MAP.put(UNSUPPORTED_SEALED_FUN_INTERFACE, "'sealed fun interface' is unsupported");
+        MAP.put(UNSUPPORTED_SUSPEND_TEST, "'suspend' functions annotated with @kotlin.test.Test are unsupported");
+        MAP.put(UNSUPPORTED_REFERENCES_TO_VARIABLES_AND_PARAMETERS, "References to variables and parameters are unsupported");
+         MAP.put(UNSUPPORTED_CLASS_LITERALS_WITH_EMPTY_LHS, "Class literals with empty left hand side are unsupported");
 
         MAP.put(EXCEPTION_FROM_ANALYZER, "Internal Error occurred while analyzing this expression:\n{0}", THROWABLE);
         MAP.put(MISSING_STDLIB, "{0}. Ensure you have the standard Kotlin library in dependencies", STRING);
@@ -1036,6 +1102,7 @@ public class DefaultErrorMessages {
         MAP.put(STUB_TYPE_IN_RECEIVER_CAUSES_AMBIGUITY, "The type of a receiver hasn''t been inferred yet. To disambiguate this call, explicitly cast it to `{0}` if you want the builder''s type parameter(s) `{1}` to be inferred to `{2}`.", RENDER_TYPE, STRING, STRING, null);
         MAP.put(BUILDER_INFERENCE_MULTI_LAMBDA_RESTRICTION, "Unstable inference behaviour with multiple lambdas. Please either specify the type argument for generic parameter `{0}` of `{1}` explicitly", TO_STRING, TO_STRING);
         MAP.put(BUILDER_INFERENCE_STUB_RECEIVER, "The type of a receiver hasn''t been inferred yet. Please specify type argument for generic parameter `{0}` of `{1}` explicitly", TO_STRING, TO_STRING);
+        MAP.put(BUILDER_INFERENCE_STUB_PARAMETER_TYPE, "The type of parameter `{0}` cannot be inferred by builder inference", TO_STRING);
         MAP.put(UPPER_BOUND_VIOLATION_IN_CONSTRAINT, "Upper bound violation for generic parameter `{0}` of `{1}`: {3} is not a subtype of {2}", TO_STRING, TO_STRING, RENDER_TYPE, RENDER_TYPE);
         MAP.put(NONE_APPLICABLE, "None of the following functions can be called with the arguments supplied: {0}", AMBIGUOUS_CALLS);
         MAP.put(CANNOT_COMPLETE_RESOLVE, "Cannot choose among the following candidates without completing type inference: {0}", AMBIGUOUS_CALLS);
@@ -1204,8 +1271,6 @@ public class DefaultErrorMessages {
         MAP.put(PRIVATE_INLINE_FUNCTIONS_RETURNING_ANONYMOUS_OBJECTS, "Return type of the private inline function can't be anonymous. It will be approximated to Any in a future release. See KT-33917 for more details");
         //Inline non locals
         MAP.put(NON_LOCAL_RETURN_NOT_ALLOWED, "Can''t inline ''{0}'' here: it may contain non-local returns. Add ''crossinline'' modifier to parameter declaration ''{0}''", ELEMENT_TEXT);
-        MAP.put(INLINE_CALL_CYCLE, "The ''{0}'' invocation is a part of inline cycle", NAME);
-        MAP.put(NON_LOCAL_RETURN_IN_DISABLED_INLINE, "Non-local returns are not allowed with inlining disabled");
         MAP.put(NON_LOCAL_SUSPENSION_POINT, "Suspension functions can be called only within coroutine body");
         MAP.put(ILLEGAL_SUSPEND_FUNCTION_CALL, "Suspend function ''{0}'' should be called only from a coroutine or another suspend function", NAME);
         MAP.put(ILLEGAL_SUSPEND_PROPERTY_ACCESS, "Suspend property ''{0}'' should be accessed only from a coroutine or suspend function", NAME);
@@ -1232,6 +1297,7 @@ public class DefaultErrorMessages {
         MAP.put(AMBIGUOUS_CALL_WITH_IMPLICIT_CONTEXT_RECEIVER, "With implicit context receiver, call is ambiguous. Specify the receiver explicitly");
         MAP.put(UNSUPPORTED_CONTEXTUAL_DECLARATION_CALL, "To use contextual declarations, specify the `-Xcontext-receivers` compiler option");
         MAP.put(SUBTYPING_BETWEEN_CONTEXT_RECEIVERS, "Subtyping relation between context receivers is prohibited");
+        MAP.put(CONTEXT_PARAMETERS_UNSUPPORTED, "Context parameters are not supported in K1 mode. Consider using a more recent language version and switching to K2 mode.");
 
         MAP.put(VOLATILE_ON_VALUE, "'@Volatile' annotation cannot be used on immutable properties");
         MAP.put(VOLATILE_ON_DELEGATE, "'@Volatile' annotation cannot be used on delegated properties");
@@ -1262,7 +1328,7 @@ public class DefaultErrorMessages {
     }
 
     @SuppressWarnings("unchecked")
-    public static DiagnosticParameterRenderer<List<Pair<MemberDescriptor, Map<Incompatible<MemberDescriptor>, Collection<MemberDescriptor>>>>> adaptGenerics2(DiagnosticParameterRenderer<List<? extends Pair<? extends MemberDescriptor, ? extends Map<ExpectActualCompatibility.Incompatible<? extends MemberDescriptor>, ? extends Collection<? extends MemberDescriptor>>>>> renderer) {
+    public static DiagnosticParameterRenderer<List<Pair<MemberDescriptor, Map<Incompatible<MemberDescriptor>, Collection<MemberDescriptor>>>>> adaptGenerics2(DiagnosticParameterRenderer<List<? extends Pair<? extends MemberDescriptor, ? extends Map<Incompatible<? extends MemberDescriptor>, ? extends Collection<? extends MemberDescriptor>>>>> renderer) {
         return (obj, renderingContext) -> renderer.render((List)obj, renderingContext);
     }
 

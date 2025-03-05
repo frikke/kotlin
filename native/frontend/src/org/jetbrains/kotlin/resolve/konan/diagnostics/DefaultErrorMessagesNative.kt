@@ -69,6 +69,36 @@ private val DIAGNOSTIC_FACTORY_TO_RENDERER by lazy {
             ErrorsNative.SUBTYPE_OF_HIDDEN_FROM_OBJC,
             "Only @HiddenFromObjC declaration can be a subtype of @HiddenFromObjC declaration"
         )
+
+        put(
+            ErrorsNative.CANNOT_CHECK_FOR_FORWARD_DECLARATION,
+            "Cannot check for forward declaration: ''{0}''",
+            Renderers.RENDER_TYPE
+        )
+        put(ErrorsNative.UNCHECKED_CAST_TO_FORWARD_DECLARATION,
+            "Unchecked cast to forward declaration: ''{0}'' to ''{1}''",
+            Renderers.RENDER_TYPE,
+            Renderers.RENDER_TYPE
+        )
+        put(
+            ErrorsNative.FORWARD_DECLARATION_AS_REIFIED_TYPE_ARGUMENT,
+            "Cannot pass forward declaration ''{0}'' for reified type parameter",
+            Renderers.RENDER_TYPE
+        )
+        put(
+            ErrorsNative.FORWARD_DECLARATION_AS_CLASS_LITERAL,
+            "Can't refer to forward declaration ''{0}'' from class literal",
+            Renderers.RENDER_TYPE
+        )
+        put(
+            ErrorsNative.CONFLICTING_OBJC_OVERLOADS,
+            "Conflicting overloads: {0}. Add @ObjCSignatureOverride to allow collision for functions inherited from Objective-C.",
+            CommonRenderers.commaSeparated(Renderers.FQ_NAMES_IN_TYPES)
+        )
+        put(
+            ErrorsNative.INAPPLICABLE_OBJC_OVERRIDE,
+            "@ObjCSignatureOverride is only allowed on functions inherited from Objective-C.",
+        )
     }
 }
 

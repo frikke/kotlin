@@ -71,7 +71,7 @@ internal class DebugInfo(override val generationState: NativeGenerationState) : 
                 // we don't split path to filename and directory to provide enough level uniquely for dsymutil to avoid symbol
                 // clashing, which happens on linking with libraries produced from intercepting sources.
                 File = path.path(),
-                dir = "",
+                dir = config.configuration.get(BinaryOptions.debugCompilationDir) ?: "",
                 producer = DWARF.producer,
                 isOptimized = 0,
                 flags = "",
@@ -171,6 +171,50 @@ internal class DebugInfo(override val generationState: NativeGenerationState) : 
         DICreateSubroutineType(builder, allocArrayOf(types.map { it.diType(llvmTargetData) }), types.size)!!
     }
 
+    fun IrFileEntry.diFileScope() = files.getOrPut(this.name) {
+        val path = this.name.toFileAndFolder(context.config)
+        DICreateFile(builder, path.file, path.folder)!!
+    }
+
+    fun IrFunction.diFunctionScope(
+            fileEntry: IrFileEntry,
+            linkageName: String,
+            startLine: Int,
+            nodebug: Boolean,
+            isTransparentStepping: Boolean = false,
+    ) = diFunctionScope(
+            fileEntry,
+            name.asString(),
+            linkageName,
+            startLine,
+            subroutineType(llvmTargetData),
+            nodebug,
+            isTransparentStepping = isTransparentStepping,
+    )
+
+    fun diFunctionScope(
+            fileEntry: IrFileEntry,
+            name: String,
+            linkageName: String,
+            startLine: Int,
+            subroutineType: DISubroutineTypeRef,
+            nodebug: Boolean,
+            isTransparentStepping: Boolean = false,
+    ) = DICreateFunction(
+            builder = builder,
+            scope = compilationUnit,
+            name = (if (nodebug) "<NODEBUG>" else "") + name,
+            linkageName = linkageName,
+            file = fileEntry.diFileScope(),
+            lineNo = startLine,
+            type = subroutineType,
+            //TODO: need more investigations.
+            isLocal = 0,
+            isDefinition = 1,
+            scopeLine = 0,
+            isTransparentStepping = if (isTransparentStepping) 1 else 0,
+    )!!
+
     private fun dwarfPointerType(type: DITypeOpaqueRef): DITypeOpaqueRef =
             DICreatePointerType(builder, type)!!.reinterpret()
 
@@ -217,7 +261,7 @@ internal class DebugInfo(override val generationState: NativeGenerationState) : 
 
     private val IrFunction.types: List<IrType>
         get() {
-            val parameters = valueParameters.map { it.type }
+            val parameters = parameters.map { it.type }
             return listOf(returnType, *parameters.toTypedArray())
         }
 }
@@ -225,7 +269,7 @@ internal class DebugInfo(override val generationState: NativeGenerationState) : 
 /**
  * File entry starts offsets from zero while dwarf number lines/column starting from 1.
  */
-private val NO_SOURCE_FILE = "no source file"
+private const val NO_SOURCE_FILE = "no source file"
 private fun IrFileEntry.location(offset: Int, offsetToNumber: (Int) -> Int): Int {
     // Part "name.isEmpty() || name == NO_SOURCE_FILE" is an awful hack, @minamoto, please fix properly.
     if (offset == UNDEFINED_OFFSET) return 0
@@ -236,9 +280,12 @@ private fun IrFileEntry.location(offset: Int, offsetToNumber: (Int) -> Int): Int
     return result
 }
 
-internal fun IrFileEntry.line(offset: Int) = location(offset, this::getLineNumber)
+internal fun IrFileEntry.lineAndColumn(offset: Int): Pair<Int, Int> {
+    val (line, column) = this.getLineAndColumnNumbers(offset)
+    return location(offset) { line } to location(offset) { column }
+}
 
-internal fun IrFileEntry.column(offset: Int) = location(offset, this::getColumnNumber)
+internal fun IrFileEntry.line(offset: Int) = location(offset, this::getLineNumber)
 
 internal data class FileAndFolder(val file: String, val folder: String) {
     companion object {
@@ -281,7 +328,8 @@ internal fun setupBridgeDebugInfo(generationState: NativeGenerationState, functi
             type = debugInfo.subroutineType(generationState.runtime.targetData, emptyList()), // TODO: use proper type.
             isLocal = 0,
             isDefinition = 1,
-            scopeLine = 0
+            scopeLine = 0,
+            isTransparentStepping = generationState.config.enableDebugTransparentStepping,
     ).reinterpret()
 
     return LocationInfo(scope, 1, 0)

@@ -115,7 +115,7 @@ public class DefaultModalityModifiersTest extends KotlinTestWithEnvironment {
             StorageComponentContainer container = createContainerForLazyResolve(
                     moduleContext,
                     new FileBasedDeclarationProviderFactory(moduleContext.getStorageManager(), files),
-                    new BindingTraceContext(),
+                    new BindingTraceContext(getProject()),
                     CommonPlatforms.INSTANCE.getDefaultCommonPlatform(),
                     CommonPlatformAnalyzerServices.INSTANCE,
                     CompilerEnvironment.INSTANCE,
@@ -165,7 +165,12 @@ public class DefaultModalityModifiersTest extends KotlinTestWithEnvironment {
         }
 
 
-        private void testPropertyAccessorModality(String classWithPropertyWithAccessor, ClassKind kind, Modality expectedPropertyAccessorModality, boolean isGetter) {
+        private void testPropertyAccessorModality(
+                String classWithPropertyWithAccessor,
+                ClassKind kind,
+                Modality expectedPropertyAccessorModality,
+                boolean isGetter
+        ) {
             KtClass aClass = new KtPsiFactory(getProject()).createClass(classWithPropertyWithAccessor);
             ClassDescriptorWithResolutionScopes classDescriptor = createClassDescriptor(kind, aClass);
 

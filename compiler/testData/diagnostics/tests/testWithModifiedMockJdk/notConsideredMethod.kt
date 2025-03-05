@@ -1,5 +1,6 @@
-// !JDK_KIND: MODIFIED_MOCK_JDK
-// !CHECK_TYPE
+// RUN_PIPELINE_TILL: FRONTEND
+// JDK_KIND: MODIFIED_MOCK_JDK
+// CHECK_TYPE
 
 interface A : MutableCollection<String> {
     // Override of deprecated function could be marked as deprecated too
@@ -9,5 +10,5 @@ interface A : MutableCollection<String> {
 fun foo(x: MutableCollection<Int>, y: Collection<String>, z: A) {
     x.<!DEPRECATION!>nonExistingMethod<!>(1).checkType { _<String>() }
     y.<!DEPRECATION!>nonExistingMethod<!>("")
-    z.nonExistingMethod("")
+    z.<!DEPRECATION!>nonExistingMethod<!>("")
 }

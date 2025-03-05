@@ -10,13 +10,14 @@ package org.jetbrains.kotlin.gradle.regressionTests
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.kotlin.dsl.repositories
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
+import org.jetbrains.kotlin.gradle.plugin.KotlinHierarchyTemplate
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 import org.jetbrains.kotlin.gradle.plugin.sources.DefaultKotlinSourceSet
 import org.jetbrains.kotlin.gradle.util.*
 import org.junit.Test
 import kotlin.test.fail
 
-@Suppress("DEPRECATION") /* Configurations are scheduled for removal */
+@Suppress("DEPRECATION_ERROR") /* Configurations are scheduled for removal */
 class KT55929MetadataConfigurationsTest {
 
     @Test
@@ -33,7 +34,7 @@ class KT55929MetadataConfigurationsTest {
         kotlin.linuxX64()
         kotlin.linuxArm64()
 
-        kotlin.targetHierarchy.default {
+        kotlin.applyHierarchyTemplate(KotlinHierarchyTemplate.default) {
             common {
                 group("jvmAndLinux") {
                     withCompilations { it.platformType == KotlinPlatformType.jvm }
@@ -127,7 +128,7 @@ class KT55929MetadataConfigurationsTest {
         }
 
         val kotlin = project.multiplatformExtension
-        kotlin.targetHierarchy.default()
+        kotlin.applyDefaultHierarchyTemplate()
         kotlin.linuxX64()
         kotlin.linuxArm64()
 
@@ -144,7 +145,7 @@ class KT55929MetadataConfigurationsTest {
             id is ModuleComponentIdentifier && id.module == "kotlin-stdlib-common"
         }
 
-        if(stdlibCommonFound) {
+        if (stdlibCommonFound) {
             fail("Unexpectedly resolved stdlib-common for 'linuxX64Main'")
         }
     }

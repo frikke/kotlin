@@ -15,6 +15,8 @@ import kotlin.properties.ReadOnlyProperty
 object BinaryOptions : BinaryOptionRegistry() {
     val runtimeAssertionsMode by option<RuntimeAssertsMode>()
 
+    val checkStateAtExternalCalls by booleanOption()
+
     val memoryModel by option<MemoryModel>()
 
     val freezing by option<Freezing>()
@@ -33,13 +35,31 @@ object BinaryOptions : BinaryOptionRegistry() {
 
     val objcExportIgnoreInterfaceMethodCollisions by booleanOption()
 
+    val objcExportReportNameCollisions by booleanOption()
+
+    val objcExportErrorOnNameCollisions by booleanOption()
+
+    val objcExportEntryPointsPath by stringOption()
+
+    val dumpObjcSelectorToSignatureMapping by stringOption()
+
     val gc by option<GC>(shortcut = { it.shortcut })
 
     val gcSchedulerType by option<GCSchedulerType>(hideValue = { it.deprecatedWithReplacement != null })
 
     val gcMarkSingleThreaded by booleanOption()
 
-    val linkRuntime by option<RuntimeLinkageStrategyBinaryOption>()
+    val fixedBlockPageSize by uintOption()
+
+    val concurrentWeakSweep by booleanOption()
+
+    val concurrentMarkMaxIterations by uintOption()
+
+    val gcMutatorsCooperate by booleanOption()
+
+    val auxGCThreads by uintOption()
+
+    val linkRuntime by option<RuntimeLinkageStrategy>()
 
     val bundleId by stringOption()
     val bundleShortVersionString by stringOption()
@@ -57,7 +77,35 @@ object BinaryOptions : BinaryOptionRegistry() {
 
     val objcDisposeOnMain by booleanOption()
 
+    val objcDisposeWithRunLoop by booleanOption()
+
     val disableMmap by booleanOption()
+
+    val mmapTag by uintOption()
+
+    val enableSafepointSignposts by booleanOption()
+
+    val packFields by booleanOption()
+
+    val cInterfaceMode by option<CInterfaceGenerationMode>()
+
+    val globalDataLazyInit by booleanOption()
+
+    val swiftExport by booleanOption()
+
+    val genericSafeCasts by booleanOption()
+
+    val smallBinary by booleanOption()
+
+    val preCodegenInlineThreshold by uintOption()
+
+    val enableDebugTransparentStepping by booleanOption()
+
+    val debugCompilationDir by stringOption()
+
+    val pagedAllocator by booleanOption()
+
+    val latin1Strings by booleanOption()
 }
 
 open class BinaryOption<T : Any>(
@@ -93,6 +141,15 @@ open class BinaryOptionRegistry {
                 }
             }
 
+    protected fun uintOption(): PropertyDelegateProvider<Any?, ReadOnlyProperty<Any?, CompilerConfigurationKey<UInt>>> =
+            PropertyDelegateProvider { _, property ->
+                val option = BinaryOption(property.name, UIntValueParser)
+                register(option)
+                ReadOnlyProperty { _, _ ->
+                    option.compilerConfigurationKey
+                }
+            }
+
     protected fun stringOption(): PropertyDelegateProvider<Any?, ReadOnlyProperty<Any?, CompilerConfigurationKey<String>>> =
             PropertyDelegateProvider { _, property ->
                 val option = BinaryOption(property.name, StringValueParser)
@@ -117,6 +174,13 @@ private object BooleanValueParser : BinaryOption.ValueParser<Boolean> {
 
     override val validValuesHint: String?
         get() = "true|false"
+}
+
+private object UIntValueParser : BinaryOption.ValueParser<UInt> {
+    override fun parse(value: String): UInt? = value.toUIntOrNull()
+
+    override val validValuesHint: String?
+        get() = "non-negative-number"
 }
 
 private object StringValueParser : BinaryOption.ValueParser<String> {

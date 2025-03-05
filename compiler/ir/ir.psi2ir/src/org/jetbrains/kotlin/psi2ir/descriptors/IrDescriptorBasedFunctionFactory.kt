@@ -19,7 +19,10 @@ import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrValueParameterSymbolImpl
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.SimpleTypeNullability
-import org.jetbrains.kotlin.ir.types.impl.*
+import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeBuilder
+import org.jetbrains.kotlin.ir.types.impl.IrStarProjectionImpl
+import org.jetbrains.kotlin.ir.types.impl.buildSimpleType
+import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
@@ -47,7 +50,7 @@ abstract class IrAbstractDescriptorBasedFunctionFactory {
 
     fun functionN(n: Int) = functionN(n) { callback ->
         val descriptor = functionClassDescriptor(n)
-        declareClass(descriptor) { symbol ->
+        descriptorExtension.declareClass(descriptor) { symbol ->
             callback(symbol)
         }
     }
@@ -55,7 +58,7 @@ abstract class IrAbstractDescriptorBasedFunctionFactory {
     fun kFunctionN(n: Int): IrClass {
         return kFunctionN(n) { callback ->
             val descriptor = kFunctionClassDescriptor(n)
-            declareClass(descriptor) { symbol ->
+            descriptorExtension.declareClass(descriptor) { symbol ->
                 callback(symbol)
             }
         }
@@ -63,21 +66,21 @@ abstract class IrAbstractDescriptorBasedFunctionFactory {
 
     fun suspendFunctionN(n: Int): IrClass = suspendFunctionN(n) { callback ->
         val descriptor = suspendFunctionClassDescriptor(n)
-        declareClass(descriptor) { symbol ->
+        descriptorExtension.declareClass(descriptor) { symbol ->
             callback(symbol)
         }
     }
 
     fun kSuspendFunctionN(n: Int): IrClass = kSuspendFunctionN(n) { callback ->
         val descriptor = kSuspendFunctionClassDescriptor(n)
-        declareClass(descriptor) { symbol ->
+        descriptorExtension.declareClass(descriptor) { symbol ->
             callback(symbol)
         }
     }
 
     companion object {
-        val classOrigin = object : IrDeclarationOriginImpl("FUNCTION_INTERFACE_CLASS") {}
-        val memberOrigin = object : IrDeclarationOriginImpl("FUNCTION_INTERFACE_MEMBER") {}
+        val classOrigin = IrDeclarationOriginImpl("FUNCTION_INTERFACE_CLASS")
+        val memberOrigin = IrDeclarationOrigin.FUNCTION_INTERFACE_MEMBER
         const val offset = SYNTHETIC_OFFSET
 
         internal fun functionClassName(isK: Boolean, isSuspend: Boolean, arity: Int): String =
@@ -95,7 +98,7 @@ class IrDescriptorBasedFunctionFactory(
     private val referenceFunctionsWhenKFunctionAreReferenced: Boolean = false,
 ) : IrAbstractDescriptorBasedFunctionFactory() {
     val getPackageFragment =
-        getPackageFragment ?: symbolTable::declareExternalPackageFragmentIfNotExists
+        getPackageFragment ?: symbolTable.descriptorExtension::declareExternalPackageFragmentIfNotExists
 
     // TODO: Lazieness
 
@@ -106,8 +109,10 @@ class IrDescriptorBasedFunctionFactory(
 
     private val irFactory: IrFactory get() = symbolTable.irFactory
 
-    val functionClass = symbolTable.referenceClass(irBuiltIns.builtIns.getBuiltInClassByFqName(FqName("kotlin.Function")))
-    val kFunctionClass = symbolTable.referenceClass(irBuiltIns.builtIns.getBuiltInClassByFqName(FqName("kotlin.reflect.KFunction")))
+    val functionClass =
+        symbolTable.descriptorExtension.referenceClass(irBuiltIns.builtIns.getBuiltInClassByFqName(FqName("kotlin.Function")))
+    val kFunctionClass =
+        symbolTable.descriptorExtension.referenceClass(irBuiltIns.builtIns.getBuiltInClassByFqName(FqName("kotlin.reflect.KFunction")))
 
     override fun functionClassDescriptor(arity: Int): FunctionClassDescriptor =
         irBuiltIns.builtIns.getFunction(arity) as FunctionClassDescriptor
@@ -189,7 +194,7 @@ class IrDescriptorBasedFunctionFactory(
                         getContributedFunctions(Name.identifier(name), NoLookupLocation.FROM_BACKEND).first()
                     }
                 }
-                return symbolTable.declareSimpleFunction(descriptor, factory).symbol
+                return symbolTable.descriptorExtension.declareSimpleFunction(descriptor, factory).symbol
             }
 
             override fun FunctionDescriptor.valueParameterDescriptor(index: Int): ValueParameterDescriptor {
@@ -199,7 +204,7 @@ class IrDescriptorBasedFunctionFactory(
 
             override fun typeParameterDescriptor(index: Int, factory: (IrTypeParameterSymbol) -> IrTypeParameter): IrTypeParameterSymbol {
                 val descriptor = classDescriptor.declaredTypeParameters[index]
-                return symbolTable.declareGlobalTypeParameter(offset, offset, classOrigin, descriptor, factory).symbol
+                return symbolTable.descriptorExtension.declareGlobalTypeParameter(descriptor, factory).symbol
             }
 
             override fun classReceiverParameterDescriptor(): ReceiverParameterDescriptor {
@@ -219,7 +224,14 @@ class IrDescriptorBasedFunctionFactory(
 
             val pSymbol = descriptorFactory.typeParameterDescriptor(index) {
                 irFactory.createTypeParameter(
-                    offset, offset, classOrigin, it, pName, index++, false, Variance.IN_VARIANCE
+                    startOffset = offset,
+                    endOffset = offset,
+                    origin = classOrigin,
+                    name = pName,
+                    symbol = it,
+                    variance = Variance.IN_VARIANCE,
+                    index = index++,
+                    isReified = false
                 )
             }
             val pDeclaration = pSymbol.owner
@@ -231,7 +243,14 @@ class IrDescriptorBasedFunctionFactory(
 
         val rSymbol = descriptorFactory.typeParameterDescriptor(index) {
             irFactory.createTypeParameter(
-                offset, offset, classOrigin, it, Name.identifier("R"), index, false, Variance.OUT_VARIANCE
+                startOffset = offset,
+                endOffset = offset,
+                origin = classOrigin,
+                name = Name.identifier("R"),
+                symbol = it,
+                variance = Variance.OUT_VARIANCE,
+                index = index,
+                isReified = false
             )
         }
         val rDeclaration = rSymbol.owner
@@ -265,12 +284,18 @@ class IrDescriptorBasedFunctionFactory(
     private fun createThisReceiver(descriptorFactory: FunctionDescriptorFactory): IrValueParameter {
         val descriptor = descriptorFactory.classReceiverParameterDescriptor()
         return irFactory.createValueParameter(
-            offset, offset, classOrigin, IrValueParameterSymbolImpl(descriptor), SpecialNames.THIS, -1,
-            typeTranslator.translateType(descriptor.type), null,
+            startOffset = offset,
+            endOffset = offset,
+            origin = classOrigin,
+            kind = IrParameterKind.DispatchReceiver,
+            name = SpecialNames.THIS,
+            type = typeTranslator.translateType(descriptor.type),
+            isAssignable = false,
+            symbol = IrValueParameterSymbolImpl(descriptor),
+            varargElementType = null,
             isCrossinline = false,
             isNoinline = false,
             isHidden = false,
-            isAssignable = false
         )
     }
 
@@ -282,16 +307,22 @@ class IrDescriptorBasedFunctionFactory(
                     buildSimpleType()
                 }
 
-                irFactory.createFunction(
-                    offset, offset, memberOrigin, it, Name.identifier("invoke"), DescriptorVisibilities.PUBLIC, Modality.ABSTRACT,
-                    returnType,
+                irFactory.createSimpleFunction(
+                    startOffset = offset,
+                    endOffset = offset,
+                    origin = memberOrigin,
+                    name = Name.identifier("invoke"),
+                    visibility = DescriptorVisibilities.PUBLIC,
                     isInline = false,
-                    isExternal = false,
+                    isExpect = false,
+                    returnType = returnType,
+                    modality = Modality.ABSTRACT,
+                    symbol = it,
                     isTailrec = false,
                     isSuspend = isSuspend,
                     isOperator = true,
                     isInfix = false,
-                    isExpect = false,
+                    isExternal = false,
                     isFakeOverride = false
                 )
             }
@@ -310,11 +341,17 @@ class IrDescriptorBasedFunctionFactory(
                     buildSimpleType()
                 }
                 val vDeclaration = irFactory.createValueParameter(
-                    offset, offset, memberOrigin, vSymbol, Name.identifier("p$i"), i - 1, vType, null,
+                    startOffset = offset,
+                    endOffset = offset,
+                    origin = memberOrigin,
+                    name = Name.identifier("p$i"),
+                    type = vType,
+                    isAssignable = false,
+                    symbol = vSymbol,
+                    varargElementType = null,
                     isCrossinline = false,
                     isNoinline = false,
                     isHidden = false,
-                    isAssignable = false
                 )
                 vDeclaration.parent = fDeclaration
                 fDeclaration.valueParameters += vDeclaration
@@ -344,8 +381,17 @@ class IrDescriptorBasedFunctionFactory(
 
     private fun IrFunction.createValueParameter(descriptor: ParameterDescriptor): IrValueParameter = with(descriptor) {
         irFactory.createValueParameter(
-            offset, offset, memberOrigin, IrValueParameterSymbolImpl(this), name, indexOrMinusOne, toIrType(type),
-            (this as? ValueParameterDescriptor)?.varargElementType?.let(::toIrType), isCrossinline, isNoinline, false, false
+            startOffset = offset,
+            endOffset = offset,
+            origin = memberOrigin,
+            name = name,
+            type = toIrType(type),
+            isAssignable = false,
+            symbol = IrValueParameterSymbolImpl(this),
+            varargElementType = (this as? ValueParameterDescriptor)?.varargElementType?.let(::toIrType),
+            isCrossinline = isCrossinline,
+            isNoinline = isNoinline,
+            isHidden = false
         ).also {
             it.parent = this@createValueParameter
         }
@@ -362,17 +408,32 @@ class IrDescriptorBasedFunctionFactory(
 
         fun createFakeOverrideFunction(descriptor: FunctionDescriptor, property: IrPropertySymbol?): IrSimpleFunction {
             val returnType = descriptor.returnType?.let { toIrType(it) } ?: error("No return type for $descriptor")
-            val newFunction = symbolTable.declareSimpleFunction(descriptor) {
+            val newFunction = symbolTable.descriptorExtension.declareSimpleFunction(descriptor) {
                 descriptor.run {
-                    irFactory.createFunction(
-                        offset, offset, memberOrigin, it, name, visibility, modality, returnType,
-                        isInline, isEffectivelyExternal(), isTailrec, isSuspend, isOperator, isInfix, isExpect, true
+                    irFactory.createSimpleFunction(
+                        startOffset = offset,
+                        endOffset = offset,
+                        origin = memberOrigin,
+                        name = name,
+                        visibility = visibility,
+                        isInline = isInline,
+                        isExpect = isExpect,
+                        returnType = returnType,
+                        modality = modality,
+                        symbol = it,
+                        isTailrec = isTailrec,
+                        isSuspend = isSuspend,
+                        isOperator = isOperator,
+                        isInfix = isInfix,
+                        isExternal = isEffectivelyExternal(),
+                        isFakeOverride = true,
                     )
                 }
             }
 
             newFunction.parent = this
-            newFunction.overriddenSymbols = descriptor.overriddenDescriptors.memoryOptimizedMap { symbolTable.referenceSimpleFunction(it.original) }
+            newFunction.overriddenSymbols =
+                descriptor.overriddenDescriptors.memoryOptimizedMap { symbolTable.descriptorExtension.referenceSimpleFunction(it.original) }
             newFunction.dispatchReceiverParameter = descriptor.dispatchReceiverParameter?.let { newFunction.createValueParameter(it) }
             newFunction.extensionReceiverParameter = descriptor.extensionReceiverParameter?.let { newFunction.createValueParameter(it) }
             newFunction.contextReceiverParametersCount = descriptor.contextReceiverParameters.size
@@ -386,18 +447,21 @@ class IrDescriptorBasedFunctionFactory(
         }
 
         fun createFakeOverrideProperty(descriptor: PropertyDescriptor): IrProperty {
-            return symbolTable.declareProperty(offset, offset, memberOrigin, descriptor) {
+            return symbolTable.descriptorExtension.declareProperty(descriptor) {
                 irFactory.createProperty(
-                    offset, offset, memberOrigin, it,
+                    startOffset = offset,
+                    endOffset = offset,
+                    origin = memberOrigin,
                     name = descriptor.name,
                     visibility = descriptor.visibility,
                     modality = descriptor.modality,
+                    symbol = it,
                     isVar = descriptor.isVar,
                     isConst = descriptor.isConst,
                     isLateinit = descriptor.isLateInit,
                     isDelegated = descriptor.isDelegated,
                     isExternal = descriptor.isEffectivelyExternal(),
-                    isExpect = descriptor.isExpect
+                    isExpect = descriptor.isExpect,
                 ).apply {
                     parent = this@addFakeOverrides
                     getter = descriptor.getter?.let { g -> createFakeOverrideFunction(g, symbol) }
@@ -433,7 +497,14 @@ class IrDescriptorBasedFunctionFactory(
         val name = functionClassName(isK, isSuspend, n)
         if (symbol.isBound) return symbol.owner
         val klass = irFactory.createClass(
-            offset, offset, classOrigin, symbol, Name.identifier(name), ClassKind.INTERFACE, DescriptorVisibilities.PUBLIC, Modality.ABSTRACT
+            startOffset = offset,
+            endOffset = offset,
+            origin = classOrigin,
+            name = Name.identifier(name),
+            visibility = DescriptorVisibilities.PUBLIC,
+            symbol = symbol,
+            kind = ClassKind.INTERFACE,
+            modality = Modality.ABSTRACT,
         )
 
         val r = klass.createTypeParameters(n, descriptorFactory)
@@ -445,7 +516,7 @@ class IrDescriptorBasedFunctionFactory(
             arguments = listOf(
                 with(IrSimpleTypeBuilder()) {
                     classifier = r.symbol
-                    buildTypeProjection()
+                    buildSimpleType()
                 },
             )
             buildSimpleType()

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2022 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -57,9 +57,10 @@ class WithGenerator(session: FirSession) : FirDeclarationGenerationExtension(ses
         return fieldsWithWith.mapNotNull { (field, withInfo) ->
             val withName = computeWithName(field, withInfo) ?: return@mapNotNull null
             val function = buildJavaMethod {
+                containingClassSymbol = classSymbol
                 moduleData = field.moduleData
                 returnTypeRef = buildResolvedTypeRef {
-                    type = classSymbol.defaultType()
+                    coneType = classSymbol.defaultType()
                 }
 
                 dispatchReceiverType = classSymbol.defaultType()
@@ -70,17 +71,15 @@ class WithGenerator(session: FirSession) : FirDeclarationGenerationExtension(ses
 
                 valueParameters += buildJavaValueParameter {
                     moduleData = field.moduleData
-                    containingFunctionSymbol = this@buildJavaMethod.symbol
+                    containingDeclarationSymbol = this@buildJavaMethod.symbol
                     returnTypeRef = field.returnTypeRef
                     name = field.name
-                    annotationBuilder = { emptyList() }
                     isVararg = false
                     isFromSource = true
                 }
 
                 isStatic = false
                 isFromSource = true
-                annotationBuilder = { emptyList() }
             }
             withName to function
         }.toMap()

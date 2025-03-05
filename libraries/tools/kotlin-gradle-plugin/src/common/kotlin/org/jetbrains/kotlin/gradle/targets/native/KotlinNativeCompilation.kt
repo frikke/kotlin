@@ -8,31 +8,42 @@ package org.jetbrains.kotlin.gradle.plugin.mpp
 
 import org.gradle.api.Action
 import org.gradle.api.NamedDomainObjectContainer
-import org.gradle.api.Project
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.tasks.TaskProvider
-import org.jetbrains.kotlin.gradle.dsl.KotlinCommonOptions
-import org.jetbrains.kotlin.gradle.dsl.KotlinNativeCompilerOptions
-import org.jetbrains.kotlin.gradle.plugin.HasCompilerOptions
-import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider
+import org.jetbrains.kotlin.commonizer.KonanDistribution
+import org.jetbrains.kotlin.gradle.dsl.*
+import org.jetbrains.kotlin.gradle.internal.properties.nativeProperties
+import org.jetbrains.kotlin.gradle.plugin.*
+import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.kotlinPropertiesProvider
 import org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.KotlinCompilationImpl
 import org.jetbrains.kotlin.gradle.targets.native.NativeCompilerOptions
+import org.jetbrains.kotlin.gradle.targets.native.internal.getOriginalPlatformLibrariesFor
 import org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile
 import org.jetbrains.kotlin.gradle.utils.lowerCamelCaseName
 import org.jetbrains.kotlin.konan.target.KonanTarget
 import javax.inject.Inject
 
+@Suppress("TYPEALIAS_EXPANSION_DEPRECATION", "TYPEALIAS_EXPANSION_DEPRECATION_ERROR", "DEPRECATION")
 abstract class AbstractKotlinNativeCompilation internal constructor(
     compilation: KotlinCompilationImpl,
-    val konanTarget: KonanTarget
-) : AbstractKotlinCompilation<KotlinCommonOptions>(compilation) {
+    val konanTarget: KonanTarget,
+) : DeprecatedAbstractKotlinCompilation<KotlinCommonOptions>(compilation) {
 
-    @Suppress("DEPRECATION")
-    @Deprecated("Accessing task instance directly is deprecated", replaceWith = ReplaceWith("compileTaskProvider"))
+    @Suppress("DEPRECATION_ERROR")
+    @Deprecated(
+        "Accessing task instance directly is deprecated. Scheduled for removal in Kotlin 2.3.",
+        replaceWith = ReplaceWith("compileTaskProvider"),
+        level = DeprecationLevel.ERROR,
+    )
     override val compileKotlinTask: KotlinNativeCompile
         get() = compilation.compileKotlinTask as KotlinNativeCompile
 
-    @Suppress("UNCHECKED_CAST", "DEPRECATION")
-    @Deprecated("Replaced with compileTaskProvider", replaceWith = ReplaceWith("compileTaskProvider"))
+    @Suppress("UNCHECKED_CAST", "DEPRECATION_ERROR")
+    @Deprecated(
+        "Replaced with compileTaskProvider. Scheduled for removal in Kotlin 2.3.",
+        replaceWith = ReplaceWith("compileTaskProvider"),
+        level = DeprecationLevel.ERROR,
+    )
     override val compileKotlinTaskProvider: TaskProvider<out KotlinNativeCompile>
         get() = compilation.compileKotlinTaskProvider as TaskProvider<out KotlinNativeCompile>
 
@@ -40,20 +51,23 @@ abstract class AbstractKotlinNativeCompilation internal constructor(
     override val compileTaskProvider: TaskProvider<KotlinNativeCompile>
         get() = compilation.compileTaskProvider as TaskProvider<KotlinNativeCompile>
 
-    @Suppress("UNCHECKED_CAST")
-    override val compilerOptions: HasCompilerOptions<KotlinNativeCompilerOptions>
-        get() = compilation.compilerOptions as HasCompilerOptions<KotlinNativeCompilerOptions>
+    @Deprecated(
+        "To configure compilation compiler options use 'compileTaskProvider':\ncompilation.compileTaskProvider.configure{\n" +
+                "    compilerOptions {}\n}"
+    )
+    @Suppress("UNCHECKED_CAST", "DEPRECATION")
+    override val compilerOptions: DeprecatedHasCompilerOptions<KotlinNativeCompilerOptions>
+        get() = compilation.compilerOptions as DeprecatedHasCompilerOptions<KotlinNativeCompilerOptions>
 
     internal val useGenericPluginArtifact: Boolean
-        get() = project.nativeUseEmbeddableCompilerJar
+        get() = project.nativeProperties.shouldUseEmbeddableCompilerJar.get()
 
-    // Endorsed library controller.
-    @Suppress("unused")
-    @Deprecated(
-        "Please declare explicit dependency on kotlinx-cli. This option has no longer effect since 1.9.0",
-        level = DeprecationLevel.ERROR
-    )
-    var enableEndorsedLibs: Boolean = false
+    internal val nativeDependencies: ConfigurableFileCollection
+        get() = compilation.project.objects.fileCollection()
+            .from(compilation.project.objects.getOriginalPlatformLibrariesFor(project.nativeProperties.actualNativeHomeDirectory.map {
+                KonanDistribution(it)
+            }, konanTarget))
+
 }
 
 open class KotlinNativeCompilation @Inject internal constructor(
@@ -63,6 +77,11 @@ open class KotlinNativeCompilation @Inject internal constructor(
     final override val target: KotlinNativeTarget
         get() = compilation.target as KotlinNativeTarget
 
+    @Suppress("DEPRECATION")
+    @Deprecated(
+        "To configure compilation compiler options use 'compileTaskProvider':\ncompilation.compileTaskProvider.configure{\n" +
+                "    compilerOptions {}\n}"
+    )
     override val compilerOptions: NativeCompilerOptions
         get() = super.compilerOptions as NativeCompilerOptions
 
@@ -79,13 +98,14 @@ open class KotlinNativeCompilation @Inject internal constructor(
         get() = lowerCamelCaseName(target.disambiguationClassifier, compilation.compilationName, "binaries")
 }
 
+@Suppress("DEPRECATION")
 open class KotlinSharedNativeCompilation @Inject internal constructor(
     val konanTargets: List<KonanTarget>,
-    compilation: KotlinCompilationImpl
-) : AbstractKotlinNativeCompilation(compilation, konanTargets.find { it.enabledOnCurrentHost } ?: konanTargets.first()),
+    compilation: KotlinCompilationImpl,
+) : AbstractKotlinNativeCompilation(
+    compilation,
+    konanTargets.find { it.enabledOnCurrentHostForKlibCompilation(compilation.project.kotlinPropertiesProvider) } ?: konanTargets.first()
+),
     KotlinMetadataCompilation<KotlinCommonOptions> {
     override val target: KotlinMetadataTarget = compilation.target as KotlinMetadataTarget
 }
-
-internal val Project.nativeUseEmbeddableCompilerJar: Boolean
-    get() = PropertiesProvider(this).nativeUseEmbeddableCompilerJar

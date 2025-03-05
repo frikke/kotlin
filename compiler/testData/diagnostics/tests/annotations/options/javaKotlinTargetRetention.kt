@@ -1,4 +1,5 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: BACKEND
+
 import java.lang.annotation.*
 
 <!DEPRECATED_JAVA_ANNOTATION!>@java.lang.annotation.Target(ElementType.PACKAGE)<!>

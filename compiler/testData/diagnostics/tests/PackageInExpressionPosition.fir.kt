@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // COMPARE_WITH_LIGHT_TREE
 package foo
 
@@ -19,7 +20,7 @@ fun main() {
     <!NO_COMPANION_OBJECT!>System<!>!!
     java.lang.<!NO_COMPANION_OBJECT, VARIABLE_EXPECTED!>System<!> = <!NULL_FOR_NONNULL_TYPE!>null<!>
     java.lang.<!NO_COMPANION_OBJECT!>System<!>!!
-    <!NO_COMPANION_OBJECT!>System<!> is Int
+    <!USELESS_IS_CHECK!><!NO_COMPANION_OBJECT!>System<!> is Int<!>
     <!INVISIBLE_REFERENCE!>System<!>()
     (<!NO_COMPANION_OBJECT!>System<!>)
     foo@ <!NO_COMPANION_OBJECT!>System<!>

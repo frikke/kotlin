@@ -1,11 +1,11 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlinx.serialization.compiler.extensions
 
-import org.jetbrains.kotlin.backend.common.BackendContext
+import org.jetbrains.kotlin.backend.common.LoweringContext
 import org.jetbrains.kotlin.backend.common.ClassLoweringPass
 import org.jetbrains.kotlin.backend.common.CompilationException
 import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension
@@ -20,16 +20,13 @@ import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
-import org.jetbrains.kotlin.name.CallableId
-import org.jetbrains.kotlin.name.ClassId
-import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.name.StandardClassIds
+import org.jetbrains.kotlin.name.*
 import org.jetbrains.kotlin.platform.jvm.isJvm
+import org.jetbrains.kotlin.utils.exceptions.rethrowIntellijPlatformExceptionIfNeeded
 import org.jetbrains.kotlinx.serialization.compiler.backend.ir.*
-import org.jetbrains.kotlinx.serialization.compiler.backend.ir.SerializationJvmIrIntrinsicSupport
 import org.jetbrains.kotlinx.serialization.compiler.resolve.SerialEntityNames
 import org.jetbrains.kotlinx.serialization.compiler.resolve.SerializationDependencies
 import org.jetbrains.kotlinx.serialization.compiler.resolve.SerializationJsDependenciesClassIds
@@ -40,7 +37,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Copy of [runOnFilePostfix], but this implementation first lowers declaration, then its children.
  */
 fun ClassLoweringPass.runOnFileInOrder(irFile: IrFile) {
-    irFile.acceptVoid(object : IrElementVisitorVoid {
+    irFile.acceptVoid(object : IrVisitorVoid() {
         override fun visitElement(element: IrElement) {
             element.acceptChildrenVoid(this)
         }
@@ -66,7 +63,7 @@ class SerializationPluginContext(baseContext: IrPluginContext, val metadataPlugi
         referenceFunctions(CallableId(StandardNames.BUILT_INS_PACKAGE_FQ_NAME, Name.identifier("intArrayOf"))).first()
 
     // Kotlin stdlib declarations
-    internal val jvmFieldClassSymbol = referenceClass(StandardClassIds.Annotations.JvmField)!!
+    internal val jvmFieldClassSymbol = referenceClass(JvmStandardClassIds.Annotations.JvmField)!!
 
     internal val lazyModeClass = referenceClass(ClassId.topLevel(SerializationDependencies.LAZY_MODE_FQ))!!.owner
     internal val lazyModePublicationEnumEntry =
@@ -121,6 +118,7 @@ private inline fun IrClass.runPluginSafe(block: () -> Unit) {
     try {
         block()
     } catch (e: Throwable) {
+        rethrowIntellijPlatformExceptionIfNeeded(e)
         throw when (e) {
             is VirtualMachineError, is ThreadDeath -> e
             else -> CompilationException(
@@ -196,8 +194,8 @@ open class SerializationLoweringExtension @JvmOverloads constructor(
         moduleFragment.files.forEach(pass2::runOnFileInOrder)
     }
 
-    override fun getPlatformIntrinsicExtension(backendContext: BackendContext): IrIntrinsicExtension? {
-        val ctx = backendContext as? JvmBackendContext ?: return null
+    override fun getPlatformIntrinsicExtension(loweringContext: LoweringContext): IrIntrinsicExtension? {
+        val ctx = loweringContext as? JvmBackendContext ?: return null
         if (!canEnableIntrinsics(ctx)) return null
         return SerializationJvmIrIntrinsicSupport(
             ctx,

@@ -1,6 +1,7 @@
-// !DIAGNOSTICS: -UNUSED_VARIABLE
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNUSED_VARIABLE
 // JAVAC_EXPECTED_FILE
-// WITH_EXTENDED_CHECKERS
+// WITH_EXTRA_CHECKERS
 
 //FILE:a.kt
 package a
@@ -30,7 +31,7 @@ fun test() {
     <!INVISIBLE_REFERENCE!>foo<!>()
 
     val u : <!INVISIBLE_REFERENCE!>A<!> = <!INVISIBLE_REFERENCE!>A<!>()
-    val a : <!INVISIBLE_REFERENCE!>java.util.Arrays.ArrayList<Int><!>;
+    val a : java.util.Arrays.<!INVISIBLE_REFERENCE!>ArrayList<!><Int>;
 
     val po = <!INVISIBLE_REFERENCE!>PO<!>
 }

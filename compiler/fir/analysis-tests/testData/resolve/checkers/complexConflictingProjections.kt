@@ -1,8 +1,9 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // ISSUE: KT-49024
 
 class Foo
 class Bar<T1: <!FINAL_UPPER_BOUND!>Foo<!>, out T2>
-class Baz<T1, T2: Bar<Foo, out T2>>
+class Baz<T1, T2: Bar<Foo, <!REDUNDANT_PROJECTION!>out<!> T2>>
 class Qux<T1, T2: Baz<T2, <!UPPER_BOUND_VIOLATED!>Bar<Foo, T2><!>>>(var f: T2)
 
 class Quux<T> {

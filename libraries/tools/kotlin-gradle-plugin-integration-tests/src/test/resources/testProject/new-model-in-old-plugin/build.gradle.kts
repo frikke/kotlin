@@ -11,6 +11,7 @@ repositories {
     mavenCentral()
 }
 
+kotlin.jvmToolchain(8)
 kotlin.target.compilations {
     all {
         kotlinOptions {
@@ -33,8 +34,8 @@ kotlin.target.compilations {
     }
 
     val benchmark by creating {
+        associateWith(main)
         defaultSourceSet.dependencies {
-            associateWith(main)
             implementation(kotlin("reflect"))
         }
     }

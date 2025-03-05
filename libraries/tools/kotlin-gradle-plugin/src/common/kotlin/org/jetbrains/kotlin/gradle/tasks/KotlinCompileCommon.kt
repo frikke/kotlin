@@ -51,6 +51,8 @@ abstract class KotlinCompileCommon @Inject constructor(
         compilerOptions.verbose.convention(logger.isDebugEnabled)
     }
 
+    @Suppress("DEPRECATION")
+    @Deprecated(KOTLIN_OPTIONS_DEPRECATION_MESSAGE)
     override val kotlinOptions: KotlinMultiplatformCommonOptions = KotlinMultiplatformCommonOptionsCompat(
         { this },
         compilerOptions
@@ -86,7 +88,7 @@ abstract class KotlinCompileCommon @Inject constructor(
                 args.reportPerf = true
             }
 
-            args.expectActualLinker = expectActualLinker.get()
+            args.metadataKlib = produceMetadataKlib.get()
 
             args.destination = destinationDirectory.get().asFile.normalize().absolutePath
 
@@ -127,7 +129,7 @@ abstract class KotlinCompileCommon @Inject constructor(
     internal val refinesMetadataPaths: ConfigurableFileCollection = objectFactory.fileCollection()
 
     @get:Internal
-    internal val expectActualLinker = objectFactory.property(Boolean::class.java)
+    internal val produceMetadataKlib = objectFactory.property(Boolean::class.java)
 
     override fun callCompilerAsync(
         args: K2MetadataCompilerArguments,
@@ -135,15 +137,16 @@ abstract class KotlinCompileCommon @Inject constructor(
         taskOutputsBackup: TaskOutputsBackup?
     ) {
         val gradlePrintingMessageCollector = GradlePrintingMessageCollector(logger, args.allWarningsAsErrors)
-        val gradleMessageCollector = GradleErrorMessageCollector(gradlePrintingMessageCollector)
+        val gradleMessageCollector = GradleErrorMessageCollector(logger, gradlePrintingMessageCollector)
         val outputItemCollector = OutputItemsCollectorImpl()
         val compilerRunner = compilerRunner.get()
         val environment = GradleCompilerEnvironment(
             defaultCompilerClasspath, gradleMessageCollector, outputItemCollector,
             reportingSettings = reportingSettings(),
-            outputFiles = allOutputFiles()
+            outputFiles = allOutputFiles(),
+            compilerArgumentsLogLevel = kotlinCompilerArgumentsLogLevel.get()
         )
         compilerRunner.runMetadataCompilerAsync(args, environment)
-        compilerRunner.errorsFile?.also { gradleMessageCollector.flush(it) }
+        compilerRunner.errorsFiles?.let { gradleMessageCollector.flush(it) }
     }
 }

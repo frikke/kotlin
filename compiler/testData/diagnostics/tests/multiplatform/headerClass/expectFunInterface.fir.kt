@@ -1,3 +1,5 @@
+// IGNORE_FIR_DIAGNOSTICS
+// RUN_PIPELINE_TILL: FIR2IR
 // MODULE: m1-common
 // FILE: common.kt
 
@@ -5,9 +7,9 @@ expect fun interface F1 {
     fun run()
 }
 
-<!INCOMPATIBLE_MATCHING{JVM}!>expect fun interface F2 {
+<!EXPECT_ACTUAL_INCOMPATIBILITY{JVM}!>expect<!> fun interface F2 {
     fun run()
-}<!>
+}
 
 expect fun interface F3 {
     fun run()
@@ -21,11 +23,11 @@ expect fun interface F5 {
     fun run()
 }
 
-<!INCOMPATIBLE_MATCHING{JVM}!>expect fun interface F6 {
+<!EXPECT_ACTUAL_INCOMPATIBILITY{JVM}!>expect<!> fun interface F6 {
     fun run()
-}<!>
+}
 
-expect fun interface F7 {
+<!EXPECT_ACTUAL_INCOMPATIBILITY{JVM}!>expect<!> fun interface F7 {
     fun run()
 }
 
@@ -42,9 +44,9 @@ actual fun interface F1 {
     actual fun run()
 }
 
-<!ACTUAL_WITHOUT_EXPECT!>actual interface F2 {
+actual interface <!ACTUAL_WITHOUT_EXPECT!>F2<!> {
     actual fun run()
-}<!>
+}
 
 actual typealias F3 = java.lang.Runnable
 
@@ -62,6 +64,6 @@ interface F6Typealias {
     fun run()
 }
 
-<!ACTUAL_WITHOUT_EXPECT!>actual typealias F6 = F6Typealias<!>
+actual typealias <!ACTUAL_WITHOUT_EXPECT!>F6<!> = F6Typealias
 
-<!ACTUAL_WITHOUT_EXPECT!>actual typealias F7 = NotSam<!>
+actual typealias <!ACTUAL_WITHOUT_EXPECT!>F7<!> = NotSam

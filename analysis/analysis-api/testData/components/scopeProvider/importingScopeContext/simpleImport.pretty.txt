@@ -1,20 +1,23 @@
-implicit receivers:
+implicit values:
 scopes:
-  DefaultStarImportingScope, index = 0
-
-  DefaultStarImportingScope, index = 1
-
-  DefaultSimpleImportingScope, index = 2
-
-  ExplicitStarImportingScope, index = 3, empty
-
-  DefaultSimpleImportingScope, index = 4
-
-  DefaultSimpleImportingScope, index = 5
-
-  PackageMemberScope, index = 6
-
-  ExplicitSimpleImportingScope, index = 7
+  ExplicitSimpleImportingScope, index = 0
+    packages: 0
     classifiers: 1
       class A
     callables: 0
+    constructors: 0
+
+  PackageMemberScope, index = 1
+
+  DefaultSimpleImportingScope, index = 2
+
+  DefaultSimpleImportingScope, index = 3
+
+  ExplicitStarImportingScope, index = 4
+    packages: 0
+    classifiers: 0
+    callables: 0
+    constructors: 0
+
+  DefaultStarImportingScope, index = 5
+

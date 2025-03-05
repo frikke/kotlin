@@ -6,9 +6,12 @@
 package kotlin.jvm.optionals
 
 import java.util.Optional
+import kotlin.contracts.*
 
 /**
  * Returns this [Optional]'s value if [present][Optional.isPresent], or otherwise `null`.
+ *
+ * @sample samples.optionals.Optionals.getOrNull
  */
 @SinceKotlin("1.8")
 @WasExperimental(ExperimentalStdlibApi::class)
@@ -16,6 +19,8 @@ public fun <T : Any> Optional<T>.getOrNull(): T? = orElse(null)
 
 /**
  * Returns this [Optional]'s value if [present][Optional.isPresent], or otherwise [defaultValue].
+ *
+ * @sample samples.optionals.Optionals.getOrDefault
  */
 @SinceKotlin("1.8")
 @WasExperimental(ExperimentalStdlibApi::class)
@@ -23,14 +28,22 @@ public fun <T> Optional<out T & Any>.getOrDefault(defaultValue: T): T = if (isPr
 
 /**
  * Returns this [Optional]'s value if [present][Optional.isPresent], or otherwise the result of the [defaultValue] function.
+ *
+ * @sample samples.optionals.Optionals.getOrElse
  */
 @SinceKotlin("1.8")
 @WasExperimental(ExperimentalStdlibApi::class)
-public inline fun <T> Optional<out T & Any>.getOrElse(defaultValue: () -> T): T =
-    if (isPresent) get() else defaultValue()
+public inline fun <T> Optional<out T & Any>.getOrElse(defaultValue: () -> T): T {
+    contract {
+        callsInPlace(defaultValue, InvocationKind.AT_MOST_ONCE)
+    }
+    return if (isPresent) get() else defaultValue()
+}
 
 /**
  * Appends this [Optional]'s value to the given [destination] collection if [present][Optional.isPresent].
+ *
+ * @sample samples.optionals.Optionals.toCollection
  */
 @SinceKotlin("1.8")
 @WasExperimental(ExperimentalStdlibApi::class)
@@ -44,6 +57,8 @@ public fun <T : Any, C : MutableCollection<in T>> Optional<T>.toCollection(desti
 /**
  * Returns a new read-only list of this [Optional]'s value if [present][Optional.isPresent], or otherwise an empty list.
  * The returned list is serializable (JVM).
+ *
+ * @sample samples.optionals.Optionals.toList
  */
 @SinceKotlin("1.8")
 @WasExperimental(ExperimentalStdlibApi::class)
@@ -53,6 +68,8 @@ public fun <T : Any> Optional<out T>.toList(): List<T> =
 /**
  * Returns a new read-only set of this [Optional]'s value if [present][Optional.isPresent], or otherwise an empty set.
  * The returned set is serializable (JVM).
+ *
+ * @sample samples.optionals.Optionals.toSet
  */
 @SinceKotlin("1.8")
 @WasExperimental(ExperimentalStdlibApi::class)
@@ -61,6 +78,8 @@ public fun <T : Any> Optional<out T>.toSet(): Set<T> =
 
 /**
  * Returns a new sequence for this [Optional]'s value if [present][Optional.isPresent], or otherwise an empty sequence.
+ *
+ * @sample samples.optionals.Optionals.asSequence
  */
 @SinceKotlin("1.8")
 @WasExperimental(ExperimentalStdlibApi::class)

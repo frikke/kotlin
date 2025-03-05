@@ -7,10 +7,13 @@ package org.jetbrains.kotlin.gradle.targets.native.internal
 
 import org.gradle.api.Project
 import org.gradle.api.file.FileCollection
+import org.jetbrains.kotlin.gradle.artifacts.maybeCreateKlibPackingTask
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtensionOrNull
+import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.kotlinPropertiesProvider
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinMetadataCompilation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeCompilation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSharedNativeCompilation
+import org.jetbrains.kotlin.gradle.plugin.mpp.enabledOnCurrentHostForKlibCompilation
 import org.jetbrains.kotlin.gradle.plugin.sources.DefaultKotlinSourceSet
 import org.jetbrains.kotlin.gradle.plugin.sources.internal
 import org.jetbrains.kotlin.gradle.tasks.CInteropProcess
@@ -76,7 +79,10 @@ internal fun Project.getPlatformCinteropDependenciesOrEmpty(
         /* Participating in multiple compilations? -> can't propagate -> should be commonized */
         val compilation = compilations.singleOrNull() as? KotlinNativeCompilation ?: return@files emptySet<File>()
 
-        (compilation.associateWith + compilation)
+        /* Apple-specific cinterops can't be produced on non-MacOs machines, so just return an empty dependencies collection */
+        if (!compilation.target.konanTarget.enabledOnCurrentHostForKlibCompilation(kotlinPropertiesProvider)) return@files emptySet<File>()
+
+        (compilation.associatedCompilations + compilation)
             .filterIsInstance<KotlinNativeCompilation>()
             .filter(compilationFilter)
             .map { relevantCompilation -> getAllCInteropOutputFiles(relevantCompilation) }
@@ -93,6 +99,18 @@ private fun Project.getAllCInteropOutputFiles(compilation: KotlinNativeCompilati
     val cinteropTasks = compilation.cinterops.map { interop -> interop.interopProcessingTaskName }
         .mapNotNull { taskName -> tasks.findByName(taskName) as? CInteropProcess }
 
-    return project.filesProvider { cinteropTasks.map { it.outputFile } }
+    if (project.kotlinPropertiesProvider.useNonPackedKlibs) {
+        // this part of import isn't ready for working with unpackaged klibs: KTIJ-31053
+        return project.filesProvider {
+            cinteropTasks.map { interopTask ->
+                compilation.maybeCreateKlibPackingTask(
+                    interopTask.settings.classifier,
+                    interopTask.klibDirectory,
+                    interopTask
+                )
+            }
+        }
+    }
+    return project.filesProvider { cinteropTasks.map { it.klibFile } }
         .builtBy(*cinteropTasks.toTypedArray())
 }

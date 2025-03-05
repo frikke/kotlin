@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 interface Buffered {
     fun flush()
 }
@@ -26,6 +27,11 @@ fun <P> processInfo1(info: String, printer: P) where P: Buffered, P: AIPowered {
     <!INCOMPATIBLE_ENUM_COMPARISON!>printer == BufferedEnum.A<!>
     <!INCOMPATIBLE_ENUM_COMPARISON!>printer == UsualEnum.C<!>
     printer == CleverEnum.E
+
+    <!FORBIDDEN_IDENTITY_EQUALS!>printer === 20<!>
+    <!INCOMPATIBLE_ENUM_COMPARISON!>printer === BufferedEnum.A<!>
+    <!INCOMPATIBLE_ENUM_COMPARISON!>printer === UsualEnum.C<!>
+    printer === CleverEnum.E
 }
 
 fun <P> processInfo2(info: String, printer: P) where P: AIPowered, P: Buffered {
@@ -33,6 +39,11 @@ fun <P> processInfo2(info: String, printer: P) where P: AIPowered, P: Buffered {
     <!INCOMPATIBLE_ENUM_COMPARISON!>printer == BufferedEnum.A<!>
     <!INCOMPATIBLE_ENUM_COMPARISON!>printer == UsualEnum.C<!>
     printer == CleverEnum.E
+
+    <!FORBIDDEN_IDENTITY_EQUALS!>printer === 20<!>
+    <!INCOMPATIBLE_ENUM_COMPARISON!>printer === BufferedEnum.A<!>
+    <!INCOMPATIBLE_ENUM_COMPARISON!>printer === UsualEnum.C<!>
+    printer === CleverEnum.E
 }
 
 abstract class Printer {
@@ -44,6 +55,11 @@ fun <P> processInfo3(info: String, printer: P) where P: Buffered, P: Printer {
     <!INCOMPATIBLE_ENUM_COMPARISON!>printer == BufferedEnum.A<!>
     <!INCOMPATIBLE_ENUM_COMPARISON!>printer == UsualEnum.C<!>
     <!INCOMPATIBLE_ENUM_COMPARISON!>printer == CleverEnum.E<!>
+
+    <!FORBIDDEN_IDENTITY_EQUALS!>printer === 20<!>
+    <!INCOMPATIBLE_ENUM_COMPARISON!>printer === BufferedEnum.A<!>
+    <!INCOMPATIBLE_ENUM_COMPARISON!>printer === UsualEnum.C<!>
+    <!INCOMPATIBLE_ENUM_COMPARISON!>printer === CleverEnum.E<!>
 }
 
 fun test(a: Int, b: Any?) {

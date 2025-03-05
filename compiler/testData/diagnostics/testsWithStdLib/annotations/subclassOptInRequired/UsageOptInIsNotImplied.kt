@@ -1,5 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
-
 @RequiresOptIn
 annotation class ApiMarker
 

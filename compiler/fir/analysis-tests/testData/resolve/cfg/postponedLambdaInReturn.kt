@@ -1,4 +1,5 @@
-// !DUMP_CFG
+// RUN_PIPELINE_TILL: FRONTEND
+// DUMP_CFG
 
 import kotlin.contracts.*
 
@@ -46,5 +47,5 @@ fun test3() {
         else
             return@run ""
     }
-    y.length // bad
+    y<!UNSAFE_CALL!>.<!>length // bad
 }

@@ -1,4 +1,6 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// RUN_PIPELINE_TILL: FIR2IR
+// DISABLE_NEXT_PHASE_SUGGESTION: java.lang.NullPointerException
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 // FILE: A.java
 
@@ -41,11 +43,11 @@ fun test(i: Inv<Nothing>, iUnit: Inv<Unit>) {
         run(A.flexible(iUnit)) { 42 }
     }
     launch {
-        @Suppress("UNSUPPORTED")
+        @Suppress(<!ERROR_SUPPRESSION!>"UNSUPPORTED"<!>)
         run<dynamic> { "" }
     }
 
-    if (iUnit is String) {
+    if (<!USELESS_IS_CHECK!>iUnit is String<!>) {
         launch {
             run(A.<!INFERRED_TYPE_VARIABLE_INTO_EMPTY_INTERSECTION_WARNING!>flexible<!>(iUnit)) { 42 }
         }

@@ -1,4 +1,5 @@
-// !CHECK_TYPE
+// RUN_PIPELINE_TILL: FRONTEND
+// CHECK_TYPE
 // FILE: EventListener.java
 public interface EventListener<E> {
     E handle(String x);
@@ -33,7 +34,7 @@ fun main() {
     }
 
     A.baz {
-        x -> <!ARGUMENT_TYPE_MISMATCH, TYPE_MISMATCH!>x.hashCode()<!>
+        x -> <!RETURN_TYPE_MISMATCH, TYPE_MISMATCH!>x.hashCode()<!>
     }
 
     val block: (String) -> Any? = {

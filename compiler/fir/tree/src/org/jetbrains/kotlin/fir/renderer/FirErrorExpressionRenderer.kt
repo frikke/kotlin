@@ -5,11 +5,12 @@
 
 package org.jetbrains.kotlin.fir.renderer
 
+import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.fir.expressions.FirErrorExpression
 
 abstract class FirErrorExpressionRenderer {
     internal lateinit var components: FirRendererComponents
-    protected val printer get() = components.printer
+    protected val printer: FirPrinter get() = components.printer
 
     abstract fun renderErrorExpression(errorExpression: FirErrorExpression)
 }
@@ -17,6 +18,11 @@ abstract class FirErrorExpressionRenderer {
 class FirErrorExpressionOnlyErrorRenderer : FirErrorExpressionRenderer() {
     override fun renderErrorExpression(errorExpression: FirErrorExpression) {
         printer.print("ERROR_EXPR(${errorExpression.diagnostic.reason})")
+        errorExpression.expression?.let {
+            if (errorExpression.source?.kind == KtFakeSourceElementKind.ErrorExpressionForTopLevelLambda) {
+                it.accept(components.visitor)
+            }
+        }
     }
 }
 

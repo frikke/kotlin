@@ -8,11 +8,12 @@ package org.jetbrains.kotlin.backend.konan.llvm
 import llvm.LLVMLinkage
 import llvm.LLVMValueRef
 import org.jetbrains.kotlin.backend.konan.*
-import org.jetbrains.kotlin.backend.konan.descriptors.getAnnotationStringValue
+import org.jetbrains.kotlin.ir.util.getAnnotationStringValue
 import org.jetbrains.kotlin.backend.konan.ir.*
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.objcinterop.*
 
 internal class KotlinObjCClassInfoGenerator(override val generationState: NativeGenerationState) : ContextUtils {
     fun generate(irClass: IrClass) {
@@ -27,7 +28,7 @@ internal class KotlinObjCClassInfoGenerator(override val generationState: Native
 
         val superclassName = irClass.getSuperClassNotAny()!!.let {
             llvm.dependenciesTracker.add(it)
-            it.descriptor.getExternalObjCClassBinaryName()
+            it.getExternalObjCClassBinaryName()
         }
         val protocolNames = irClass.getSuperInterfaces().map {
             llvm.dependenciesTracker.add(it)
@@ -135,7 +136,7 @@ internal class KotlinObjCClassInfoGenerator(override val generationState: Native
         ).pointer
 
         val functionProto = LlvmFunctionSignature(
-                returnType = LlvmRetType(classDataPointer.llvmType),
+                returnType = LlvmRetType(classDataPointer.llvmType, isObjectType = false),
                 parameterTypes = listOf(LlvmParamType(llvm.int8PtrType), LlvmParamType(llvm.int8PtrType)),
         ).toProto(
                 name = "kobjcclassdataimp:${irClass.fqNameForIrSerialization}#internal",

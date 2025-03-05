@@ -1,5 +1,6 @@
-// !DIAGNOSTICS: -FINAL_UPPER_BOUND -CAST_NEVER_SUCCEEDS
-// !LANGUAGE: -AllowEmptyIntersectionsInResultTypeResolver
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -FINAL_UPPER_BOUND -CAST_NEVER_SUCCEEDS
+// LANGUAGE: -AllowEmptyIntersectionsInResultTypeResolver
 
 interface I
 

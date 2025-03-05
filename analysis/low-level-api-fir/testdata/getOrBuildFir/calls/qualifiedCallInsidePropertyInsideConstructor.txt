@@ -1,6 +1,0 @@
-KT element: KtNameReferenceExpression
-FIR element: FirErrorNamedReferenceImpl
-FIR source kind: KtRealSourceElementKind
-
-FIR element rendered:
-<Unresolved name: prop>#

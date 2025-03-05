@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.gradle.idea.proto.tcs.IdeaKotlinDependency
 import org.jetbrains.kotlin.gradle.idea.serialize.IdeaKotlinSerializationContext
 import org.jetbrains.kotlin.gradle.idea.serialize.IdeaKotlinSerializationLogger
 import org.jetbrains.kotlin.gradle.idea.tcs.IdeaKotlinDependency
+import org.jetbrains.kotlin.gradle.idea.tcs.IdeaKotlinUnresolvedBinaryDependency
 import org.jetbrains.kotlin.gradle.plugin.ide.kotlinExtrasSerialization
 import org.jetbrains.kotlin.gradle.testbase.TestProject
 import org.jetbrains.kotlin.gradle.testbase.build
@@ -21,7 +22,7 @@ import kotlin.test.fail
 
 internal fun TestProject.resolveIdeDependencies(
     subproject: String? = null,
-    assertions: BuildResult.(dependencies: IdeaKotlinDependenciesContainer) -> Unit
+    assertions: BuildResult.(dependencies: IdeaKotlinDependenciesContainer) -> Unit,
 ) {
     build("${subproject.orEmpty()}:resolveIdeDependencies") {
         assertions(readIdeDependencies(subproject))
@@ -63,8 +64,21 @@ private object GradleIntegrationTestIdeaKotlinSerializationContext : IdeaKotlinS
 }
 
 class IdeaKotlinDependenciesContainer(
-    private val dependencies: Map<String, Set<IdeaKotlinDependency>>
-) {
-    operator fun get(sourceSetName: String) = dependencies[sourceSetName]
+    private val dependencies: Map<String, Set<IdeaKotlinDependency>>,
+) : Map<String, Set<IdeaKotlinDependency>> by dependencies {
+    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
+    override operator fun get(sourceSetName: String) = dependencies[sourceSetName]
         ?: fail("SourceSet with name $sourceSetName not found. Found: ${dependencies.keys}")
+
+    fun assertResolvedDependenciesOnly() {
+        dependencies.entries.forEach { (sourceSet, sourceSetDependencies) ->
+            sourceSetDependencies.assertResolvedDependenciesOnly("Unexpected unresolved dependencies for $sourceSet:")
+        }
+    }
+}
+
+fun Iterable<IdeaKotlinDependency>.assertResolvedDependenciesOnly(message: String = "Unexpected unresolved dependencies:") {
+    val unresolved = filterIsInstance<IdeaKotlinUnresolvedBinaryDependency>()
+    if (unresolved.isEmpty()) return
+    fail("$message\n${unresolved.joinToString("\n")}")
 }

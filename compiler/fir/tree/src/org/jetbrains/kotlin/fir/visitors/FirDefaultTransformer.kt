@@ -5,7 +5,10 @@
 
 package org.jetbrains.kotlin.fir.visitors
 
+import org.jetbrains.kotlin.fir.declarations.FirConstructedClassTypeParameterRef
 import org.jetbrains.kotlin.fir.declarations.FirErrorFunction
+import org.jetbrains.kotlin.fir.declarations.FirOuterClassTypeParameterRef
+import org.jetbrains.kotlin.fir.declarations.FirTypeParameterRef
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.references.FirErrorNamedReference
 import org.jetbrains.kotlin.fir.references.FirReference
@@ -24,20 +27,20 @@ abstract class FirDefaultTransformer<D> : FirTransformer<D>() {
         return transformResolvedTypeRef(errorTypeRef, data)
     }
 
-    override fun transformTypeRefWithNullability(typeRefWithNullability: FirTypeRefWithNullability, data: D): FirTypeRef {
-        return transformTypeRef(typeRefWithNullability, data)
+    override fun transformUnresolvedTypeRef(unresolvedTypeRef: FirUnresolvedTypeRef, data: D): FirTypeRef {
+        return transformTypeRef(unresolvedTypeRef, data)
     }
 
     override fun transformDynamicTypeRef(dynamicTypeRef: FirDynamicTypeRef, data: D): FirTypeRef {
-        return transformTypeRefWithNullability(dynamicTypeRef, data)
+        return transformUnresolvedTypeRef(dynamicTypeRef, data)
     }
 
     override fun transformFunctionTypeRef(functionTypeRef: FirFunctionTypeRef, data: D): FirTypeRef {
-        return transformTypeRefWithNullability(functionTypeRef, data)
+        return transformUnresolvedTypeRef(functionTypeRef, data)
     }
 
     override fun transformUserTypeRef(userTypeRef: FirUserTypeRef, data: D): FirTypeRef {
-        return transformTypeRefWithNullability(userTypeRef, data)
+        return transformUnresolvedTypeRef(userTypeRef, data)
     }
 
     override fun transformIntersectionTypeRef(intersectionTypeRef: FirIntersectionTypeRef, data: D): FirTypeRef {
@@ -65,11 +68,6 @@ abstract class FirDefaultTransformer<D> : FirTransformer<D>() {
 
     override fun transformBreakExpression(breakExpression: FirBreakExpression, data: D): FirStatement {
         return transformJump(breakExpression, data)
-    }
-
-
-    override fun transformLambdaArgumentExpression(lambdaArgumentExpression: FirLambdaArgumentExpression, data: D): FirStatement {
-        return transformWrappedArgumentExpression(lambdaArgumentExpression, data)
     }
 
     override fun transformSpreadArgumentExpression(spreadArgumentExpression: FirSpreadArgumentExpression, data: D): FirStatement {
@@ -105,6 +103,14 @@ abstract class FirDefaultTransformer<D> : FirTransformer<D>() {
 
     override fun transformImplicitInvokeCall(implicitInvokeCall: FirImplicitInvokeCall, data: D): FirStatement {
         return transformFunctionCall(implicitInvokeCall, data)
+    }
+
+    override fun transformConstructedClassTypeParameterRef(constructedClassTypeParameterRef: FirConstructedClassTypeParameterRef, data: D): FirTypeParameterRef {
+        return transformTypeParameterRef(constructedClassTypeParameterRef, data)
+    }
+
+    override fun transformOuterClassTypeParameterRef(outerClassTypeParameterRef: FirOuterClassTypeParameterRef, data: D): FirTypeParameterRef {
+        return transformTypeParameterRef(outerClassTypeParameterRef, data)
     }
 }
 

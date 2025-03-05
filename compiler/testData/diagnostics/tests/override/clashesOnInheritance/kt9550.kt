@@ -1,4 +1,4 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: FRONTEND
 interface A {
     fun <T> foo()
     fun <T> bar()

@@ -81,12 +81,12 @@ If there are no `FILE` directives in module, then all content of module belongs 
 
 Each module can declare that it depends on some other module with following syntax:
 ```
-// MODULE: name[(dep1, dep2)[(friend 1, friend2)][(refined dep 1, refiend dep 2)]]
+// MODULE: name[(dep1, dep2)[(friend 1, friend2)][(dependsOn dep 1, dependsOn dep 2)]]
 ```
 - if module has no friend modules, you can write just `// MODULE: name(dep1, dep2)`
 - if module has no dependencies at all, you can write only module name: `// MODULE: name`
 - if module has no dependencies but has friends, then you should declare empty parentheses of dependencies: `// MODULE: name()(friend1, friend2)`
-- if module does not have normal dependencies but has refined ones, then you should declare empty parentheses for first two kinds: `// MODULE: name()()(refined dep 1, refiend dep 2)`
+- if module does not have normal dependencies but has dependsOn ones, then you should declare empty parentheses for first two kinds: `// MODULE: name()()(dependsOn dep 1, dependsOn dep 2)`
 
 # Implementation details
 
@@ -361,6 +361,17 @@ Values of the debug mode: `0` (or `false`), `1` (or `true`), `2`.
 
 Debug mode `2` will ensure that IR is dumped to a file after each lowering phase.
 The IR dumps will appear next to the generated `.js` or `.wat` file.
+
+# Massive testdata updating
+
+There is a handler [UpdateTestDataHandler](../tests-common-new/tests/org/jetbrains/kotlin/test/backend/handlers/UpdateTestDataHandler.kt),
+which can be used to update all testData. It is disabled by default. It can be enabled by either changing code,
+or by passing system property `kotlin.test.update.test.data`.
+
+For example, to update all IR text test data by the output of the JVM backend, you can use:
+```bash
+./gradlew -Pkotlin.test.update.test.data=true :compiler:fir:fir2ir:test --tests "org.jetbrains.kotlin.test.runners.ir.FirPsiJvmIrTextTestGenerated" --continue
+```
 
 # Code style
 

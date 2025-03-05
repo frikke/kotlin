@@ -1,5 +1,3 @@
-// IGNORE_BACKEND: JVM
-
 object A {
     private val s = object {
         inline operator fun invoke(): String = "OK"

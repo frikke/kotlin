@@ -1,8 +1,9 @@
-// !DIAGNOSTICS: -DEPRECATION -TOPLEVEL_TYPEALIASES_ONLY
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -DEPRECATION -TOPLEVEL_TYPEALIASES_ONLY
 
 import kotlin.Deprecated as <!UNDERSCORE_IS_RESERVED!>___<!>
 
-@<!UNDERSCORE_USAGE_WITHOUT_BACKTICKS!>___<!>("") data class Pair(val x: Int, val y: Int)
+@___("") data class Pair(val x: Int, val y: Int)
 
 class <!UNDERSCORE_IS_RESERVED!>_<!><<!UNDERSCORE_IS_RESERVED!>________<!>>
 val <!UNDERSCORE_IS_RESERVED!>______<!> = <!UNDERSCORE_USAGE_WITHOUT_BACKTICKS!>_<!><Int>()
@@ -28,7 +29,7 @@ fun <!UNDERSCORE_IS_RESERVED!>__<!>(<!UNDERSCORE_IS_RESERVED!>___<!>: Int, y: <!
 class A1(val <!UNDERSCORE_IS_RESERVED!>_<!>: String)
 class A2(<!UNDERSCORE_IS_RESERVED!>_<!>: String) {
     class B {
-        typealias <!UNDERSCORE_IS_RESERVED!>_<!> = CharSequence
+        <!UNSUPPORTED_FEATURE!>typealias <!UNDERSCORE_IS_RESERVED!>_<!> = CharSequence<!>
     }
     val <!UNDERSCORE_IS_RESERVED!>_<!>: Int = 1
 

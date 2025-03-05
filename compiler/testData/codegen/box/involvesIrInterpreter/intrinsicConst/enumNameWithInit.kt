@@ -1,5 +1,4 @@
-// !LANGUAGE: +IntrinsicConstEvaluation
-// TARGET_BACKEND: JVM_IR
+// LANGUAGE: +IntrinsicConstEvaluation
 
 fun <T> T.id() = this
 

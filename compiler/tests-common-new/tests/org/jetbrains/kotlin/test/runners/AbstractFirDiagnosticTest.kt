@@ -5,248 +5,75 @@
 
 package org.jetbrains.kotlin.test.runners
 
-import org.jetbrains.kotlin.config.ExplicitApiMode
-import org.jetbrains.kotlin.diagnostics.impl.SimpleDiagnosticsCollector
-import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.symbols.FirLazyDeclarationResolver
-import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
-import org.jetbrains.kotlin.test.*
-import org.jetbrains.kotlin.test.backend.ir.ActualizerOnlyFacade
-import org.jetbrains.kotlin.test.backend.ir.IrDiagnosticsHandler
+import org.jetbrains.kotlin.test.FirParser
+import org.jetbrains.kotlin.test.TargetBackend
+import org.jetbrains.kotlin.test.TestInfrastructureInternals
+import org.jetbrains.kotlin.test.backend.handlers.NoFirCompilationErrorsHandler
 import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
-import org.jetbrains.kotlin.test.builders.configureFirHandlersStep
 import org.jetbrains.kotlin.test.builders.firHandlersStep
-import org.jetbrains.kotlin.test.builders.irHandlersStep
+import org.jetbrains.kotlin.test.configuration.baseFirDiagnosticTestConfiguration
+import org.jetbrains.kotlin.test.configuration.configurationForTestWithLatestLanguageVersion
+import org.jetbrains.kotlin.test.configuration.configureDiagnosticTest
+import org.jetbrains.kotlin.test.configuration.configureIrActualizerDiagnosticsTest
 import org.jetbrains.kotlin.test.directives.CodegenTestDirectives
-import org.jetbrains.kotlin.test.directives.ConfigurationDirectives.WITH_STDLIB
-import org.jetbrains.kotlin.test.directives.FirDiagnosticsDirectives.FIR_DUMP
-import org.jetbrains.kotlin.test.directives.FirDiagnosticsDirectives.WITH_EXTENDED_CHECKERS
-import org.jetbrains.kotlin.test.directives.JvmEnvironmentConfigurationDirectives.JDK_KIND
-import org.jetbrains.kotlin.test.directives.JvmEnvironmentConfigurationDirectives.WITH_REFLECT
-import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives
-import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives.ALLOW_KOTLIN_PACKAGE
-import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives.LANGUAGE
+import org.jetbrains.kotlin.test.directives.ConfigurationDirectives.DISABLE_TYPEALIAS_EXPANSION
 import org.jetbrains.kotlin.test.directives.configureFirParser
-import org.jetbrains.kotlin.test.frontend.fir.*
-import org.jetbrains.kotlin.test.frontend.fir.handlers.*
-import org.jetbrains.kotlin.test.model.DependencyKind
-import org.jetbrains.kotlin.test.model.FrontendFacade
-import org.jetbrains.kotlin.test.model.FrontendKinds
-import org.jetbrains.kotlin.test.services.JsLibraryProvider
-import org.jetbrains.kotlin.test.services.TestService
-import org.jetbrains.kotlin.test.services.TestServices
-import org.jetbrains.kotlin.test.services.configuration.CommonEnvironmentConfigurator
-import org.jetbrains.kotlin.test.services.configuration.JvmEnvironmentConfigurator
-import org.jetbrains.kotlin.test.services.fir.FirOldFrontendMetaConfigurator
-import org.jetbrains.kotlin.test.services.service
-import org.jetbrains.kotlin.test.services.sourceProviders.AdditionalDiagnosticsSourceFilesProvider
-import org.jetbrains.kotlin.test.services.sourceProviders.CoroutineHelpersSourceFilesProvider
+import org.jetbrains.kotlin.test.frontend.fir.Fir2IrResultsConverter
+import org.jetbrains.kotlin.test.services.LibraryProvider
+import org.jetbrains.kotlin.test.services.PlatformModuleProvider
+import org.jetbrains.kotlin.test.services.fir.FirWithoutAliasExpansionTestSuppressor
 
 abstract class AbstractFirDiagnosticTestBase(val parser: FirParser) : AbstractKotlinCompilerTest() {
-    override fun TestConfigurationBuilder.configuration() {
-        baseFirDiagnosticTestConfiguration()
-        enableLazyResolvePhaseChecking()
-        configureFirParser(parser)
-    }
-}
-
-@Jdk21Test
-abstract class AbstractFirPsiJdk21DiagnosticTest : AbstractFirDiagnosticTestBase(FirParser.Psi) {
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.defaultDirectives {
-            JDK_KIND with TestJdkKind.FULL_JDK_21
-        }
-    }
-}
-
-@Jdk21Test
-abstract class AbstractFirLightTreeJdk21DiagnosticTest : AbstractFirDiagnosticTestBase(FirParser.LightTree) {
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.defaultDirectives {
-            JDK_KIND with TestJdkKind.FULL_JDK_21
-        }
+    override fun configure(builder: TestConfigurationBuilder) = with(builder) {
+        configureDiagnosticTest(parser)
     }
 }
 
 abstract class AbstractFirPsiDiagnosticTest : AbstractFirDiagnosticTestBase(FirParser.Psi)
-abstract class AbstractFirLightTreeDiagnosticsTest : AbstractFirDiagnosticTestBase(FirParser.LightTree) {
+abstract class AbstractFirLightTreeDiagnosticsTest : AbstractFirDiagnosticTestBase(FirParser.LightTree)
+
+abstract class AbstractFirLightTreeDiagnosticsWithLatestLanguageVersionTest : AbstractFirLightTreeDiagnosticsTest() {
     override fun configure(builder: TestConfigurationBuilder) {
         super.configure(builder)
-        builder.useAdditionalService { LightTreeSyntaxDiagnosticsReporterHolder() }
+        builder.configurationForTestWithLatestLanguageVersion()
     }
 }
 
-class LightTreeSyntaxDiagnosticsReporterHolder : TestService {
-    val reporter = SimpleDiagnosticsCollector()
-}
-
-val TestServices.lightTreeSyntaxDiagnosticsReporterHolder: LightTreeSyntaxDiagnosticsReporterHolder? by TestServices.nullableTestServiceAccessor()
-
-abstract class AbstractFirWithActualizerDiagnosticsTest(val parser: FirParser) : AbstractKotlinCompilerWithTargetBackendTest(TargetBackend.JVM_IR) {
+open class AbstractFirLightTreeDiagnosticsWithoutAliasExpansionTest : AbstractFirPhasedDiagnosticTest(FirParser.LightTree) {
     override fun configure(builder: TestConfigurationBuilder) {
         super.configure(builder)
         with(builder) {
             defaultDirectives {
-                +CodegenTestDirectives.IGNORE_FIR2IR_EXCEPTIONS_IF_FIR_CONTAINS_ERRORS
+                +DISABLE_TYPEALIAS_EXPANSION
             }
+
+            useAfterAnalysisCheckers(::FirWithoutAliasExpansionTestSuppressor)
         }
     }
+}
 
-    override fun TestConfigurationBuilder.configuration() {
-        configureFirParser(parser)
+open class AbstractFirLightTreeWithActualizerDiagnosticsWithLatestLanguageVersionTest : AbstractKotlinCompilerWithTargetBackendTest(
+    targetBackend = TargetBackend.JVM_IR
+) {
+    override fun configure(builder: TestConfigurationBuilder) = with(builder) {
+        defaultDirectives {
+            +CodegenTestDirectives.IGNORE_FIR2IR_EXCEPTIONS_IF_FIR_CONTAINS_ERRORS
+        }
+
+        configureFirParser(FirParser.LightTree)
         baseFirDiagnosticTestConfiguration()
 
+        firHandlersStep {
+            useHandlers(::NoFirCompilationErrorsHandler)
+        }
+
         facadeStep(::Fir2IrResultsConverter)
-        facadeStep(::ActualizerOnlyFacade)
-        irHandlersStep {
-            useHandlers(
-                ::IrDiagnosticsHandler
-            )
-        }
+        useAdditionalService(::LibraryProvider)
 
-        useAdditionalService(::JsLibraryProvider)
+        @OptIn(TestInfrastructureInternals::class)
+        useModuleStructureTransformers(PlatformModuleProvider)
+
+        configureIrActualizerDiagnosticsTest()
+        configurationForTestWithLatestLanguageVersion()
     }
 }
-
-open class AbstractFirPsiWithActualizerDiagnosticsTest : AbstractFirWithActualizerDiagnosticsTest(FirParser.Psi)
-
-open class AbstractFirLightTreeWithActualizerDiagnosticsTest : AbstractFirWithActualizerDiagnosticsTest(FirParser.LightTree)
-
-fun TestConfigurationBuilder.configurationForClassicAndFirTestsAlongside() {
-    useAfterAnalysisCheckers(
-        ::FirIdenticalChecker,
-        ::FirFailingTestSuppressor,
-    )
-    useMetaTestConfigurators(::FirOldFrontendMetaConfigurator)
-}
-
-// `baseDir` is used in Kotlin plugin from IJ infra
-fun TestConfigurationBuilder.baseFirDiagnosticTestConfiguration(
-    baseDir: String = ".",
-    frontendFacade: Constructor<FrontendFacade<FirOutputArtifact>> = ::FirFrontendFacade
-) {
-    globalDefaults {
-        frontend = FrontendKinds.FIR
-        targetPlatform = JvmPlatforms.defaultJvmPlatform
-        dependencyKind = DependencyKind.Source
-    }
-
-    enableMetaInfoHandler()
-
-    useConfigurators(
-        ::CommonEnvironmentConfigurator,
-        ::JvmEnvironmentConfigurator,
-    )
-
-    useAdditionalSourceProviders(
-        ::AdditionalDiagnosticsSourceFilesProvider.bind(baseDir),
-        ::CoroutineHelpersSourceFilesProvider.bind(baseDir),
-    )
-
-    facadeStep(frontendFacade)
-    firHandlersStep {
-        useHandlers(
-            ::FirDiagnosticsHandler,
-            ::FirDumpHandler,
-            ::FirCfgDumpHandler,
-            ::FirCfgConsistencyHandler,
-            ::FirResolvedTypesVerifier,
-            ::FirScopeDumpHandler,
-        )
-    }
-
-    useMetaInfoProcessors(::PsiLightTreeMetaInfoProcessor)
-
-    forTestsMatching("compiler/testData/diagnostics/*") {
-        configurationForClassicAndFirTestsAlongside()
-    }
-
-    forTestsMatching("compiler/fir/analysis-tests/testData/*") {
-        defaultDirectives {
-            +FIR_DUMP
-        }
-    }
-
-    forTestsMatching("compiler/fir/analysis-tests/testData/resolve/withAllowedKotlinPackage/*") {
-        defaultDirectives {
-            +ALLOW_KOTLIN_PACKAGE
-        }
-    }
-
-    forTestsMatching(
-        "compiler/testData/diagnostics/testsWithStdLib/*" or
-                "compiler/fir/analysis-tests/testData/resolveWithStdlib/*" or
-                "compiler/testData/diagnostics/tests/unsignedTypes/*"
-    ) {
-        defaultDirectives {
-            +WITH_STDLIB
-        }
-    }
-
-    forTestsMatching("compiler/testData/diagnostics/tests/testsWithExplicitApi/*") {
-        defaultDirectives {
-            LanguageSettingsDirectives.EXPLICIT_API_MODE with ExplicitApiMode.STRICT
-        }
-    }
-
-    forTestsMatching(
-        "compiler/fir/analysis-tests/testData/resolve/extendedCheckers/*" or
-                "compiler/testData/diagnostics/tests/controlFlowAnalysis/deadCode/*"
-    ) {
-        defaultDirectives {
-            +WITH_EXTENDED_CHECKERS
-        }
-    }
-
-    forTestsMatching("compiler/testData/diagnostics/tests/testsWithJava17/*") {
-        defaultDirectives {
-            JDK_KIND with TestJdkKind.FULL_JDK_17
-            +WITH_STDLIB
-            +WITH_REFLECT
-        }
-    }
-
-    forTestsMatching("compiler/fir/analysis-tests/testData/resolveWithStdlib/properties/backingField/*") {
-        defaultDirectives {
-            LANGUAGE + "+ExplicitBackingFields"
-        }
-    }
-
-    forTestsMatching("compiler/testData/diagnostics/tests/multiplatform/*") {
-        defaultDirectives {
-            LANGUAGE + "+MultiPlatformProjects"
-        }
-    }
-
-    defaultDirectives {
-        LANGUAGE + "+EnableDfaWarningsInK2"
-    }
-}
-
-class FirLazyDeclarationResolverWithPhaseCheckingSessionComponentRegistrar : FirSessionComponentRegistrar() {
-    private val lazyResolver = FirCompilerLazyDeclarationResolverWithPhaseChecking()
-
-    @OptIn(org.jetbrains.kotlin.fir.SessionConfiguration::class)
-    override fun registerAdditionalComponent(session: FirSession) {
-        session.register(FirLazyDeclarationResolver::class, lazyResolver)
-    }
-}
-
-fun TestConfigurationBuilder.enableLazyResolvePhaseChecking() {
-    useAdditionalServices(
-        service<FirSessionComponentRegistrar>(::FirLazyDeclarationResolverWithPhaseCheckingSessionComponentRegistrar.coerce())
-    )
-
-    useAfterAnalysisCheckers(
-        ::DisableLazyResolveChecksAfterAnalysisChecker,
-    )
-
-    configureFirHandlersStep {
-        useHandlers(
-            ::FirResolveContractViolationErrorHandler,
-        )
-    }
-}
-

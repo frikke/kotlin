@@ -1,0 +1,8 @@
+warning: argument "-Xsuppress-warning" is deprecated. Use "-Xwarning-level=CONFLICTING_PROJECTION:disabled" instead (and the same for other warnings)
+error: diagnostic "CONFLICTING_PROJECTION" is an error. Changing the severity of errors is prohibited
+error: warning with name "NON_EXISTING_DIAGNOSTIC" does not exist
+error: warning with name ""UNCHECKED_CAST"" does not exist
+error: warning with name "" does not exist
+error: warning with name "null" does not exist
+error: warning with name "USELESS_.+" does not exist
+COMPILATION_ERROR

@@ -1,4 +1,5 @@
-// !LANGUAGE: +InlineClasses +UseGetterNameForPropertyAnnotationsMethodOnJvm
+// LANGUAGE: +InlineClasses +UseGetterNameForPropertyAnnotationsMethodOnJvm
+// JVM_ABI_K1_K2_DIFF: KT-63843, also K2 stores annotations in metadata (KT-57919).
 
 interface IFoo {
     fun overridingFun()

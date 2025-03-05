@@ -1,4 +1,6 @@
-// !DIAGNOSTICS: -DEBUG_INFO_SMARTCAST
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -DEBUG_INFO_SMARTCAST
+
 class Foo {
     fun foo(a: Foo): Foo = a
     var f: Foo? = null

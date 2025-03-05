@@ -6,24 +6,21 @@
 package org.jetbrains.kotlin.fir.analysis.checkers.expression
 
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
-import org.jetbrains.kotlin.fir.analysis.checkers.FirTypeRefSource
-import org.jetbrains.kotlin.fir.analysis.checkers.checkUpperBoundViolated
+import org.jetbrains.kotlin.fir.analysis.checkers.*
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
-import org.jetbrains.kotlin.fir.analysis.checkers.withSource
 import org.jetbrains.kotlin.fir.expressions.FirQualifiedAccessExpression
-import org.jetbrains.kotlin.fir.references.toResolvedCallableSymbol
 import org.jetbrains.kotlin.fir.references.FirResolvedErrorReference
 import org.jetbrains.kotlin.fir.references.FirResolvedNamedReference
+import org.jetbrains.kotlin.fir.references.toResolvedCallableSymbol
 import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeInapplicableWrongReceiver
 import org.jetbrains.kotlin.fir.resolve.fullyExpandedType
-import org.jetbrains.kotlin.fir.resolve.isTypeAliasedConstructor
-import org.jetbrains.kotlin.fir.resolve.substitution.substitutorByMap
+import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
+import org.jetbrains.kotlin.fir.scopes.impl.typeAliasConstructorInfo
 import org.jetbrains.kotlin.fir.symbols.impl.FirConstructorSymbol
-import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirTypeParameterSymbol
 import org.jetbrains.kotlin.fir.types.*
 
-object FirUpperBoundViolatedExpressionChecker : FirQualifiedAccessExpressionChecker() {
+object FirUpperBoundViolatedExpressionChecker : FirQualifiedAccessExpressionChecker(MppCheckerKind.Common) {
     override fun check(expression: FirQualifiedAccessExpression, context: CheckerContext, reporter: DiagnosticReporter) {
         // something that contains the type parameters
         // declarations with their declared bounds.
@@ -43,8 +40,8 @@ object FirUpperBoundViolatedExpressionChecker : FirQualifiedAccessExpressionChec
         val typeArguments: List<ConeTypeProjection>
         val typeParameters: List<FirTypeParameterSymbol>
 
-        if (calleeSymbol is FirConstructorSymbol && calleeSymbol.isTypeAliasedConstructor) {
-            val constructedType = expression.typeRef.coneType.fullyExpandedType(context.session)
+        if (calleeSymbol is FirConstructorSymbol && calleeSymbol.typeAliasConstructorInfo?.originalConstructor != null) {
+            val constructedType = expression.resolvedType.fullyExpandedType(context.session)
             // Updating arguments with source information after expanding the type seems extremely brittle as it relies on identity equality
             // of the expression type arguments and the expanded type arguments. This cannot be applied before expanding the type because it
             // seems like the type is already expended.
@@ -52,13 +49,9 @@ object FirUpperBoundViolatedExpressionChecker : FirQualifiedAccessExpressionChec
                 it.withSourceRecursive(expression)
             }
 
-            typeParameters = (constructedType.toSymbol(context.session) as? FirRegularClassSymbol)?.typeParameterSymbols ?: return
+            typeParameters = constructedType.toRegularClassSymbol(context.session)?.typeParameterSymbols ?: return
         } else {
-            typeArguments = expression.typeArguments.map { firTypeProjection ->
-                firTypeProjection.toConeTypeProjection().withSource(
-                    FirTypeRefSource((firTypeProjection as? FirTypeProjectionWithVariance)?.typeRef, firTypeProjection.source)
-                )
-            }
+            typeArguments = expression.typeArguments.toTypeArgumentsWithSourceInfo()
             typeParameters = calleeSymbol?.typeParameterSymbols ?: return
         }
 
@@ -70,8 +63,9 @@ object FirUpperBoundViolatedExpressionChecker : FirQualifiedAccessExpressionChec
 
         if (typeArguments.size != typeParameters.size) return
 
-        val substitutor = substitutorByMap(
-            typeParameters.withIndex().associate { Pair(it.value, typeArguments[it.index] as ConeKotlinType) },
+        val substitutor = createSubstitutorForUpperBoundViolationCheck(
+            typeParameters,
+            typeArguments,
             context.session,
         )
 

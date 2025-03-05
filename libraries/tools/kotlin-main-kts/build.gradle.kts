@@ -8,7 +8,7 @@ plugins {
     id("jps-compatible")
 }
 
-val jarBaseName = property("archivesBaseName") as String
+val jarBaseName = the<BasePluginExtension>().archivesName
 
 val localPackagesToRelocate =
     listOf(
@@ -38,6 +38,7 @@ dependencies {
     embedded(project(":kotlin-scripting-common")) { isTransitive = false }
     embedded(project(":kotlin-scripting-jvm")) { isTransitive = false }
     embedded(project(":kotlin-scripting-jvm-host-unshaded")) { isTransitive = false }
+    embedded(project(":kotlin-scripting-dependencies")) { isTransitive = false }
     embedded(project(":kotlin-scripting-dependencies-maven-all")) { isTransitive = false }
     embedded("org.slf4j:slf4j-api:1.7.36")
     embedded("org.slf4j:slf4j-simple:1.7.36")
@@ -53,11 +54,14 @@ dependencies {
     proguardLibraryJars(project(":kotlin-compiler"))
 
     relocatedJarContents(mainSourceSet.output)
+
+    testImplementation(project(":kotlin-scripting-dependencies"))
+    testImplementation(libs.junit4)
 }
 
 sourceSets {
     "main" { projectDefault() }
-    "test" { }
+    "test" { projectDefault() }
 }
 
 publish()
@@ -67,7 +71,7 @@ noDefaultJar()
 val relocatedJar by task<ShadowJar> {
     configurations = listOf(relocatedJarContents)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    destinationDirectory.set(File(buildDir, "libs"))
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
     archiveClassifier.set("before-proguard")
 
     // don't add this files to resources classpath to avoid IDE exceptions on kotlin project
@@ -86,7 +90,7 @@ val proguard by task<CacheableProguardTask> {
 
     injars(mapOf("filter" to "!META-INF/versions/**,!kotlinx/coroutines/debug/**"), relocatedJar.get().outputs.files)
 
-    outjars(fileFrom(buildDir, "libs", "$jarBaseName-$version-after-proguard.jar"))
+    outjars(layout.buildDirectory.file(jarBaseName.map { "libs/$it-$version-after-proguard.jar" }))
 
     javaLauncher.set(project.getToolchainLauncherFor(JdkMajorVersion.JDK_1_8))
 
@@ -98,17 +102,17 @@ val proguard by task<CacheableProguardTask> {
                     "jre/lib/rt.jar",
                     "../Classes/classes.jar",
                     jdkHome = it.metadata.installationPath.asFile
-                )
+                )!!
             },
             javaLauncher.map {
                 firstFromJavaHomeThatExists(
                     "jre/lib/jsse.jar",
                     "../Classes/jsse.jar",
                     jdkHome = it.metadata.installationPath.asFile
-                )
+                )!!
             },
             javaLauncher.map {
-                Jvm.forHome(it.metadata.installationPath.asFile).toolsJar
+                Jvm.forHome(it.metadata.installationPath.asFile).toolsJar!!
             }
         )
     )
@@ -119,7 +123,7 @@ val resultJar by task<Jar> {
     dependsOn(pack)
     setupPublicJar(jarBaseName)
     from {
-        zipTree(pack.get().singleOutputFile())
+        zipTree(pack.map { it.singleOutputFile(layout) })
     }
 }
 

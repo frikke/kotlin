@@ -9,10 +9,14 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.FileUtil
 import org.jetbrains.kotlin.ObsoleteTestInfrastructure
 import org.jetbrains.kotlin.TestExceptionsComparator
+import org.jetbrains.kotlin.checkers.CompilerTestLanguageVersionSettings
+import org.jetbrains.kotlin.config.ApiVersion
+import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.spec.utils.GeneralConfiguration
 import org.jetbrains.kotlin.spec.utils.SpecTestLinkedType
 import org.jetbrains.kotlin.spec.utils.models.AbstractSpecTest
 import org.jetbrains.kotlin.spec.utils.parsers.CommonParser
@@ -87,7 +91,9 @@ abstract class AbstractDiagnosticsTestSpec : org.jetbrains.kotlin.checkers.Abstr
             testLinkedType = second
         }
 
-        println(specTest)
+        if (GeneralConfiguration.PRINT_TEST_OUTPUTS_TO_STDOUT) {
+            println(specTest)
+        }
 
         val computeExceptionPoint: (Matcher?) -> Set<Int>? = l@{ matches ->
             if (matches == null) return@l null
@@ -104,7 +110,12 @@ abstract class AbstractDiagnosticsTestSpec : org.jetbrains.kotlin.checkers.Abstr
         }
 
         val exceptionsInCases = specTest.cases.byNumbers.entries.associate { it.key to it.value.exception }
-        TestExceptionsComparator(testDataFile).run(specTest.exception, exceptionsInCases, computeExceptionPoint) {
+        TestExceptionsComparator(testDataFile).run(
+            specTest.exception,
+            exceptionsInCases,
+            computeExceptionPoint,
+            printExceptionsToConsole = GeneralConfiguration.PRINT_TEST_OUTPUTS_TO_STDOUT
+        ) {
             super.analyzeAndCheck(testDataFile, files)
         }
     }
@@ -130,7 +141,15 @@ abstract class AbstractDiagnosticsTestSpec : org.jetbrains.kotlin.checkers.Abstr
         } catch (e: SpecTestValidationException) {
             Assert.fail(e.description)
         } finally {
-            diagnosticValidator.printDiagnosticStatistic()
+            if (GeneralConfiguration.PRINT_TEST_OUTPUTS_TO_STDOUT) {
+                diagnosticValidator.printDiagnosticStatistic()
+            }
         }
     }
+
+    // Force language version 1.9 if K1 is used, otherwise the K1 compiler will pretend that it has all new language features
+    // enabled, in particular JvmDefaultEnableByDefault, which makes it report an error EXPLICIT_OVERRIDE_REQUIRED_IN_COMPATIBILITY_MODE
+    // in `compiler/tests-spec/testData/diagnostics/notLinked/dfa/pos/15.kt`.
+    override fun defaultLanguageVersionSettings(): LanguageVersionSettings =
+        CompilerTestLanguageVersionSettings(DEFAULT_DIAGNOSTIC_TESTS_FEATURES, ApiVersion.KOTLIN_1_9, LanguageVersion.KOTLIN_1_9)
 }

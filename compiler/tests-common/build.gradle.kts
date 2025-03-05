@@ -29,9 +29,9 @@ dependencies {
     testApi(project(":compiler:fir:checkers:checkers.jvm"))
     testApi(project(":compiler:fir:checkers:checkers.js"))
     testApi(project(":compiler:fir:checkers:checkers.native"))
+    testApi(project(":compiler:fir:checkers:checkers.wasm"))
     testApi(project(":compiler:fir:java"))
     testApi(project(":compiler:fir:entrypoint"))
-    testApi(project(":compiler:ir.ir2cfg"))
     testApi(project(":compiler:frontend"))
     testApi(project(":compiler:frontend.java"))
     testApi(project(":compiler:util"))
@@ -43,21 +43,20 @@ dependencies {
     testApi(project(":kotlin-preloader"))
     testApi(project(":compiler:cli-common"))
     testApi(project(":daemon-common"))
-    testApi(project(":js:js.serializer"))
     testApi(project(":js:js.frontend"))
-    testApi(project(":js:js.translator"))
     testApi(project(":native:frontend.native"))
     testCompileOnly(project(":plugins:android-extensions-compiler"))
     testApi(projectTests(":generators:test-generator"))
     testApi(projectTests(":compiler:tests-compiler-utils"))
-    testApi(project(":kotlin-test:kotlin-test-jvm"))
+    testApi(kotlinTest())
     testApi(project(":kotlin-scripting-compiler-impl"))
     testApi(projectTests(":compiler:test-infrastructure-utils"))
-    testApi(commonDependency("junit:junit"))
+    testApi(libs.junit4) // for ComparisonFailure
     testApi(commonDependency("com.android.tools:r8"))
     testApi(project(":analysis:analysis-internal-utils"))
+    testApi(project(":compiler:tests-mutes:mutes-junit4"))
     testCompileOnly(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
-    testCompileOnly(toolsJar())
+    testCompileOnly(toolsJarApi())
     testCompileOnly(intellijCore())
 
     /*
@@ -65,26 +64,28 @@ dependencies {
      *   declared as Api dependencies to propagate them to all modules
      *   which depend on current one
      */
-    testApi(commonDependency("org.jetbrains.intellij.deps.fastutil:intellij-deps-fastutil"))
+    testApi(libs.intellij.fastutil)
     testApi(commonDependency("org.jetbrains.intellij.deps.jna:jna"))
     testApi(commonDependency("one.util:streamex"))
     testApi(commonDependency("org.codehaus.woodstox:stax2-api"))
     testApi(commonDependency("com.fasterxml:aalto-xml"))
+    testApi(libs.opentest4j)
 
     testApi(jpsModel()) { isTransitive = false }
     testApi(jpsModelImpl()) { isTransitive = false }
-    testApi(intellijJavaRt())
 
-    testImplementation(commonDependency("com.google.guava:guava"))
-    testImplementation(commonDependency("org.jetbrains.intellij.deps:trove4j"))
-    testImplementation(commonDependency("org.jetbrains.intellij.deps:asm-all"))
+    testImplementation(libs.guava)
+    testImplementation(libs.intellij.asm)
     testImplementation(commonDependency("org.jetbrains.intellij.deps:log4j"))
-    testImplementation(commonDependency("org.jetbrains.intellij.deps:jdom"))
+    testImplementation(intellijJDom())
 
-    testApiJUnit5()
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 }
 
 optInToExperimentalCompilerApi()
+optInToUnsafeDuringIrConstructionAPI()
 
 sourceSets {
     "main" { }

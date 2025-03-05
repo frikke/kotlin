@@ -12,17 +12,18 @@ import org.jetbrains.kotlin.fir.diagnostics.DiagnosticKind
 import org.jetbrains.kotlin.fir.expressions.FirEnumEntryDeserializedAccessExpression
 import org.jetbrains.kotlin.fir.expressions.FirPropertyAccessExpression
 import org.jetbrains.kotlin.fir.expressions.builder.buildPropertyAccessExpression
+import org.jetbrains.kotlin.fir.expressions.builder.buildResolvedQualifier
 import org.jetbrains.kotlin.fir.references.builder.buildErrorNamedReference
 import org.jetbrains.kotlin.fir.references.builder.buildResolvedNamedReference
 import org.jetbrains.kotlin.fir.resolve.providers.getClassDeclaredPropertySymbols
-import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
-import org.jetbrains.kotlin.fir.types.builder.buildResolvedTypeRef
+import org.jetbrains.kotlin.fir.resolve.toSymbol
+import org.jetbrains.kotlin.fir.types.ConeTypeProjection
 import org.jetbrains.kotlin.fir.types.impl.ConeClassLikeTypeImpl
 import org.jetbrains.kotlin.fir.types.toLookupTag
 
 fun FirEnumEntryDeserializedAccessExpression.toQualifiedPropertyAccessExpression(session: FirSession): FirPropertyAccessExpression =
     buildPropertyAccessExpression {
-        val entryPropertySymbol = session.symbolProvider.getClassDeclaredPropertySymbols(
+        val entryPropertySymbol = session.getClassDeclaredPropertySymbols(
             enumClassId, enumEntryName,
         ).firstOrNull { it.isStatic }
 
@@ -43,9 +44,16 @@ fun FirEnumEntryDeserializedAccessExpression.toQualifiedPropertyAccessExpression
             }
         }
 
-        typeRef = buildResolvedTypeRef {
-            type = ConeClassLikeTypeImpl(
-                enumClassId.toLookupTag(), emptyArray(), isNullable = false
-            )
+        val enumClassLookupTag = enumClassId.toLookupTag()
+        val enumClassType = ConeClassLikeTypeImpl(enumClassLookupTag, ConeTypeProjection.EMPTY_ARRAY, isMarkedNullable = false)
+        coneTypeOrNull = enumClassType
+
+        val receiver = buildResolvedQualifier {
+            coneTypeOrNull = enumClassType
+            packageFqName = enumClassId.packageFqName
+            relativeClassFqName = enumClassId.relativeClassName
+            symbol = enumClassLookupTag.toSymbol(session)
         }
+        dispatchReceiver = receiver
+        explicitReceiver = receiver
     }

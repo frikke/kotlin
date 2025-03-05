@@ -1,4 +1,4 @@
-// !LANGUAGE: +InlineClasses
+// LANGUAGE: +InlineClasses
 
 // FILE: Z.kt
 inline class Z(val x: Int)
@@ -9,7 +9,6 @@ fun testZ(z: Z, a: Any?) = z.equals(a)
 fun testNZ(z: Z?) = z?.equals(z)
 
 // @TestKt.class:
-// JVM_IR_TEMPLATES
 // 0 INVOKESTATIC Z\$Erased\.equals
 // 0 INVOKESTATIC Z\-Erased\.equals
 // 1 INVOKESTATIC Z\.equals-impl0 \(II\)Z

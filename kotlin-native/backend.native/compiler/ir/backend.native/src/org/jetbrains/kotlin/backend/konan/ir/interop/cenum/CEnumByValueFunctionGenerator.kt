@@ -4,15 +4,19 @@
  */
 package org.jetbrains.kotlin.backend.konan.ir.interop.cenum
 
+import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.konan.ir.KonanSymbols
 import org.jetbrains.kotlin.backend.konan.ir.interop.DescriptorToIrTranslationMixin
 import org.jetbrains.kotlin.backend.konan.ir.interop.findDeclarationByName
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.ir.IrBuiltIns
+import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrFunction
+import org.jetbrains.kotlin.ir.declarations.IrParameterKind
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.expressions.impl.fromSymbolOwner
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.types.classOrNull
 import org.jetbrains.kotlin.ir.types.getClass
@@ -24,6 +28,7 @@ import org.jetbrains.kotlin.util.OperatorNameConventions
 /**
  * Generate IR for function that returns appropriate enum entry for the provided integral value.
  */
+@OptIn(ObsoleteDescriptorBasedAPI::class)
 internal class CEnumByValueFunctionGenerator(
         context: GeneratorContext,
         private val symbols: KonanSymbols
@@ -40,7 +45,7 @@ internal class CEnumByValueFunctionGenerator(
     ): IrFunction {
         val byValueFunctionDescriptor = companionIrClass.descriptor.findDeclarationByName<FunctionDescriptor>("byValue")!!
         val byValueIrFunction = createFunction(byValueFunctionDescriptor)
-        val irValueParameter = byValueIrFunction.valueParameters.first()
+        val irValueParameter = byValueIrFunction.parameters.filter { it.kind ==  IrParameterKind.Regular }.first()
         // val values: Array<E> = values()
         // var i: Int = 0
         // val size: Int = values.size
@@ -53,7 +58,7 @@ internal class CEnumByValueFunctionGenerator(
         // }
         // throw NPE
         postLinkageSteps.add {
-            byValueIrFunction.body = irBuilder(irBuiltIns, byValueIrFunction.symbol, SYNTHETIC_OFFSET, SYNTHETIC_OFFSET).irBlockBody {
+            byValueIrFunction.body = irBuiltIns.createIrBuilder(byValueIrFunction.symbol, SYNTHETIC_OFFSET, SYNTHETIC_OFFSET).irBlockBody {
                 +irReturn(irBlock {
                     val values = irTemporary(irCall(valuesIrFunctionSymbol), isMutable = true)
                     val inductionVariable = irTemporary(irInt(0), isMutable = true)
@@ -66,13 +71,13 @@ internal class CEnumByValueFunctionGenerator(
                     val lessFunctionSymbol = irBuiltIns.lessFunByOperandType.getValue(irBuiltIns.intClass)
                     +irWhile().also { loop ->
                         loop.condition = irCall(lessFunctionSymbol, irBuiltIns.booleanType).also { irCall ->
-                            irCall.putValueArgument(0, irGet(inductionVariable))
-                            irCall.putValueArgument(1, valuesSize)
+                            irCall.arguments[0] = irGet(inductionVariable)
+                            irCall.arguments[1] = valuesSize
                         }
                         loop.body = irBlock {
                             val entry = irTemporary(irCall(getElementFn, byValueIrFunction.returnType).also { irCall ->
-                                irCall.dispatchReceiver = irGet(values)
-                                irCall.putValueArgument(0, irGet(inductionVariable))
+                                irCall.arguments[0] = irGet(values)
+                                irCall.arguments[1] = irGet(inductionVariable)
                             }, isMutable = true)
                             val valueGetter = entry.type.getClass()!!.getPropertyGetter("value")!!
                             val entryValue = irGet(irValueParameter.type, irGet(entry), valueGetter)
@@ -80,7 +85,7 @@ internal class CEnumByValueFunctionGenerator(
                                     type = irBuiltIns.unitType,
                                     condition = irEquals(entryValue, irGet(irValueParameter)),
                                     thenPart = irReturn(irGet(entry)),
-                                    elsePart = irSetVar(
+                                    elsePart = irSet(
                                             inductionVariable,
                                             irCallOp(plusFun, irBuiltIns.intType,
                                                     irGet(inductionVariable),

@@ -13,7 +13,7 @@ import kotlin.annotation.AnnotationTarget.*
  * This is an internal copy of the public K/N annotation.
  * It is used to [OptIn] obsolete K/N API used in the shared native-wasm directory.
  */
-@RequiresOptIn(message = "This API is obsolete and subject to removal in a future release.", level = RequiresOptIn.Level.WARNING)
+@RequiresOptIn(message = "This API is obsolete and subject to removal in a future release.", level = RequiresOptIn.Level.ERROR)
 @Retention(AnnotationRetention.BINARY)
 @Target(
     AnnotationTarget.CLASS,
@@ -30,4 +30,4 @@ import kotlin.annotation.AnnotationTarget.*
 )
 @MustBeDocumented
 @SinceKotlin("1.9")
-internal annotation class ObsoleteNativeApi
+internal actual annotation class ObsoleteNativeApi

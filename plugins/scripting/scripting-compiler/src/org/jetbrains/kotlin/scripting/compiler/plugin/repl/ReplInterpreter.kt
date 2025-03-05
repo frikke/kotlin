@@ -3,6 +3,8 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.jetbrains.kotlin.scripting.compiler.plugin.repl
 
 import com.intellij.core.JavaCoreProjectEnvironment
@@ -69,9 +71,10 @@ class ReplInterpreter(
             )
 
         compilationConfiguration = context.baseScriptCompilationConfiguration
-        evaluationConfiguration = ScriptEvaluationConfigurationFromDefinition(hostConfiguration, REPL_LINE_AS_SCRIPT_DEFINITION).with {
-            scriptExecutionWrapper<Any> { replConfiguration.executionInterceptor.execute(it) }
-        }
+        evaluationConfiguration =
+            ScriptEvaluationConfigurationFromHostConfiguration(hostConfiguration).with {
+                scriptExecutionWrapper<Any> { replConfiguration.executionInterceptor.execute(it) }
+            }
 
         replState = JvmReplCompilerState(
             {

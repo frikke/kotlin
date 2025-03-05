@@ -1,0 +1,2 @@
+(Full dump is not available: null)
+CLASS IR_EXTERNAL_JAVA_DECLARATION_STUB INTERFACE name:JavaInterface modality:ABSTRACT visibility:public superTypes:[<root>.B; <root>.C; <root>.D]

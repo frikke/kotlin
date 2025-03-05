@@ -74,3 +74,4 @@ public abstract class B</*0*/ T> : kotlin.collections.MutableList<T>, java.util.
     public open override /*1*/ /*fake_override*/ fun </*0*/ T : kotlin.Any!> toArray(/*0*/ a: kotlin.Array<(out) T!>!): kotlin.Array<(out) T!>!
     public open override /*2*/ /*fake_override*/ fun toString(): kotlin.String
 }
+

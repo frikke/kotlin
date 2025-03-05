@@ -8,10 +8,11 @@ package org.jetbrains.kotlin.fir.scopes
 import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.FirSessionComponent
-import org.jetbrains.kotlin.fir.declarations.FirProperty
 import org.jetbrains.kotlin.fir.declarations.FirSimpleFunction
+import org.jetbrains.kotlin.fir.declarations.FirVariable
 import org.jetbrains.kotlin.fir.declarations.utils.visibility
 import org.jetbrains.kotlin.fir.resolve.transformers.ReturnTypeCalculator
+import org.jetbrains.kotlin.fir.scopes.impl.FirTypeIntersectionScopeContext.ResultOfIntersection
 import org.jetbrains.kotlin.fir.scopes.impl.buildSubstitutorForOverridesCheck
 import org.jetbrains.kotlin.fir.scopes.impl.similarFunctionsOrBothProperties
 import org.jetbrains.kotlin.fir.symbols.impl.FirCallableSymbol
@@ -19,23 +20,8 @@ import org.jetbrains.kotlin.fir.types.ConeFlexibleType
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
 import org.jetbrains.kotlin.fir.types.typeContext
 import org.jetbrains.kotlin.types.AbstractTypeChecker
-import java.util.*
 
 class FirOverrideService(val session: FirSession) : FirSessionComponent {
-    fun <D : FirCallableSymbol<*>> createOverridableGroups(
-        members: Collection<MemberWithBaseScope<D>>,
-        overrideChecker: FirOverrideChecker
-    ): List<List<MemberWithBaseScope<D>>> {
-        if (members.size <= 1) return listOf(members.toList())
-        val queue = LinkedList(members)
-        val result = mutableListOf<List<MemberWithBaseScope<D>>>()
-        while (queue.isNotEmpty()) {
-            val nextHandle = queue.first()
-            val overridableGroup = extractBothWaysOverridable(nextHandle, queue, overrideChecker)
-            result += overridableGroup
-        }
-        return result
-    }
 
     fun <D : FirCallableSymbol<*>> extractBothWaysOverridable(
         overrider: MemberWithBaseScope<D>,
@@ -112,7 +98,7 @@ class FirOverrideService(val session: FirSession) : FirSessionComponent {
         val memberWithBaseScope: MemberWithBaseScope<D>,
         returnTypeCalculator: ReturnTypeCalculator
     ) {
-        val returnType: ConeKotlinType? = returnTypeCalculator.tryCalculateReturnTypeOrNull(memberWithBaseScope.member.fir)?.type
+        val returnType: ConeKotlinType? = returnTypeCalculator.tryCalculateReturnTypeOrNull(memberWithBaseScope.member.fir)?.coneType
     }
 
     private fun MemberWithBaseScopeAndReturnType<*>.compareTo(other: MemberWithBaseScopeAndReturnType<*>): Int? {
@@ -135,7 +121,17 @@ class FirOverrideService(val session: FirSession) : FirSessionComponent {
 
         val typeCheckerState = session.typeContext.newTypeCheckerState(
             errorTypesEqualToAnything = false,
-            stubTypesEqualToAnything = false
+            stubTypesEqualToAnything = false,
+            /**
+             * Type checking here influence only selecting of most specific members
+             * Having foo(param: T & Any) and Java foo(param: T!) and dnnTypesEqualToFlexible = true,
+             *  we can achieve 0 result here, instead of 1/-1 with dnnTypesEqualToFlexible = false.
+             * The list in [selectMostSpecificMembers] can change size because of this,
+             * and we can build [ResultOfIntersection.NonTrivial] instead of [ResultOfIntersection.SingleMember].
+             * But in fact, it does not influence resolve significantly, so it's better to keep behavior
+             * with dnnTypesEqualToFlexible = false
+             */
+            dnnTypesEqualToFlexible = false
         )
         val aSubtypesB = AbstractTypeChecker.isSubtypeOf(typeCheckerState, aReturnType, bReturnType)
         val bSubtypesA = AbstractTypeChecker.isSubtypeOf(typeCheckerState, bReturnType, aReturnType)
@@ -156,8 +152,8 @@ class FirOverrideService(val session: FirSession) : FirSessionComponent {
                 byVisibilityAndType
             }
 
-            is FirProperty -> {
-                require(bFir is FirProperty) { "b is " + bFir.javaClass }
+            is FirVariable -> {
+                require(bFir is FirVariable) { "b is " + bFir.javaClass }
                 // At least one of `subtypes` is true here, so `!xSubtypesY` implies `ySubtypesX`, meaning y's type
                 // is a *strict* subtype of x's. Vars are more specific than vals, so if one is a var and another
                 // has a strict subtype, then they are unorderable - one is a val with a more specific type than

@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.generators.tests.analysis.api
 import org.jetbrains.kotlin.generators.TestGroup
 import org.jetbrains.kotlin.generators.TestGroupSuite
 import org.jetbrains.kotlin.generators.util.TestGeneratorUtil
+import org.jetbrains.kotlin.light.classes.symbol.base.AbstractLightClassUtilTest
 import org.jetbrains.kotlin.light.classes.symbol.base.AbstractSymbolLightClassesEquivalentTest
 import org.jetbrains.kotlin.light.classes.symbol.decompiled.*
 import org.jetbrains.kotlin.light.classes.symbol.source.*
@@ -50,6 +51,18 @@ internal fun TestGroupSuite.generateSymbolLightClassesTests() {
                 model("annotationsEquality", pattern = TestGeneratorUtil.KT)
             }
         }
+
+        run {
+            testClass<AbstractLightClassUtilTest> {
+                model("lightElements", pattern = TestGeneratorUtil.KT)
+            }
+        }
+
+        run {
+            testClass<AbstractSymbolLightClassesNestedClassesConsistencyForLibraryTest> {
+                model("libraryNestedClassesConsistency", pattern = TestGeneratorUtil.KT)
+            }
+        }
     }
 }
 
@@ -63,19 +76,27 @@ private fun TestGroupSuite.generateCompilerTestDataBasedLightClassesTests() {
     }
 }
 
+private fun lightClassesByPsiTestsInit(isLibrary: Boolean = false): TestGroup.TestClass.() -> Unit = {
+    model(
+        relativeRootPath = "asJava/lightClasses/lightClassByPsi",
+        // Compiled scripts are not yet supported
+        excludeDirs = if (isLibrary) listOf("scripts") else emptyList(),
+        pattern = TestGeneratorUtil.KT_OR_KTS
+    )
+}
+
 private fun TestGroup.lightClassesByPsiTests() {
-    val modelInit: TestGroup.TestClass.() -> Unit = {
-        model("asJava/lightClasses/lightClassByPsi", pattern = TestGeneratorUtil.KT_OR_KTS)
-    }
+    testClass<AbstractSymbolLightClassesByPsiForSourceTest>(init = lightClassesByPsiTestsInit())
+    testClass<AbstractJsSymbolLightClassesByPsiForSourceTest>(init = lightClassesByPsiTestsInit())
 
-    testClass<AbstractSymbolLightClassesByPsiForSourceTest>(init = modelInit)
-    testClass<AbstractSymbolLightClassesByPsiForLibraryTest>(init = modelInit)
+    testClass<AbstractSymbolLightClassesByPsiForLibraryTest>(init = lightClassesByPsiTestsInit(isLibrary = true))
+    testClass<AbstractJsSymbolLightClassesByPsiForLibraryTest>(init = lightClassesByPsiTestsInit(isLibrary = true))
 
-    testClass<AbstractSymbolLightClassesParentingByPsiForSourceTest>(init = modelInit)
-    testClass<AbstractSymbolLightClassesParentingByPsiForLibraryTest>(init = modelInit)
+    testClass<AbstractSymbolLightClassesParentingByPsiForSourceTest>(init = lightClassesByPsiTestsInit())
+    testClass<AbstractSymbolLightClassesParentingByPsiForLibraryTest>(init = lightClassesByPsiTestsInit(isLibrary = true))
 
-    testClass<AbstractSymbolLightClassesEqualityByPsiForSourceTest>(init = modelInit)
-    testClass<AbstractSymbolLightClassesEqualityByPsiForLibraryTest>(init = modelInit)
+    testClass<AbstractSymbolLightClassesEqualityByPsiForSourceTest>(init = lightClassesByPsiTestsInit())
+    testClass<AbstractSymbolLightClassesEqualityByPsiForLibraryTest>(init = lightClassesByPsiTestsInit(isLibrary = true))
 }
 
 private fun TestGroup.lightClassesByFqNameTests() {
@@ -95,7 +116,10 @@ private fun TestGroup.lightClassesByFqNameTests() {
     }
 
     testClass<AbstractSymbolLightClassesByFqNameForSourceTest>(init = sourceModelInit)
+    testClass<AbstractJsSymbolLightClassesByFqNameForSourceTest>(init = sourceModelInit)
+
     testClass<AbstractSymbolLightClassesByFqNameForLibraryTest>(init = libraryModelInit)
+    testClass<AbstractJsSymbolLightClassesByFqNameForLibraryTest>(init = libraryModelInit)
 
     testClass<AbstractSymbolLightClassesParentingByFqNameForSourceTest>(init = sourceModelInit)
     testClass<AbstractSymbolLightClassesParentingByFqNameForLibraryTest>(init = libraryModelInit)

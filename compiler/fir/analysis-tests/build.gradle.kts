@@ -8,6 +8,7 @@ import org.jetbrains.kotlin.ideaExt.idea
 plugins {
     kotlin("jvm")
     id("jps-compatible")
+    id("d8-configuration")
 }
 
 dependencies {
@@ -22,18 +23,21 @@ dependencies {
     testApi(project(":compiler:fir:checkers:checkers.jvm"))
     testApi(project(":compiler:fir:checkers:checkers.js"))
     testApi(project(":compiler:fir:checkers:checkers.native"))
+    testApi(project(":compiler:fir:checkers:checkers.wasm"))
     testApi(project(":compiler:fir:fir-serialization"))
     testApi(project(":compiler:fir:entrypoint"))
     testApi(project(":compiler:frontend"))
 
-    testApiJUnit5()
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 
     testRuntimeOnly(project(":core:descriptors.runtime"))
     testRuntimeOnly(project(":compiler:fir:fir2ir:jvm-backend"))
 
     testImplementation(intellijCore())
 
-    testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps.fastutil:intellij-deps-fastutil"))
+    testRuntimeOnly(libs.intellij.fastutil)
     testRuntimeOnly(commonDependency("one.util:streamex"))
     testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps.jna:jna"))
     testRuntimeOnly(commonDependency("org.codehaus.woodstox:stax2-api"))
@@ -59,37 +63,19 @@ if (kotlinBuildProperties.isInJpsBuildIdeaSync) {
     }
 }
 
-fun Test.configureTest(configureJUnit: JUnitPlatformOptions.() -> Unit = {}) {
-    dependsOn(":dist")
-    workingDir = rootDir
-    useJUnitPlatform {
-        configureJUnit()
-    }
-    useJsIrBoxTests(version = version, buildDir = "$buildDir/")
-}
-
-
 projectTest(
-    jUnitMode = JUnitMode.JUnit5,
-    defineJDKEnvVariables = listOf(JdkMajorVersion.JDK_1_8, JdkMajorVersion.JDK_11_0, JdkMajorVersion.JDK_17_0)
-) {
-    configureTest {
-        excludeTags("Jdk21Test")
-    }
-}
-
-// Separate configuration is only necessary while JDK 21 is not released, so cannot be obtained via toolchain.
-// See KT-58765 for tracking
-projectTest(
-    "jdk21Tests",
     jUnitMode = JUnitMode.JUnit5,
     defineJDKEnvVariables = listOf(
+        JdkMajorVersion.JDK_1_8,
+        JdkMajorVersion.JDK_11_0,
+        JdkMajorVersion.JDK_17_0,
         JdkMajorVersion.JDK_21_0
     )
 ) {
-    configureTest {
-        includeTags("Jdk21Test")
-    }
+    dependsOn(":dist")
+    workingDir = rootDir
+    useJUnitPlatform()
+    useJsIrBoxTests(version = version, buildDir = layout.buildDirectory)
 }
 
 testsJar()

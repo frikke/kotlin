@@ -7,10 +7,7 @@ package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 
 import org.jetbrains.kotlin.backend.common.compilationException
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
-import org.jetbrains.kotlin.ir.backend.js.utils.JsGenerationContext
-import org.jetbrains.kotlin.ir.backend.js.utils.Namer
-import org.jetbrains.kotlin.ir.backend.js.utils.getClassRef
-import org.jetbrains.kotlin.ir.backend.js.utils.invokeFunForLambda
+import org.jetbrains.kotlin.ir.backend.js.utils.*
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrConstructor
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
@@ -21,8 +18,12 @@ import org.jetbrains.kotlin.ir.expressions.IrRawFunctionReference
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.types.classifierOrFail
+import org.jetbrains.kotlin.ir.util.erasedUpperBound
 import org.jetbrains.kotlin.ir.util.getInlineClassBackingField
+import org.jetbrains.kotlin.ir.util.isInterface
 import org.jetbrains.kotlin.js.backend.ast.*
+import org.jetbrains.kotlin.js.backend.ast.metadata.isInlineClassBoxing
+import org.jetbrains.kotlin.js.backend.ast.metadata.isInlineClassUnboxing
 
 typealias IrCallTransformer = (IrCall, context: JsGenerationContext) -> JsExpression
 
@@ -87,15 +88,21 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
 
             prefixOp(intrinsics.jsTypeOf, JsUnaryOperator.TYPEOF)
 
+            add(intrinsics.jsIsEs6) { _, _ -> JsBooleanLiteral(backendContext.es6mode) }
+
+            add(intrinsics.jsYieldFunctionSymbol) { call, context ->
+                JsYield(translateCallArguments(call, context).single())
+            }
+
             add(intrinsics.jsObjectCreateSymbol) { call, context ->
-                val classToCreate = call.getTypeArgument(0)!!.classifierOrFail.owner as IrClass
-                val className = context.getNameForClass(classToCreate)
-                objectCreate(prototypeOf(className.makeRef(), context.staticContext), context.staticContext)
+                val classToCreate = call.typeArguments[0]!!.classifierOrFail.owner as IrClass
+                val className = classToCreate.getClassRef(context.staticContext)
+                objectCreate(prototypeOf(className, context.staticContext), context.staticContext)
             }
 
             add(intrinsics.jsClass) { call, context ->
-                val typeArgument = call.getTypeArgument(0)
-                typeArgument?.getClassRef(context)
+                val typeArgument = call.typeArguments[0]
+                typeArgument?.getClassRef(context.staticContext)
                     ?: compilationException(
                         "Type argument of jsClass must be statically known class",
                         typeArgument
@@ -176,17 +183,20 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
 
             add(intrinsics.jsBoxIntrinsic) { call, context ->
                 val arg = translateCallArguments(call, context).single()
-                val inlineClass = icUtils.getInlinedClass(call.getTypeArgument(0)!!)!!
+                val inlineClass = call.typeArguments[0]?.let { icUtils.getRuntimeClassFor(it) }
+                    ?: compilationException("Unexpected type argument in box intrinsic", call)
                 val constructor = inlineClass.declarations.filterIsInstance<IrConstructor>().single { it.isPrimary }
-                JsNew(context.getNameForConstructor(constructor).makeRef(), listOf(arg))
+
+                JsNew(constructor.getConstructorRef(context.staticContext), listOf(arg))
+                    .apply { isInlineClassBoxing = true }
             }
 
             add(intrinsics.jsUnboxIntrinsic) { call, context ->
                 val arg = translateCallArguments(call, context).single()
-                val inlineClass = icUtils.getInlinedClass(call.getTypeArgument(1)!!)!!
+                val inlineClass = icUtils.getInlinedClass(call.typeArguments[1]!!)!!
                 val field = getInlineClassBackingField(inlineClass)
                 val fieldName = context.getNameForField(field)
-                JsNameRef(fieldName, arg)
+                JsNameRef(fieldName, arg).apply { isInlineClassUnboxing = true }
             }
 
             add(intrinsics.jsCall) { call, context: JsGenerationContext ->
@@ -200,13 +210,13 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
             }
 
             add(intrinsics.jsBind) { call, context: JsGenerationContext ->
-                val receiver = call.getValueArgument(0)!!
+                val receiver = call.arguments[0]!!
                 val jsReceiver = receiver.accept(IrElementToJsExpressionTransformer(), context)
-                val jsBindTarget = when (val target = call.getValueArgument(1)!!) {
+                val jsBindTarget = when (val target = call.arguments[1]!!) {
                     is IrFunctionReference -> {
                         val superClass = call.superQualifierSymbol!!
                         val functionName = context.getNameForMemberFunction(target.symbol.owner as IrSimpleFunction)
-                        val superName = context.getNameForClass(superClass.owner).makeRef()
+                        val superName = superClass.owner.getClassRef(context.staticContext)
                         JsNameRef(functionName, prototypeOf(superName, context.staticContext))
                     }
                     is IrFunctionExpression -> target.accept(IrElementToJsExpressionTransformer(), context)
@@ -220,9 +230,9 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
             }
 
             add(intrinsics.jsContexfulRef) { call, context: JsGenerationContext ->
-                val receiver = call.getValueArgument(0)!!
+                val receiver = call.arguments[0]!!
                 val jsReceiver = receiver.accept(IrElementToJsExpressionTransformer(), context)
-                val target = call.getValueArgument(1) as IrRawFunctionReference
+                val target = call.arguments[1] as IrRawFunctionReference
                 val jsTarget = context.getNameForMemberFunction(target.symbol.owner as IrSimpleFunction)
 
                 JsNameRef(jsTarget, jsReceiver)
@@ -234,7 +244,7 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
 
             add(intrinsics.createSharedBox) { call, context: JsGenerationContext ->
                 val arg = translateCallArguments(call, context).single()
-                JsObjectLiteral(listOf(JsPropertyInitializer(JsNameRef(Namer.SHARED_BOX_V), arg)))
+                JsObjectLiteral(listOf(JsPropertyInitializer(JsStringLiteral(Namer.SHARED_BOX_V), arg)))
             }
 
             add(intrinsics.readSharedBox) { call, context: JsGenerationContext ->
@@ -256,7 +266,7 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
 
                 val jsInvokeFunName = context.getNameForMemberFunction(invokeFun)
 
-                val jsExtensionReceiver = call.extensionReceiver?.accept(IrElementToJsExpressionTransformer(), context)!!
+                val jsExtensionReceiver = call.arguments[0]?.accept(IrElementToJsExpressionTransformer(), context)!!
                 val args = translateCallArguments(call, context)
 
                 JsInvocation(JsNameRef(jsInvokeFunName, jsExtensionReceiver), args)
@@ -276,6 +286,16 @@ class JsIntrinsicTransformers(backendContext: JsIrBackendContext) {
             add(intrinsics.void.owner.getter!!.symbol) { _, context ->
                 val backingField = context.getNameForField(intrinsics.void.owner.backingField!!)
                 JsNameRef(backingField)
+            }
+
+            add(intrinsics.suspendOrReturnFunctionSymbol) { call, context ->
+                val (generatorCall, continuation) = translateCallArguments(call, context)
+                val jsInvokeFunName = context.getNameForStaticFunction(call.symbol.owner)
+                val VOID = context.getNameForField(intrinsics.void.owner.backingField!!)
+                val generatorBindCall = (generatorCall as JsInvocation).let {
+                    JsInvocation(JsNameRef(Namer.BIND_FUNCTION, it.qualifier), listOf(JsNameRef(VOID)) + it.arguments.dropLast(1))
+                }
+                JsInvocation(JsNameRef(jsInvokeFunName), generatorBindCall, continuation)
             }
         }
     }

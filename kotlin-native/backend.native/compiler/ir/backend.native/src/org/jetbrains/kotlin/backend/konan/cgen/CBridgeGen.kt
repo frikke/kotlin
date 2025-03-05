@@ -1,13 +1,19 @@
+/*
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
 package org.jetbrains.kotlin.backend.konan.cgen
 
 import org.jetbrains.kotlin.backend.common.lower.at
+import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.irNot
-import org.jetbrains.kotlin.backend.konan.*
+import org.jetbrains.kotlin.backend.konan.InteropFqNames
+import org.jetbrains.kotlin.backend.konan.PrimitiveBinaryType
+import org.jetbrains.kotlin.backend.konan.RuntimeNames
 import org.jetbrains.kotlin.backend.konan.ir.KonanSymbols
 import org.jetbrains.kotlin.backend.konan.ir.buildSimpleAnnotation
-import org.jetbrains.kotlin.backend.konan.ir.getAnnotationArgumentValue
 import org.jetbrains.kotlin.backend.konan.ir.konanLibrary
-import org.jetbrains.kotlin.backend.konan.lower.FunctionReferenceLowering
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.descriptors.Modality
@@ -17,26 +23,23 @@ import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.declarations.impl.IrClassImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrConstructorImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrValueParameterImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionReferenceImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrRawFunctionReferenceImpl
+import org.jetbrains.kotlin.ir.objcinterop.getObjCMethodInfo
+import org.jetbrains.kotlin.ir.objcinterop.isObjCMetaClass
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.symbols.impl.IrClassSymbolImpl
-import org.jetbrains.kotlin.ir.symbols.impl.IrConstructorSymbolImpl
-import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
-import org.jetbrains.kotlin.ir.symbols.impl.IrValueParameterSymbolImpl
+import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
+import org.jetbrains.kotlin.ir.symbols.impl.*
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isNullable
+import org.jetbrains.kotlin.ir.util.isSubtypeOfClass
 import org.jetbrains.kotlin.konan.ForeignExceptionMode
 import org.jetbrains.kotlin.konan.target.Family
 import org.jetbrains.kotlin.konan.target.KonanTarget
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.types.Variance
-import org.jetbrains.kotlin.types.checker.SimpleClassicTypeSystemContext.getClassFqNameUnsafe
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
 internal interface KotlinStubs {
@@ -45,6 +48,9 @@ internal interface KotlinStubs {
     val symbols: KonanSymbols
     val target: KonanTarget
     val language: String
+
+    val isSwiftExportEnabled: Boolean
+
     fun addKotlin(declaration: IrDeclaration)
     fun addC(lines: List<String>)
     fun getUniqueCName(prefix: String): String
@@ -106,8 +112,6 @@ private fun KotlinToCCallBuilder.buildKotlinBridgeCall(transformCall: (IrMemberA
                 transformCall
         )
 
-private fun IrType.isCppClass(): Boolean= this.classOrNull?.owner?.hasAnnotation(RuntimeNames.cppClass) ?: false
-
 internal fun KotlinStubs.generateCCall(expression: IrCall, builder: IrBuilderWithScope, isInvoke: Boolean,
                                        foreignExceptionMode: ForeignExceptionMode.Mode = ForeignExceptionMode.default): IrExpression {
     val callBuilder = KotlinToCCallBuilder(builder, this, isObjCMethod = false, foreignExceptionMode)
@@ -130,10 +134,10 @@ internal fun KotlinStubs.generateCCall(expression: IrCall, builder: IrBuilderWit
 
         (0 until expression.valueArgumentsCount).forEach {
             callBuilder.addArgument(
-                    expression.getValueArgument(it)!!,
-                    type = expression.getTypeArgument(it)!!,
-                    variadic = false,
-                    parameter = null
+                expression.getValueArgument(it)!!,
+                type = expression.typeArguments[it]!!,
+                variadic = false,
+                parameter = null
             )
         }
     } else {
@@ -155,7 +159,7 @@ internal fun KotlinStubs.generateCCall(expression: IrCall, builder: IrBuilderWit
     }
 
     val returnValuePassing = if (isInvoke) {
-        val returnType = expression.getTypeArgument(expression.typeArgumentsCount - 1)!!
+        val returnType = expression.typeArguments.last()!!
         mapReturnType(returnType, expression, signature = null)
     } else {
         mapReturnType(callee.returnType, expression, signature = callee)
@@ -179,13 +183,7 @@ internal fun KotlinStubs.generateCCall(expression: IrCall, builder: IrBuilderWit
 
 private fun KotlinToCCallBuilder.addArguments(arguments: List<IrExpression?>, callee: IrFunction) {
     arguments.forEachIndexed { index, argument ->
-        val parameter = if (callee.dispatchReceiverParameter != null &&
-            (callee.dispatchReceiverParameter?.type?.isCppClass() == true)) {
-
-            if (index == 0) callee.dispatchReceiverParameter!! else callee.valueParameters[index-1]
-        } else {
-            callee.valueParameters[index]
-        }
+        val parameter = callee.valueParameters[index]
         if (parameter.isVararg) {
             require(index == arguments.lastIndex) { stubs.renderCompilerError(argument) }
             addVariadicArguments(argument)
@@ -211,11 +209,10 @@ private fun KotlinToCCallBuilder.addVariadicArguments(
         with(irBuilder) {
             val argumentTypes = unwrapVariadicArguments(elements).map { it.type }
             argumentTypes.forEachIndexed { index, type ->
-                val untypedArgument = irCall(symbols.arrayGet[symbols.array]!!.owner).apply {
+                val argument = irCall(symbols.arrayGet[symbols.array]!!, symbols.any.defaultType.makeNullable()).apply {
                     dispatchReceiver = irGet(variable)
                     putValueArgument(0, irInt(index))
-                }
-                val argument = irAs(untypedArgument, type) // Note: this cast always succeeds.
+                }.implicitCastIfNeededTo(type)
                 addArgument(argument, type, variadic = true, parameter = null)
             }
         }
@@ -266,10 +263,6 @@ private fun <R> KotlinToCCallBuilder.handleArgumentForVarargParameter(
             val initializer = variable.initializer
             require(initializer is IrVararg) { stubs.renderCompilerError(initializer) }
             block(variable, initializer.elements)
-        } else if (variable is IrValueParameter && FunctionReferenceLowering.isLoweredFunctionReference(variable)) {
-            val location = variable.parent // Parameter itself has incorrect location.
-            val kind = if (this.isObjCMethod) "Objective-C methods" else "C functions"
-            stubs.throwCompilerError(location, "callable references to variadic $kind are not supported")
         } else {
             stubs.throwCompilerError(variable, "unexpected value declaration")
         }
@@ -311,7 +304,7 @@ internal fun KotlinStubs.generateObjCCall(
         receiver: ObjCCallReceiver,
         arguments: List<IrExpression?>
 ) = builder.irBlock {
-    val resolved = method.resolveFakeOverride(allowAbstract = true)?: method
+    val resolved = method.resolveFakeOverrideMaybeAbstract() ?: method
     val isDirect = directSymbolName != null
 
     val exceptionMode = ForeignExceptionMode.byValue(
@@ -385,10 +378,7 @@ internal fun KotlinStubs.generateObjCCall(
             receiverOrSuper, symbols.nativePtrType, CTypes.voidPtr).name
     callBuilder.cFunctionBuilder.addParameter(CTypes.voidPtr)
 
-    if (isDirect) {
-        callBuilder.cCallBuilder.arguments += "0"
-        callBuilder.cFunctionBuilder.addParameter(CTypes.voidPtr)
-    } else {
+    if (!isDirect) {
         callBuilder.cCallBuilder.arguments += "@selector($selector)"
         callBuilder.cFunctionBuilder.addParameter(CTypes.voidPtr)
     }
@@ -417,8 +407,7 @@ internal fun KotlinStubs.generateObjCCall(
 }
 
 internal fun IrBuilderWithScope.getObjCClass(symbols: KonanSymbols, symbol: IrClassSymbol): IrExpression {
-    val classDescriptor = symbol.descriptor
-    require(!classDescriptor.isObjCMetaClass())
+    require(!symbol.owner.isObjCMetaClass())
     return irCall(symbols.interopGetObjCClass, symbols.nativePtrType, listOf(symbol.starProjectedType))
 }
 
@@ -519,7 +508,8 @@ private fun KotlinStubs.generateCFunction(
     val callbackBuilder = CCallbackBuilder(this, location, isObjCMethod)
 
     if (isObjCMethod) {
-        val receiver = signature.dispatchReceiverParameter!!
+        val receiver = function.dispatchReceiverParameter!!
+        require(signature.dispatchReceiverParameter!!.type.isObjCReferenceType(target, irBuiltIns)) { renderCompilerError(signature) }
         require(receiver.type.isObjCReferenceType(target, irBuiltIns)) { renderCompilerError(signature) }
         val valuePassing = ObjCReferenceValuePassing(symbols, receiver.type, retained = signature.objCConsumesReceiver())
         val kotlinArgument = with(valuePassing) { callbackBuilder.receiveValue() }
@@ -534,7 +524,7 @@ private fun KotlinStubs.generateCFunction(
     signature.extensionReceiverParameter?.let { callbackBuilder.addParameter(it, function.extensionReceiverParameter!!) }
 
     signature.valueParameters.forEach {
-        callbackBuilder.addParameter(it, function.valueParameters[it.index])
+        callbackBuilder.addParameter(it, function.valueParameters[it.indexInOldValueParameters])
     }
 
     return callbackBuilder.build(function, signature)
@@ -553,13 +543,11 @@ internal fun KotlinStubs.generateCFunctionPointer(
     )
     addKotlin(fakeFunction)
 
-    return IrFunctionReferenceImpl.fromSymbolDescriptor(
+    return IrRawFunctionReferenceImpl(
             expression.startOffset,
             expression.endOffset,
             expression.type,
-            fakeFunction.symbol,
-            typeArgumentsCount = 0,
-            reflectionTarget = null
+            fakeFunction.symbol
     )
 }
 
@@ -578,23 +566,22 @@ private fun KotlinStubs.createFakeKotlinExternalFunction(
         cFunctionName: String,
         isObjCMethod: Boolean
 ): IrSimpleFunction {
-    val bridge = IrFunctionImpl(
+    val bridge = irBuiltIns.irFactory.createSimpleFunction(
             UNDEFINED_OFFSET,
             UNDEFINED_OFFSET,
             IrDeclarationOrigin.DEFINED,
-            IrSimpleFunctionSymbolImpl(),
             Name.identifier(cFunctionName),
             DescriptorVisibilities.PRIVATE,
-            Modality.FINAL,
-            signature.returnType,
             isInline = false,
-            isExternal = true,
+            isExpect = false,
+            signature.returnType,
+            Modality.FINAL,
+            IrSimpleFunctionSymbolImpl(),
             isTailrec = false,
             isSuspend = false,
-            isExpect = false,
-            isFakeOverride = false,
             isOperator = false,
-            isInfix = false
+            isInfix = false,
+            isExternal = true,
     )
 
     bridge.annotations += buildSimpleAnnotation(irBuiltIns, UNDEFINED_OFFSET, UNDEFINED_OFFSET,
@@ -635,7 +622,7 @@ private fun KotlinToCCallBuilder.mapCalleeFunctionParameter(
     val classifier = type.classifierOrNull
     return when {
         classifier?.isClassWithFqName(InteropFqNames.cValues.toUnsafe()) == true || // Note: this should not be accepted, but is required for compatibility
-                classifier?.isClassWithFqName(InteropFqNames.cValuesRef.toUnsafe()) == true -> CValuesRefArgumentPassing
+                classifier?.isClassWithFqName(InteropFqNames.cValuesRef.toUnsafe()) == true -> CValuesRefArgumentPassing(type)
 
         classifier == symbols.string && (variadic || parameter?.isCStringParameter() == true) -> {
             require(!variadic || !isObjCMethod) { stubs.renderCompilerError(argument) }
@@ -725,6 +712,7 @@ private fun KotlinStubs.mapType(
     type.isFloat() -> TrivialValuePassing(irBuiltIns.floatType, CTypes.float)
     type.isDouble() -> TrivialValuePassing(irBuiltIns.doubleType, CTypes.double)
     type.isCPointer(symbols) -> TrivialValuePassing(type, CTypes.voidPtr)
+    (isSwiftExportEnabled && type == symbols.nativePtrType) -> TrivialValuePassing(type, CTypes.voidPtr)
     type.isTypeOfNullLiteral() && variadic -> TrivialValuePassing(symbols.interopCPointer.starProjectedType.makeNullable(), CTypes.voidPtr)
     type.isUByte() -> TrivialValuePassing(type, CTypes.unsignedChar)
     type.isUShort() -> TrivialValuePassing(type, CTypes.unsignedShort)
@@ -752,15 +740,7 @@ private fun KotlinStubs.mapType(
         require(kotlinClass != null) { renderCompilerError(location) }
         val cStructType = getNamedCStructType(kotlinClass)
         require(cStructType != null) { renderCompilerError(location) }
-
-        if (type.isCppClass()) {
-            // TODO: this should probably be better abstracted in a plugin.
-            // For Skia plugin we release sk_sp on the C++ side passing just the raw pointer.
-            // So managed by value is handled as voidPtr here for now.
-            TrivialValuePassing(type, CTypes.voidPtr)
-        } else {
-            StructValuePassing(kotlinClass, cStructType)
-        }
+        StructValuePassing(kotlinClass, cStructType)
     }
 
     type.classOrNull?.isSubtypeOfClass(symbols.nativePointed) == true ->
@@ -883,7 +863,7 @@ private class BooleanValuePassing(override val cType: CType, private val irBuilt
 private class StructValuePassing(private val kotlinClass: IrClass, override val cType: CType) : ValuePassing {
     override fun KotlinToCCallBuilder.passValue(expression: IrExpression): CExpression {
         val cBridgeValue = passThroughBridge(
-                cValuesRefToPointer(expression),
+                cValuesRefToPointer(expression, kotlinClass.defaultType),
                 symbols.interopCPointer.starProjectedType,
                 CTypes.pointer(cType)
         ).name
@@ -923,7 +903,7 @@ private class StructValuePassing(private val kotlinClass: IrClass, override val 
     }
 
     private fun IrBuilderWithScope.readCValue(kotlinPointed: IrExpression, symbols: KonanSymbols): IrExpression =
-        irCall(symbols.interopCValueRead.owner).apply {
+        irCallWithSubstitutedType(symbols.interopCValueRead.owner, listOf(kotlinPointedType)).apply {
             extensionReceiver = kotlinPointed
             putValueArgument(0, getTypeObject())
         }
@@ -937,7 +917,9 @@ private class StructValuePassing(private val kotlinClass: IrClass, override val 
         cBodyLines += "$cReturnValue;"
         val kotlinPtr = passThroughBridge("&$result", CTypes.voidPtr, symbols.nativePtrType)
 
-        kotlinBridgeStatements += irCall(symbols.interopCValueWrite.owner).apply {
+        kotlinBridgeStatements += irCallWithSubstitutedType(
+                symbols.interopCValueWrite.owner, listOf(kotlinPointedType)
+        ).apply {
             extensionReceiver = expression
             putValueArgument(0, irGet(kotlinPtr))
         }
@@ -1027,7 +1009,7 @@ private class ObjCReferenceValuePassing(
 
     override fun IrBuilderWithScope.bridgedToKotlin(expression: IrExpression, symbols: KonanSymbols): IrExpression =
             convertPossiblyRetainedObjCPointer(symbols, retained, expression) {
-                irCall(symbols.interopInterpretObjCPointerOrNull, listOf(type)).apply {
+                irCallWithSubstitutedType(symbols.interopInterpretObjCPointerOrNull, listOf(type)).apply {
                     putValueArgument(0, it)
                 }
             }
@@ -1053,6 +1035,50 @@ private fun IrBuilderWithScope.convertPossiblyRetainedObjCPointer(
     }
 } else {
     convert(pointer)
+}
+
+internal fun KotlinStubs.convertBlockPtrToKotlinFunction(builder: IrBuilderWithScope, blockPtr: IrExpression, functionType: IrType): IrExpression {
+    // blockPtr can be stack-allocated, so copy it first.
+    val copiedBlockPtr = builder.irCall(symbols.interopBlockCopy).apply {
+        arguments[0] = blockPtr
+    }
+    val valuePassing = mapBlockType(
+            type = functionType,
+            retained = true,
+            location = blockPtr
+    )
+
+    /*
+    Note: the code below checks that `valuePassing.cToBridged` simply returns its argument; this is a hack.
+    By design, using [valuePassing] to convert from C to Kotlin consists of two parts:
+    * `cToBridged` in the Obj-C code,
+    * `bridgedToKotlin` in the Kotlin code.
+
+    Generally, we could do it that way.
+    There are a couple of problems, though:
+    * That would require us to generate and call a full-blown C function, which is suboptimal.
+      Consider in particular thread state switches usually required to call a C function from Kotlin.
+      Improving it would require more changes.
+      Considering that the whole intrinsic is a temporary solution, this seems unnecessary.
+    * A straightforward black-box implementation would involve an autorelease operation.
+      To handle the `cToBridged` part properly, it would generate a function like
+          id foo(id p) { return p; }
+      which has to autorelease `p` when returning. Which is suboptimal.
+      Fixing this would anyway require breaking encapsulation of the [valuePassing],
+      since `id` return type here is a `cBridgeType`, right in the middle of the two-step conversion.
+      In other words, getting rid of the redundant autorelease would basically require us to rely
+      on the `cToBridged` implementation as well.
+
+    So, this hack is an optimization as well as a simplification at the same time.
+    Win-win.
+    */
+    val cBlockPtr = "blockPtr"
+    val cBridged = valuePassing.cToBridged(cBlockPtr)
+    check(cBridged == cBlockPtr) { "Unexpected cToBridged implementation: expected $cBlockPtr, got $cBridged" }
+
+    with(valuePassing) {
+        return builder.bridgedToKotlin(copiedBlockPtr, symbols)
+    }
 }
 
 private class ObjCBlockPointerValuePassing(
@@ -1105,7 +1131,9 @@ private class ObjCBlockPointerValuePassing(
                 )
             }
 
-    private object OBJC_BLOCK_FUNCTION_IMPL : IrDeclarationOriginImpl("OBJC_BLOCK_FUNCTION_IMPL")
+    private companion object {
+        private val OBJC_BLOCK_FUNCTION_IMPL by IrDeclarationOriginImpl
+    }
 
     private fun IrBuilderWithScope.createKotlinFunctionObject(blockPointer: IrExpression): IrExpression {
         val constructor = generateKotlinFunctionClass()
@@ -1117,55 +1145,65 @@ private class ObjCBlockPointerValuePassing(
     private fun IrBuilderWithScope.generateKotlinFunctionClass(): IrConstructor {
         val symbols = stubs.symbols
 
-        val irClass = IrClassImpl(
-                startOffset, endOffset,
-                OBJC_BLOCK_FUNCTION_IMPL, IrClassSymbolImpl(),
+        val irClass = context.irFactory.createClass(
+                startOffset,
+                endOffset,
+                OBJC_BLOCK_FUNCTION_IMPL,
                 Name.identifier(stubs.getUniqueKotlinFunctionReferenceClassName("BlockFunctionImpl")),
-                ClassKind.CLASS, DescriptorVisibilities.PRIVATE, Modality.FINAL,
-                isCompanion = false, isInner = false, isData = false, isExternal = false,
-                isValue = false, isExpect = false, isFun = false
+                DescriptorVisibilities.PRIVATE,
+                IrClassSymbolImpl(),
+                ClassKind.CLASS,
+                Modality.FINAL,
         )
-        irClass.createParameterDeclarations()
+        irClass.createThisReceiverParameter()
 
         irClass.superTypes += stubs.irBuiltIns.anyType
         irClass.superTypes += functionType.makeNotNull()
 
-        val blockHolderField = createField(
-                startOffset, endOffset,
+        val blockHolderField = context.irFactory.createField(
+                startOffset,
+                endOffset,
                 OBJC_BLOCK_FUNCTION_IMPL,
-                stubs.irBuiltIns.anyType,
                 Name.identifier("blockHolder"),
-                isMutable = false, owner = irClass
+                DescriptorVisibilities.PRIVATE,
+                IrFieldSymbolImpl(),
+                stubs.irBuiltIns.anyType,
+                isFinal = true,
+                isStatic = false,
         )
+        irClass.addChild(blockHolderField)
 
-        val constructor = IrConstructorImpl(
-                startOffset, endOffset,
+        val constructor = context.irFactory.createConstructor(
+                startOffset,
+                endOffset,
                 OBJC_BLOCK_FUNCTION_IMPL,
-                IrConstructorSymbolImpl(),
                 Name.special("<init>"),
                 DescriptorVisibilities.PUBLIC,
+                isInline = false,
+                isExpect = false,
                 irClass.defaultType,
-                isInline = false, isExternal = false, isPrimary = true, isExpect = false
+                IrConstructorSymbolImpl(),
+                isPrimary = true,
         )
         irClass.addChild(constructor)
 
-        val constructorParameter = IrValueParameterImpl(
-                startOffset, endOffset,
-                OBJC_BLOCK_FUNCTION_IMPL,
-                IrValueParameterSymbolImpl(),
-                Name.identifier("blockPointer"),
-                0,
-                symbols.nativePtrType,
+        val constructorParameter = context.irFactory.createValueParameter(
+                startOffset = startOffset,
+                endOffset = endOffset,
+                origin = OBJC_BLOCK_FUNCTION_IMPL,
+                name = Name.identifier("blockPointer"),
+                type = symbols.nativePtrType,
+                isAssignable = false,
+                symbol = IrValueParameterSymbolImpl(),
                 varargElementType = null,
                 isCrossinline = false,
                 isNoinline = false,
                 isHidden = false,
-                isAssignable = false
         )
         constructor.valueParameters += constructorParameter
         constructorParameter.parent = constructor
 
-        constructor.body = irBuilder(stubs.irBuiltIns, constructor.symbol).irBlockBody(startOffset, endOffset) {
+        constructor.body = stubs.irBuiltIns.createIrBuilder(constructor.symbol).irBlockBody(startOffset, endOffset) {
             +irDelegatingConstructorCall(symbols.any.owner.constructors.single())
             +irSetField(irGet(irClass.thisReceiver!!), blockHolderField,
                     irCall(symbols.interopCreateObjCObjectHolder.owner).apply {
@@ -1179,39 +1217,45 @@ private class ObjCBlockPointerValuePassing(
         val overriddenInvokeMethod = (functionType.classifier.owner as IrClass).simpleFunctions()
                 .single { it.name == OperatorNameConventions.INVOKE }
 
-        val invokeMethod = IrFunctionImpl(
-                startOffset, endOffset,
+        val invokeMethod = context.irFactory.createSimpleFunction(
+                startOffset,
+                endOffset,
                 OBJC_BLOCK_FUNCTION_IMPL,
-                IrSimpleFunctionSymbolImpl(),
                 overriddenInvokeMethod.name,
-                DescriptorVisibilities.PUBLIC, Modality.FINAL,
+                DescriptorVisibilities.PUBLIC,
+                isInline = false,
+                isExpect = false,
                 returnType = functionType.arguments.last().typeOrNull!!,
-                isInline = false, isExternal = false, isTailrec = false, isSuspend = false, isExpect = false,
-                isFakeOverride = false, isOperator = false, isInfix = false
+                Modality.FINAL,
+                IrSimpleFunctionSymbolImpl(),
+                isTailrec = false,
+                isSuspend = false,
+                isOperator = false,
+                isInfix = false,
         )
         invokeMethod.overriddenSymbols += overriddenInvokeMethod.symbol
         irClass.addChild(invokeMethod)
-        invokeMethod.createDispatchReceiverParameter()
+        invokeMethod.parameters += invokeMethod.createDispatchReceiverParameterWithClassParent()
 
         invokeMethod.valueParameters += (0 until parameterCount).map { index ->
-            val parameter = IrValueParameterImpl(
-                    startOffset, endOffset,
-                    OBJC_BLOCK_FUNCTION_IMPL,
-                    IrValueParameterSymbolImpl(),
-                    Name.identifier("p$index"),
-                    index,
-                    functionType.arguments[index].typeOrNull!!,
+            val parameter = context.irFactory.createValueParameter(
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    origin = OBJC_BLOCK_FUNCTION_IMPL,
+                    name = Name.identifier("p$index"),
+                    type = functionType.arguments[index].typeOrNull!!,
+                    isAssignable = false,
+                    symbol = IrValueParameterSymbolImpl(),
                     varargElementType = null,
                     isCrossinline = false,
                     isNoinline = false,
                     isHidden = false,
-                    isAssignable = false
             )
             parameter.parent = invokeMethod
             parameter
         }
 
-        invokeMethod.body = irBuilder(stubs.irBuiltIns, invokeMethod.symbol).irBlockBody(startOffset, endOffset) {
+        invokeMethod.body = stubs.irBuiltIns.createIrBuilder(invokeMethod.symbol).irBlockBody(startOffset, endOffset) {
             val blockPointer = irCall(symbols.interopObjCObjectRawValueGetter.owner).apply {
                 extensionReceiver = irGetField(irGet(invokeMethod.dispatchReceiverParameter!!), blockHolderField)
             }
@@ -1223,9 +1267,10 @@ private class ObjCBlockPointerValuePassing(
             +irReturn(callBlock(blockPointer, arguments))
         }
 
+        stubs.addKotlin(irClass)
+        // we need to add class to stubs first, because it will implicitly initialize class parent.
         irClass.addFakeOverrides(stubs.typeSystem)
 
-        stubs.addKotlin(irClass)
         return constructor
     }
 
@@ -1259,10 +1304,9 @@ private class ObjCBlockPointerValuePassing(
                 callbackBuilder.bridgeBuilder.addParameter(symbols.nativePtrType, CTypes.id)
 
         callbackBuilder.kotlinCallBuilder.arguments += with(callbackBuilder.bridgeBuilder.kotlinIrBuilder) {
-            // TODO: consider casting to [functionType].
             irCall(symbols.interopUnwrapKotlinObjectHolderImpl.owner).apply {
-                putValueArgument(0, irGet(kotlinFunctionHolderParameter) )
-            }
+                putValueArgument(0, irGet(kotlinFunctionHolderParameter))
+            }.implicitCastTo(functionType)
         }
 
         parameterValuePassings.forEach {
@@ -1296,6 +1340,10 @@ private class ObjCBlockPointerValuePassing(
         return "({ id $kotlinFunctionHolder = $expression; $kotlinFunctionHolder ? $blockAsId : (id)0; })"
     }
 
+    /**
+     * Note: [convertBlockPtrToKotlinFunction] relies on the fact that the implementation simply returns the argument.
+     * See the detailed comment inside that function.
+     */
     override fun cToBridged(expression: String) = expression
 
 }
@@ -1308,7 +1356,7 @@ private class WCStringArgumentPassing : KotlinToCArgumentPassing {
                 extensionReceiver = it
             }
         }
-        return with(CValuesRefArgumentPassing) { passValue(wcstr) }
+        return with(CValuesRefArgumentPassing(wcstr.type)) { passValue(wcstr) }
     }
 
 }
@@ -1321,14 +1369,22 @@ private class CStringArgumentPassing : KotlinToCArgumentPassing {
                 extensionReceiver = it
             }
         }
-        return with(CValuesRefArgumentPassing) { passValue(cstr) }
+        return with(CValuesRefArgumentPassing(cstr.type)) { passValue(cstr) }
     }
 
 }
 
-private object CValuesRefArgumentPassing : KotlinToCArgumentPassing {
+private class CValuesRefArgumentPassing(type: IrType) : KotlinToCArgumentPassing {
+    init {
+        require(type.classOrNull?.owner?.let {
+            it.hasEqualFqName(InteropFqNames.cValues) || it.hasEqualFqName(InteropFqNames.cValuesRef)
+        } == true) { "Expected either ${InteropFqNames.cValues} or ${InteropFqNames.cValuesRef} but was: ${type.render()}" }
+    }
+
+    private val pointedType = (type as IrSimpleType).arguments.single()
+
     override fun KotlinToCCallBuilder.passValue(expression: IrExpression): CExpression {
-        val bridgeArgument = cValuesRefToPointer(expression)
+        val bridgeArgument = cValuesRefToPointer(expression, pointedType)
         val cBridgeValue = passThroughBridge(
                 bridgeArgument,
                 symbols.interopCPointer.starProjectedType.makeNullable(),
@@ -1339,7 +1395,8 @@ private object CValuesRefArgumentPassing : KotlinToCArgumentPassing {
 }
 
 private fun KotlinToCCallBuilder.cValuesRefToPointer(
-        value: IrExpression
+        value: IrExpression,
+        pointedType: IrTypeArgument,
 ): IrExpression = if (value.type.classifierOrNull == symbols.interopCPointer) {
     value // Optimization
 } else {
@@ -1348,7 +1405,7 @@ private fun KotlinToCCallBuilder.cValuesRefToPointer(
             .single { it.name.asString() == "getPointer" }
 
     irBuilder.irSafeTransform(value) {
-        irCall(getPointerFunction).apply {
+        irCall(getPointerFunction.symbol, symbols.interopCPointer.typeWithArguments(listOf(pointedType))).apply {
             dispatchReceiver = it
             putValueArgument(0, bridgeCallBuilder.getMemScope())
         }

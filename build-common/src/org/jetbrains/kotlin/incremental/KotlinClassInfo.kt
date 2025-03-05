@@ -5,24 +5,14 @@
 
 package org.jetbrains.kotlin.incremental
 
-import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.snapshotClassExcludingMembers
-import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.snapshotField
-import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.snapshotMethod
-import org.jetbrains.kotlin.incremental.ClassNodeSnapshotter.sortClassMembers
-import org.jetbrains.kotlin.incremental.KotlinClassInfo.ExtraInfo
-import org.jetbrains.kotlin.incremental.storage.ProtoMapValue
+import org.jetbrains.kotlin.incremental.impl.ExtraClassInfoGenerator
+import org.jetbrains.kotlin.incremental.storage.*
 import org.jetbrains.kotlin.inline.InlineFunctionOrAccessor
-import org.jetbrains.kotlin.inline.inlineFunctionsAndAccessors
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.metadata.jvm.deserialization.BitEncoding
-import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMemberSignature
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.jvm.JvmClassName
-import org.jetbrains.org.objectweb.asm.*
-import org.jetbrains.org.objectweb.asm.tree.ClassNode
-import org.jetbrains.org.objectweb.asm.tree.FieldNode
-import org.jetbrains.org.objectweb.asm.tree.MethodNode
 
 /**
  * Minimal information about a Kotlin class to compute recompilation-triggering changes during an incremental run of the `KotlinCompile`
@@ -45,19 +35,32 @@ class KotlinClassInfo(
     class ExtraInfo(
 
         /**
-         * Snapshot of the class excluding its fields and methods and Kotlin metadata (iff classKind == [KotlinClassHeader.Kind.CLASS]).
+         * Snapshot of the class excluding its fields and methods and Kotlin metadata. It is not null iff
+         * [classKind] == [KotlinClassHeader.Kind.CLASS].
          *
-         * For example, the class's annotations which are currently not captured by Kotlin metadata (KT-57919) will be captured here.
+         * Note: Kotlin metadata is excluded because [ExtraInfo] is meant to contain information that supplements Kotlin metadata. (We have
+         * a separate logic for comparing protos constructed from Kotlin metadata. That logic considers only changes in protos/Kotlin
+         * metadata that are important for incremental compilation. If we don't exclude Kotlin metadata here, we might report a change in
+         * Kotlin metadata even when the change is not important for incremental compilation.)
          *
-         * Note: It also excludes Kotlin metadata as [ExtraInfo] should only contain info not yet captured in Kotlin metadata.
+         * TODO(KT-59292): Consider removing this info once class annotations are included in Kotlin metadata.
          */
         val classSnapshotExcludingMembers: Long?,
 
-        /** Snapshots of the class's constants (including their values). The map's keys are the constants' names. */
+        /**
+         * Snapshots of the class's non-private constants.
+         *
+         * Each entry maps a constant's name to the hash of its value.
+         */
         val constantSnapshots: Map<String, Long>,
 
-        /** Snapshots of the class's inline functions and property accessors (including their implementation). */
-        val inlineFunctionOrAccessorSnapshots: Map<InlineFunctionOrAccessor, Long>
+        /**
+         * Snapshots of the class's non-private inline functions and property accessors.
+         *
+         * Each entry maps an inline function or property accessor to the hash of its corresponding method in the bytecode (including the
+         * method's body).
+         */
+        val inlineFunctionOrAccessorSnapshots: Map<InlineFunctionOrAccessor, Long>,
     )
 
     val className: JvmClassName by lazy { JvmClassName.byClassId(classId) }
@@ -115,142 +118,8 @@ class KotlinClassInfo(
                 classHeader.data ?: classHeader.incompatibleData ?: emptyArray(),
                 classHeader.strings ?: emptyArray(),
                 classHeader.multifileClassName,
-                extraInfo = getExtraInfo(classHeader, classContents)
+                extraInfo = ExtraClassInfoGenerator.getExtraInfo(classHeader, classContents)
             )
         }
     }
-}
-
-private fun getExtraInfo(classHeader: KotlinClassHeader, classContents: ByteArray): ExtraInfo {
-    // Get the list of (non-private) inline functions and accessors from Kotlin class metadata, then find and snapshot them in the bytecode.
-    // Note:
-    //   - Some of them may not be found in the bytecode. Specifically, internal/private inline functions/accessors may be removed from the
-    // bytecode if code shrinker is used. For example, `kotlin-reflect-1.7.20.jar` contains `/kotlin/reflect/jvm/internal/UtilKt.class` in
-    // which the internal inline function `reflectionCall` appears in the Kotlin class metadata (also in the source file), but not in the
-    // bytecode. When that happens, we will ignore those methods. It is safe to ignore because the methods are not declared in the bytecode
-    // and therefore can't be referenced.
-    //   - Look for private methods as well because a *public* inline function/accessor may have a *private* corresponding method in the
-    // bytecode (see `InlineOnlyKt.isInlineOnlyPrivateInBytecode`).
-    val inlineFunctionsAndAccessors: List<InlineFunctionOrAccessor> = inlineFunctionsAndAccessors(classHeader, excludePrivateMembers = true)
-    val inlineFunctionOrAccessorSignatures: Map<JvmMemberSignature.Method, InlineFunctionOrAccessor> =
-        inlineFunctionsAndAccessors.associateBy { it.jvmMethodSignature }
-
-    val parsingOptions = if (inlineFunctionsAndAccessors.isNotEmpty()) {
-        // Do not pass (SKIP_CODE, SKIP_DEBUG) as method bodies and debug info (e.g., line numbers) are important for inline
-        // functions/accessors
-        0
-    } else {
-        // Pass (SKIP_CODE, SKIP_DEBUG) to improve performance as method bodies and debug info are not important when we're not analyzing
-        // inline functions/accessors
-        ClassReader.SKIP_CODE or ClassReader.SKIP_DEBUG
-    }
-
-    // Load class contents into a `ClassNode`.
-    // Note that we'll only load methods that are inline functions/accessors (including private methods -- see comment at the top of
-    // `getExtraInfo`) as we don't need to snapshot the other methods when computing `ExtraInfo`.
-    val classNode = ClassNode()
-    val classReader = ClassReader(classContents)
-    classReader.accept(SkipMethodClassVisitor(classNode) { it !in inlineFunctionOrAccessorSignatures.keys }, parsingOptions)
-    sortClassMembers(classNode)
-
-    // Snapshot the class excluding its fields and methods and metadata
-    val classSnapshotExcludingMembers = if (classHeader.kind == KotlinClassHeader.Kind.CLASS) {
-        // Also exclude Kotlin metadata (see `ExtraInfo.classSnapshotExcludingMembers`'s kdoc)
-        snapshotClassExcludingMembers(classNode, alsoExcludeKotlinMetaData = true)
-    } else null
-
-    // Snapshot constants
-    fun FieldNode.isPrivate() = (access and Opcodes.ACC_PRIVATE) != 0
-    fun FieldNode.isStaticFinal() = (access and (Opcodes.ACC_STATIC or Opcodes.ACC_FINAL)) == (Opcodes.ACC_STATIC or Opcodes.ACC_FINAL)
-
-    val constantSnapshots: Map<String, Long> = classNode.fields
-        .filter { !it.isPrivate() && it.isStaticFinal() }
-        .associate { it.name to snapshotField(it) }
-
-    // Snapshot inline functions and accessors
-    fun MethodNode.signature() = JvmMemberSignature.Method(name = name, desc = desc)
-
-    val inlineFunctionOrAccessorSnapshots: Map<InlineFunctionOrAccessor, Long> = classNode.methods
-        .associate { methodNode ->
-            // `methodNode` must be an inline function/accessor because we loaded only inline functions/accessors into `classNode`
-            inlineFunctionOrAccessorSignatures[methodNode.signature()]!! to snapshotMethod(methodNode, classNode.version)
-        }
-
-    return ExtraInfo(classSnapshotExcludingMembers, constantSnapshots, inlineFunctionOrAccessorSnapshots)
-}
-
-/** [ClassVisitor] which skips visiting methods where `[shouldSkipMethod] == true`. */
-private class SkipMethodClassVisitor(
-    cv: ClassVisitor,
-    private val shouldSkipMethod: (JvmMemberSignature.Method) -> Boolean,
-) : ClassVisitor(Opcodes.API_VERSION, cv) {
-
-    override fun visitMethod(access: Int, name: String, desc: String, signature: String?, exceptions: Array<out String>?): MethodVisitor? {
-        return if (shouldSkipMethod(JvmMemberSignature.Method(name, desc))) {
-            null
-        } else {
-            cv.visitMethod(access, name, desc, signature, exceptions)
-        }
-    }
-}
-
-/** Computes the snapshot of a Java class represented by a [ClassNode]. */
-object ClassNodeSnapshotter {
-
-    fun snapshotClass(classNode: ClassNode): Long {
-        val classWriter = ClassWriter(0)
-        classNode.accept(classWriter)
-        return classWriter.toByteArray().hashToLong()
-    }
-
-    fun snapshotClassExcludingMembers(classNode: ClassNode, alsoExcludeKotlinMetaData: Boolean = false): Long {
-        val originalFields = classNode.fields
-        val originalMethods = classNode.methods
-        val originalVisibleAnnotations = classNode.visibleAnnotations
-        classNode.fields = emptyList()
-        classNode.methods = emptyList()
-        if (alsoExcludeKotlinMetaData) {
-            classNode.visibleAnnotations = originalVisibleAnnotations?.filterNot { it.desc == "Lkotlin/Metadata;" }
-        }
-        return snapshotClass(classNode).also {
-            classNode.fields = originalFields
-            classNode.methods = originalMethods
-            classNode.visibleAnnotations = originalVisibleAnnotations
-        }
-    }
-
-    fun snapshotField(fieldNode: FieldNode): Long {
-        val classNode = emptyClass()
-        classNode.fields.add(fieldNode)
-        return snapshotClass(classNode)
-    }
-
-    fun snapshotMethod(methodNode: MethodNode, classVersion: Int): Long {
-        val classNode = emptyClass()
-        classNode.version = classVersion // Class version is required for method bodies (see KT-38857)
-        classNode.methods.add(methodNode)
-        return snapshotClass(classNode)
-    }
-
-    /**
-     * Sorts fields and methods in the given class.
-     *
-     * This is useful when we want to ensure a change in the order of the fields and methods doesn't impact the snapshot (i.e., if their
-     * order has changed in the `.class` file, it shouldn't require recompilation of the other source files).
-     */
-    fun sortClassMembers(classNode: ClassNode) {
-        classNode.fields.sortWith(compareBy({ it.name }, { it.desc }))
-        classNode.methods.sortWith(compareBy({ it.name }, { it.desc }))
-    }
-
-    private fun emptyClass() = ClassNode().also {
-        // A name is required
-        it.name = "EmptyClass"
-    }
-}
-
-fun ByteArray.hashToLong(): Long {
-    // Note: The returned type `Long` is 64-bit, but we currently don't have a good 64-bit hash function.
-    // The method below uses `md5` which is 128-bit and converts it to `Long`.
-    return md5()
 }

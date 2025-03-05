@@ -68,6 +68,7 @@ object RangeOps : TemplateGroupBase() {
     } builder {
         infix(true)
         doc { "Returns a progression that goes over the same range with the given step." }
+        sample("samples.ranges.Ranges.step$primitive")
         signature("step(step: ${primitive!!.stepType})", notForSorting = true)
         returns("TProgression")
         body {
@@ -90,12 +91,14 @@ object RangeOps : TemplateGroupBase() {
 
         doc {
             """
-            Returns a progression from this value down to the specified [to] value with the step -1.
+            Returns a progression from this value down to and including the specified [to] value with the step -1.
 
             The [to] value should be less than or equal to `this` value.
             If the [to] value is greater than `this` value the returned progression is empty.
             """
         }
+
+        sample("samples.ranges.Ranges.downTo")
 
 
         val fromExpr = if (elementType == fromType) "this" else "this.to$elementType()"

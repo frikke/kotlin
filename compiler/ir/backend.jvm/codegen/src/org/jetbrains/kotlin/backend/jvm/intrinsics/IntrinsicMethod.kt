@@ -17,16 +17,14 @@ abstract class IntrinsicMethod : IntrinsicMarker {
         expression: IrFunctionAccessExpression,
         signature: JvmMethodSignature,
         classCodegen: ClassCodegen
-    ): IrIntrinsicFunction = TODO("implement toCallable() or invoke() of $this")
+    ): IntrinsicFunction = TODO("implement toCallable() or invoke() of $this")
 
-    open fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo): PromisedValue? =
-        with(codegen) {
-            val descriptor = methodSignatureMapper.mapSignatureSkipGeneric(expression.symbol.owner)
-            val stackValue = toCallable(expression, descriptor, codegen.classCodegen).invoke(mv, codegen, data, expression)
-            stackValue.put(mv)
-            return MaterialValue(this, stackValue.type, expression.type)
-        }
-
+    open fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo): PromisedValue? {
+        val descriptor = codegen.methodSignatureMapper.mapSignatureSkipGeneric(expression.symbol.owner)
+        val callable = toCallable(expression, descriptor, codegen.classCodegen)
+        callable.invoke(codegen.mv, codegen, data, expression)
+        return MaterialValue(codegen, callable.signature.returnType, expression.type)
+    }
 
     companion object {
         fun JvmMethodSignature.newReturnType(type: Type): JvmMethodSignature {

@@ -11,8 +11,8 @@ import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.jetbrains.kotlin.config.AnalysisFlag
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.LanguageVersion
-import org.jetbrains.kotlin.fir.plugin.services.ExtensionRegistrarConfigurator
-import org.jetbrains.kotlin.fir.plugin.services.PluginAnnotationsProvider
+import org.jetbrains.kotlin.plugin.sandbox.ExtensionRegistrarConfigurator
+import org.jetbrains.kotlin.plugin.sandbox.PluginAnnotationsProvider
 import org.jetbrains.kotlin.test.Constructor
 import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
 import org.jetbrains.kotlin.test.directives.model.Directive
@@ -24,12 +24,12 @@ import org.jetbrains.kotlin.test.services.AbstractEnvironmentConfigurator
 
 private object CompilerPluginsDirectives : SimpleDirectivesContainer() {
     val WITH_FIR_TEST_COMPILER_PLUGIN by directive(
-        description = "Configure test compiler plugin from :plugins:fir-plugin-prototype module",
+        description = "Configure test compiler plugin from :plugins:plugin-sandbox module",
         applicability = DirectiveApplicability.Global
     )
 }
 
-internal fun TestConfigurationBuilder.configureOptionalTestCompilerPlugin() {
+fun TestConfigurationBuilder.configureOptionalTestCompilerPlugin() {
     useDirectives(CompilerPluginsDirectives)
 
     useConfigurators(

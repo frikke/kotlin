@@ -1,4 +1,5 @@
-// !LANGUAGE: -ValueClassesSecondaryConstructorWithBody
+// RUN_PIPELINE_TILL: FRONTEND
+// LANGUAGE: -ValueClassesSecondaryConstructorWithBody
 // WITH_STDLIB
 
 @JvmInline

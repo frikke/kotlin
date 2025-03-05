@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNUSED_PARAMETER
 // ISSUE: KT-30242
 
 class A
@@ -47,7 +48,7 @@ fun bar(block: () -> String) {}
 
 fun test_5(b: Boolean) {
     bar {
-        <!ARGUMENT_TYPE_MISMATCH!>if (b) {
+        <!RETURN_TYPE_MISMATCH!>if (b) {
             <!TYPE_MISMATCH!>println("meh")<!>
         }<!>
     }

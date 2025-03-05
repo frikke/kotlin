@@ -15,13 +15,12 @@ import org.jetbrains.kotlin.ir.interpreter.stack.Fields
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.util.capitalizeDecapitalize.capitalizeAsciiOnly
 import java.lang.invoke.MethodHandle
 import java.lang.invoke.MethodHandles
 import java.lang.invoke.MethodType
 import java.util.*
-import kotlin.collections.HashMap
-import kotlin.collections.LinkedHashMap
 
 internal class Wrapper(val value: Any, override val irClass: IrClass, environment: IrInterpreterEnvironment) : Complex {
     override val fields: Fields = mutableMapOf()
@@ -100,6 +99,13 @@ internal class Wrapper(val value: Any, override val irClass: IrClass, environmen
             "kotlin.text.RegexOption", "kotlin.text.Regex", "kotlin.text.Regex.Companion", "kotlin.text.MatchGroup",
         )
 
+        private val intrinsicJavaClasses = setOf(
+            "java.lang.StringBuilder", "java.util.ArrayList",
+            "java.util.LinkedHashMap", "java.util.LinkedHashSet",
+            "java.lang.Exception", "java.util.NoSuchElementException", "java.lang.NullPointerException",
+            "java.lang.IllegalArgumentException", "java.lang.ArithmeticException", "java.lang.UnsupportedOperationException",
+        )
+
         private val intrinsicFunctionToHandler = mapOf(
             "Array.kotlin.collections.asList()" to "kotlin.collections.ArraysKt",
             "kotlin.collections.mutableListOf(Array)" to "kotlin.collections.CollectionsKt",
@@ -111,10 +117,11 @@ internal class Wrapper(val value: Any, override val irClass: IrClass, environmen
 
         private val ranges = setOf("kotlin.ranges.CharRange", "kotlin.ranges.IntRange", "kotlin.ranges.LongRange")
 
-        private fun IrFunction.getSignature(): String {
-            val fqName = this.fqName
-            val receiver = (dispatchReceiverParameter ?: extensionReceiverParameter)?.type?.getOnlyName()?.let { "$it." } ?: ""
-            return this.valueParameters.joinToString(prefix = "$receiver$fqName(", postfix = ")") { it.type.getOnlyName() }
+        private fun IrFunction.getSignature(fqName: String = this.fqName): String {
+            val (receiverParameters, otherParameters) = parameters
+                .partition { it.kind == IrParameterKind.DispatchReceiver || it.kind == IrParameterKind.ExtensionReceiver }
+            val receiver = receiverParameters.firstOrNull()?.type?.getOnlyName()?.let { "$it." } ?: ""
+            return otherParameters.joinToString(prefix = "$receiver$fqName(", postfix = ")") { it.type.getOnlyName() }
         }
 
         private fun IrFunction.getJvmClassName(): String? {
@@ -122,11 +129,11 @@ internal class Wrapper(val value: Any, override val irClass: IrClass, environmen
         }
 
         fun mustBeHandledWithWrapper(declaration: IrDeclarationWithName): Boolean {
-            if (declaration is IrFunction) return declaration.getSignature() in intrinsicFunctionToHandler
             val fqName = declaration.fqName
             return when {
-                fqName in ranges && (declaration as IrClass).primaryConstructor!!.body == null -> true
-                else -> fqName in intrinsicClasses || fqName.startsWith("java")
+                declaration is IrFunction -> declaration.getSignature(fqName) in intrinsicFunctionToHandler
+                fqName in ranges && (declaration as IrClass).primaryConstructor?.body == null -> true
+                else -> fqName in intrinsicClasses || fqName in intrinsicJavaClasses
             }
         }
 
@@ -135,14 +142,14 @@ internal class Wrapper(val value: Any, override val irClass: IrClass, environmen
             val methodType = irFunction.getMethodType()
             val methodName = when (irFunction) {
                 is IrSimpleFunction -> {
-                    val property = irFunction.correspondingPropertySymbol?.owner
+                    val property = irFunction.property
                     when {
                         property?.getter == irFunction -> "get${property.name.asString().capitalizeAsciiOnly()}"
                         property?.setter == irFunction -> "set${property.name.asString().capitalizeAsciiOnly()}"
                         else -> irFunction.name.asString()
                     }
                 }
-                else -> irFunction.name.asString()
+                is IrConstructor -> irFunction.name.asString()
             }
             return MethodHandles.lookup().findVirtual(receiverClass, methodName, methodType)
         }
@@ -185,16 +192,15 @@ internal class Wrapper(val value: Any, override val irClass: IrClass, environmen
         }
 
         private fun IrFunction.getMethodType(): MethodType {
-            val argsClasses = this.valueParameters.map { it.type.getClass(this.isValueParameterPrimitiveAsObject(it.index)) }
-            return if (this is IrSimpleFunction) {
-                // for regular methods and functions
-                val returnClass = this.returnType.getClass(this.isReturnTypePrimitiveAsObject())
-                val extensionClass = this.extensionReceiverParameter?.type?.getClass(this.isExtensionReceiverPrimitive())
-
-                MethodType.methodType(returnClass, listOfNotNull(extensionClass) + argsClasses)
-            } else {
-                // for constructors
-                MethodType.methodType(Void::class.javaPrimitiveType, argsClasses)
+            val parameterClasses = this.nonDispatchParameters.map { it.type.getClass(this.isValueParameterPrimitiveAsObject(it.indexInParameters)) }
+            return when (this) {
+                is IrSimpleFunction -> {
+                    val returnClass = this.returnType.getClass(this.isReturnTypePrimitiveAsObject())
+                    MethodType.methodType(returnClass, parameterClasses)
+                }
+                is IrConstructor -> {
+                    MethodType.methodType(Void::class.javaPrimitiveType, parameterClasses)
+                }
             }
         }
 
@@ -274,10 +280,6 @@ internal class Wrapper(val value: Any, override val irClass: IrClass, environmen
             return overriddenSymbols
         }
 
-        private fun IrFunction.isExtensionReceiverPrimitive(): Boolean {
-            return this.extensionReceiverParameter?.type?.isPrimitiveType() == false
-        }
-
         private fun IrFunction.isReturnTypePrimitiveAsObject(): Boolean {
             for (symbol in getOriginalOverriddenSymbols()) {
                 if (!symbol.owner.returnType.isTypeParameter() && !symbol.owner.returnType.isNullable()) {
@@ -289,7 +291,7 @@ internal class Wrapper(val value: Any, override val irClass: IrClass, environmen
 
         private fun IrFunction.isValueParameterPrimitiveAsObject(index: Int): Boolean {
             for (symbol in getOriginalOverriddenSymbols()) {
-                if (!symbol.owner.valueParameters[index].type.isTypeParameter() && !symbol.owner.valueParameters[index].type.isNullable()) {
+                if (!symbol.owner.parameters[index].type.isTypeParameter() && !symbol.owner.parameters[index].type.isNullable()) {
                     return false
                 }
             }

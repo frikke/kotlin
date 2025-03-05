@@ -173,7 +173,7 @@ public class LoadDescriptorUtil {
 
             args.addAll(InTextDirectivesUtils.findListWithPrefixes(content, "JAVAC_OPTIONS:"));
 
-            if (InTextDirectivesUtils.isDirectiveDefined(content, "JVM_ANNOTATIONS")) {
+            if (InTextDirectivesUtils.isDirectiveDefined(content, "WITH_KOTLIN_JVM_ANNOTATIONS")) {
                 classpath.add(ForTestCompileRuntime.jvmAnnotationsForTests());
             }
         }
@@ -183,12 +183,7 @@ public class LoadDescriptorUtil {
 
         args.addAll(additionalArgs);
 
-        if (customJdkHomeForJavac != null) {
-            KotlinTestUtils.compileJavaFilesExternally(javaFiles, args, customJdkHomeForJavac);
-        }
-        else {
-            KotlinTestUtils.compileJavaFiles(javaFiles, args);
-        }
+        JvmCompilationUtils.compileJavaFiles(javaFiles, args, customJdkHomeForJavac).assertSuccessful();
     }
 
     @NotNull

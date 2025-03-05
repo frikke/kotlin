@@ -15,12 +15,11 @@ import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.util.defaultType
 import org.jetbrains.kotlin.ir.util.parentAsClass
 import org.jetbrains.kotlin.name.Name
 
 object JsIrBuilder {
-    object SYNTHESIZED_DECLARATION : IrDeclarationOriginImpl("SYNTHESIZED_DECLARATION")
+    val SYNTHESIZED_DECLARATION by IrDeclarationOriginImpl
 
     fun buildCall(
         target: IrSimpleFunctionSymbol,
@@ -28,21 +27,24 @@ object JsIrBuilder {
         typeArguments: List<IrType>? = null,
         origin: IrStatementOrigin = JsStatementOrigins.SYNTHESIZED_STATEMENT,
         superQualifierSymbol: IrClassSymbol? = null,
+        startOffset: Int = UNDEFINED_OFFSET,
+        endOffset: Int = UNDEFINED_OFFSET
     ): IrCall {
         val owner = target.owner
         return IrCallImpl(
-            UNDEFINED_OFFSET,
-            UNDEFINED_OFFSET,
+            startOffset,
+            endOffset,
             type ?: owner.returnType,
             target,
             superQualifierSymbol = superQualifierSymbol,
             typeArgumentsCount = owner.typeParameters.size,
-            valueArgumentsCount = owner.valueParameters.size,
             origin = origin
         ).apply {
             typeArguments?.let {
-                assert(typeArguments.size == typeArgumentsCount)
-                it.withIndex().forEach { (i, t) -> putTypeArgument(i, t) }
+                assert(typeArguments.size == this.typeArguments.size)
+                it.withIndex().forEach { (i, t) ->
+                    this.typeArguments[i] = t
+                }
             }
         }
     }
@@ -57,21 +59,27 @@ object JsIrBuilder {
         )
     }
 
-    fun buildDelegatingConstructorCall(target: IrConstructorSymbol, typeArguments: List<IrType?>? = null): IrDelegatingConstructorCall {
+    fun buildDelegatingConstructorCall(
+        target: IrConstructorSymbol,
+        typeArguments: List<IrType?>? = null,
+        startOffset: Int = UNDEFINED_OFFSET,
+        endOffset: Int = UNDEFINED_OFFSET,
+    ): IrDelegatingConstructorCall {
         val owner = target.owner
         val irClass = owner.parentAsClass
 
         return IrDelegatingConstructorCallImpl(
-            UNDEFINED_OFFSET,
-            UNDEFINED_OFFSET,
+            startOffset,
+            endOffset,
             owner.returnType,
             target,
             typeArgumentsCount = irClass.typeParameters.size,
-            valueArgumentsCount = owner.valueParameters.size,
         ).apply {
             typeArguments?.let {
-                assert(it.size == typeArgumentsCount)
-                it.withIndex().forEach { (i, t) -> putTypeArgument(i, t) }
+                assert(it.size == this.typeArguments.size)
+                it.withIndex().forEach { (i, t) ->
+                    this.typeArguments[i] = t
+                }
             }
         }
     }
@@ -80,29 +88,34 @@ object JsIrBuilder {
         target: IrConstructorSymbol,
         typeArguments: List<IrType?>? = null,
         constructorTypeArguments: List<IrType?>? = null,
-        origin: IrStatementOrigin = JsStatementOrigins.SYNTHESIZED_STATEMENT
+        origin: IrStatementOrigin = JsStatementOrigins.SYNTHESIZED_STATEMENT,
+        startOffset: Int = UNDEFINED_OFFSET,
+        endOffset: Int = UNDEFINED_OFFSET,
     ): IrConstructorCall {
         val owner = target.owner
         val irClass = owner.parentAsClass
 
         return IrConstructorCallImpl(
-            UNDEFINED_OFFSET,
-            UNDEFINED_OFFSET,
+            startOffset,
+            endOffset,
             owner.returnType,
             target,
             typeArgumentsCount = irClass.typeParameters.size,
             constructorTypeArgumentsCount = owner.typeParameters.size,
-            valueArgumentsCount = owner.valueParameters.size,
             origin = origin
         ).apply {
             typeArguments?.let {
-                assert(it.size == typeArgumentsCount)
-                it.withIndex().forEach { (i, t) -> putTypeArgument(i, t) }
+                assert(it.size == this.typeArguments.size)
+                it.withIndex().forEach { (i, t) ->
+                    this.typeArguments[i] = t
+                }
             }
 
             constructorTypeArguments?.let {
-                assert(it.size == typeArgumentsCount)
-                it.withIndex().forEach { (i, t) -> putTypeArgument(i, t) }
+                assert(it.size == this.typeArguments.size)
+                it.withIndex().forEach { (i, t) ->
+                    this.typeArguments[i] = t
+                }
             }
         }
     }
@@ -118,7 +131,6 @@ object JsIrBuilder {
     fun buildValueParameter(
         parent: IrFunction,
         name: String,
-        index: Int,
         type: IrType,
         isAssignable: Boolean = false,
         origin: IrDeclarationOrigin = SYNTHESIZED_DECLARATION
@@ -126,7 +138,6 @@ object JsIrBuilder {
         buildValueParameter(parent) {
             this.origin = origin
             this.name = Name.identifier(name)
-            this.index = index
             this.type = type
             this.isAssignable = isAssignable
         }
@@ -189,12 +200,13 @@ object JsIrBuilder {
         isVar: Boolean = false,
         isConst: Boolean = false,
         isLateinit: Boolean = false,
-        initializer: IrExpression? = null
+        initializer: IrExpression? = null,
+        origin: IrDeclarationOrigin = SYNTHESIZED_DECLARATION
     ): IrVariable = buildVariable(
         parent,
         UNDEFINED_OFFSET,
         UNDEFINED_OFFSET,
-        SYNTHESIZED_DECLARATION,
+        origin,
         Name.identifier(name),
         type,
         isVar,
@@ -244,7 +256,7 @@ object JsIrBuilder {
         elseBranchStartOffset: Int = UNDEFINED_OFFSET,
         elseBranchEndOffset: Int = elseBranch?.endOffset ?: UNDEFINED_OFFSET,
     ): IrWhen {
-        val element = IrIfThenElseImpl(startOffset, endOffset, type, origin)
+        val element = IrWhenImpl(startOffset, endOffset, type, origin)
         element.branches.add(IrBranchImpl(thenBranchStartOffset, thenBranchEndOffset, cond, thenBranch))
         if (elseBranch != null) {
             val irTrue = IrConstImpl.constTrue(UNDEFINED_OFFSET, UNDEFINED_OFFSET, cond.type)

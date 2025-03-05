@@ -1,0 +1,2 @@
+(Full dump is not available: null)
+CLASS IR_EXTERNAL_JAVA_DECLARATION_STUB CLASS name:MyMap modality:OPEN visibility:public superTypes:[<root>.NotMap<@[FlexibleNullability] V of <root>.MyMap?>; <root>.MyMapInterface<@[FlexibleNullability] V of <root>.MyMap?>]

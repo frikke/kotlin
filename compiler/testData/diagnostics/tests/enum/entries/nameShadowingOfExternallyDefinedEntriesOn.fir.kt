@@ -1,5 +1,7 @@
-// !LANGUAGE: +EnumEntries
+// RUN_PIPELINE_TILL: BACKEND
+// LANGUAGE: +EnumEntries -PrioritizedEnumEntries
 // WITH_STDLIB
+// FIR_DUMP
 
 package pckg
 
@@ -9,7 +11,7 @@ enum class E {
     ;
 
     fun foo() {
-        entries.<!UNRESOLVED_REFERENCE!>length<!>
+        <!DEPRECATED_ACCESS_TO_ENTRY_PROPERTY_FROM_ENUM!>entries<!>.length
         pckg.entries.length
     }
 }
@@ -20,7 +22,7 @@ class A {
 
         class B {
             fun foo() {
-                entries.<!UNRESOLVED_REFERENCE!>length<!>
+                <!DEPRECATED_ACCESS_TO_ENTRY_PROPERTY_FROM_ENUM!>entries<!>.length
                 pckg.entries.length
             }
         }

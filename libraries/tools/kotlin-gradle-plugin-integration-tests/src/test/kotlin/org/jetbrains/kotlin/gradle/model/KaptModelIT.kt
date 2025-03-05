@@ -7,6 +7,7 @@ package org.jetbrains.kotlin.gradle.model
 
 import org.gradle.util.GradleVersion
 import org.jetbrains.kotlin.gradle.testbase.*
+import org.jetbrains.kotlin.test.TestMetadata
 import org.junit.jupiter.api.DisplayName
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -61,8 +62,9 @@ class KaptModelIT : KGPBaseTest() {
 
     @DisplayName("Model is not available when plugin is not applied")
     @GradleTest
+    @TestMetadata("kotlin-js-plugin-project")
     fun testNonJvmProjects(gradleVersion: GradleVersion) {
-        project("kotlin2JsProject", gradleVersion) {
+        project("kotlin-js-plugin-project", gradleVersion) {
             getModels<Kapt> {
                 assertNull(getModel(":"))
                 assertNull(getModel(":libraryProject"))

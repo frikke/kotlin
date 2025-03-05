@@ -16,11 +16,92 @@
 
 package org.jetbrains.kotlin.fir.backend
 
-import org.jetbrains.kotlin.config.LanguageVersionSettings
+import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import org.jetbrains.kotlin.config.*
 import org.jetbrains.kotlin.constant.EvaluatedConstTracker
+import org.jetbrains.kotlin.diagnostics.impl.BaseDiagnosticsCollector
+import org.jetbrains.kotlin.incremental.components.ExpectActualTracker
+import org.jetbrains.kotlin.incremental.components.InlineConstTracker
 
-data class Fir2IrConfiguration(
+/**
+ * @param allowNonCachedDeclarations
+ *  Normally, FIR2IR caches all declarations it meets in a compiled module.
+ *  It means asking for an IR element of a non-cached declaration is a sign of inconsistent state.
+ *  Code generation in the IDE is trickier, though, as declarations from any module can be potentially referenced.
+ *  For such a scenario, there is a flag that relaxes consistency checks.
+ */
+class Fir2IrConfiguration private constructor(
     val languageVersionSettings: LanguageVersionSettings,
-    val linkViaSignatures: Boolean,
+    val diagnosticReporter: BaseDiagnosticsCollector,
+    val messageCollector: MessageCollector,
     val evaluatedConstTracker: EvaluatedConstTracker,
-)
+    val inlineConstTracker: InlineConstTracker?,
+    val expectActualTracker: ExpectActualTracker?,
+    val allowNonCachedDeclarations: Boolean,
+    val skipBodies: Boolean,
+    val validateIrAfterPlugins: Boolean,
+    val carefulApproximationOfContravariantProjectionForSam: Boolean,
+) {
+    companion object {
+        fun forJvmCompilation(
+            compilerConfiguration: CompilerConfiguration,
+            diagnosticReporter: BaseDiagnosticsCollector,
+        ): Fir2IrConfiguration =
+            Fir2IrConfiguration(
+                languageVersionSettings = compilerConfiguration.languageVersionSettings,
+                diagnosticReporter = diagnosticReporter,
+                messageCollector = compilerConfiguration.messageCollector,
+                evaluatedConstTracker = compilerConfiguration.putIfAbsent(
+                    CommonConfigurationKeys.EVALUATED_CONST_TRACKER,
+                    EvaluatedConstTracker.create(),
+                ),
+                inlineConstTracker = compilerConfiguration[CommonConfigurationKeys.INLINE_CONST_TRACKER],
+                expectActualTracker = compilerConfiguration[CommonConfigurationKeys.EXPECT_ACTUAL_TRACKER],
+                allowNonCachedDeclarations = false,
+                skipBodies = compilerConfiguration.getBoolean(JVMConfigurationKeys.SKIP_BODIES),
+                validateIrAfterPlugins = false,
+                carefulApproximationOfContravariantProjectionForSam = compilerConfiguration.get(JVMConfigurationKeys.SAM_CONVERSIONS) != JvmClosureGenerationScheme.CLASS
+            )
+
+        fun forKlibCompilation(
+            compilerConfiguration: CompilerConfiguration,
+            diagnosticReporter: BaseDiagnosticsCollector,
+        ): Fir2IrConfiguration =
+            Fir2IrConfiguration(
+                languageVersionSettings = compilerConfiguration.languageVersionSettings,
+                diagnosticReporter = diagnosticReporter,
+                messageCollector = compilerConfiguration.messageCollector,
+                evaluatedConstTracker = compilerConfiguration.putIfAbsent(
+                    CommonConfigurationKeys.EVALUATED_CONST_TRACKER,
+                    EvaluatedConstTracker.create(),
+                ),
+                inlineConstTracker = null,
+                expectActualTracker = compilerConfiguration[CommonConfigurationKeys.EXPECT_ACTUAL_TRACKER],
+                allowNonCachedDeclarations = false,
+                skipBodies = false,
+                validateIrAfterPlugins = true,
+                carefulApproximationOfContravariantProjectionForSam = false,
+            )
+
+        fun forAnalysisApi(
+            compilerConfiguration: CompilerConfiguration,
+            languageVersionSettings: LanguageVersionSettings,
+            diagnosticReporter: BaseDiagnosticsCollector,
+        ): Fir2IrConfiguration =
+            Fir2IrConfiguration(
+                languageVersionSettings = languageVersionSettings,
+                diagnosticReporter = diagnosticReporter,
+                messageCollector = compilerConfiguration.messageCollector,
+                evaluatedConstTracker = compilerConfiguration.putIfAbsent(
+                    CommonConfigurationKeys.EVALUATED_CONST_TRACKER,
+                    EvaluatedConstTracker.create(),
+                ),
+                inlineConstTracker = compilerConfiguration[CommonConfigurationKeys.INLINE_CONST_TRACKER],
+                expectActualTracker = compilerConfiguration[CommonConfigurationKeys.EXPECT_ACTUAL_TRACKER],
+                allowNonCachedDeclarations = true,
+                skipBodies = false,
+                validateIrAfterPlugins = false,
+                carefulApproximationOfContravariantProjectionForSam = compilerConfiguration.get(JVMConfigurationKeys.SAM_CONVERSIONS) != JvmClosureGenerationScheme.CLASS,
+            )
+    }
+}

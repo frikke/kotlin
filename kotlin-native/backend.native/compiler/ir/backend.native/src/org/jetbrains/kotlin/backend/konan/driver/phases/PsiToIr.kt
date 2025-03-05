@@ -1,15 +1,16 @@
 /*
- * Copyright 2010-2022 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.backend.konan.driver.phases
 
+import org.jetbrains.kotlin.backend.common.phaser.KotlinBackendIrHolder
+import org.jetbrains.kotlin.backend.common.phaser.createSimpleNamedCompilerPhase
 import org.jetbrains.kotlin.backend.konan.KonanConfig
 import org.jetbrains.kotlin.backend.konan.KonanReflectionTypes
 import org.jetbrains.kotlin.backend.konan.driver.BasicPhaseContext
 import org.jetbrains.kotlin.backend.konan.driver.PhaseContext
-import org.jetbrains.kotlin.backend.konan.driver.utilities.KotlinBackendIrHolder
 import org.jetbrains.kotlin.backend.konan.driver.utilities.getDefaultIrActions
 import org.jetbrains.kotlin.backend.konan.ir.KonanSymbols
 import org.jetbrains.kotlin.backend.konan.psiToIr
@@ -18,12 +19,12 @@ import org.jetbrains.kotlin.backend.konan.serialization.KonanIrLinker
 import org.jetbrains.kotlin.backend.konan.serialization.KonanManglerDesc
 import org.jetbrains.kotlin.builtins.konan.KonanBuiltIns
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
-import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.impl.IrFactoryImpl
-import org.jetbrains.kotlin.ir.symbols.IrSymbol
+import org.jetbrains.kotlin.ir.util.ReferenceSymbolTable
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.CleanableBindingContext
@@ -37,6 +38,7 @@ data class PsiToIrInput(
 
 internal sealed class PsiToIrOutput(
         val irModule: IrModuleFragment,
+        val irBuiltIns: IrBuiltIns,
         val symbols: KonanSymbols,
 ) : KotlinBackendIrHolder {
 
@@ -46,15 +48,17 @@ internal sealed class PsiToIrOutput(
     class ForBackend(
             val irModules: Map<String, IrModuleFragment>,
             irModule: IrModuleFragment,
+            irBuiltIns: IrBuiltIns,
             symbols: KonanSymbols,
+            val symbolTable: ReferenceSymbolTable,
             val irLinker: KonanIrLinker,
-    ) : PsiToIrOutput(irModule, symbols)
+    ) : PsiToIrOutput(irModule, irBuiltIns, symbols)
 
     class ForKlib(
             irModule: IrModuleFragment,
+            irBuiltIns: IrBuiltIns,
             symbols: KonanSymbols,
-            val expectDescriptorToSymbol: MutableMap<DeclarationDescriptor, IrSymbol>,
-    ): PsiToIrOutput(irModule, symbols)
+    ) : PsiToIrOutput(irModule, irBuiltIns, symbols)
 }
 
 // TODO: Consider component-based approach
@@ -95,7 +99,7 @@ internal class PsiToIrContextImpl(
 }
 
 internal val PsiToIrPhase = createSimpleNamedCompilerPhase<PsiToIrContext, PsiToIrInput, PsiToIrOutput>(
-        "PsiToIr", "Translate PSI to IR",
+        "PsiToIr",
         postactions = getDefaultIrActions(),
         outputIfNotEnabled = { _, _, _, _ -> error("PsiToIr phase cannot be disabled") }
 ) { context, input ->

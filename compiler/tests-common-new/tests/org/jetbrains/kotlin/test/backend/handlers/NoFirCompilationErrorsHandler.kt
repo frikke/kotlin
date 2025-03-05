@@ -14,39 +14,62 @@ import org.jetbrains.kotlin.test.directives.CodegenTestDirectives.IGNORE_FIR_DIA
 import org.jetbrains.kotlin.test.directives.model.DirectivesContainer
 import org.jetbrains.kotlin.test.frontend.fir.FirOutputArtifact
 import org.jetbrains.kotlin.test.frontend.fir.handlers.FirAnalysisHandler
+import org.jetbrains.kotlin.test.frontend.fir.handlers.FirDiagnosticCollectorService
+import org.jetbrains.kotlin.test.frontend.fir.handlers.KmpCompilationMode
+import org.jetbrains.kotlin.test.frontend.fir.handlers.firDiagnosticCollectorService
 import org.jetbrains.kotlin.test.model.TestModule
+import org.jetbrains.kotlin.test.services.ServiceRegistrationData
 import org.jetbrains.kotlin.test.services.TestServices
+import org.jetbrains.kotlin.test.services.moduleStructure
+import org.jetbrains.kotlin.test.services.service
 
-class NoFirCompilationErrorsHandler(testServices: TestServices) : FirAnalysisHandler(testServices, failureDisablesNextSteps = true) {
+class NoFirCompilationErrorsHandler(
+    testServices: TestServices,
+    failureDisablesNextSteps: Boolean = true,
+) : FirAnalysisHandler(testServices, failureDisablesNextSteps) {
     override val directiveContainers: List<DirectivesContainer>
         get() = listOf(CodegenTestDirectives)
 
+    override val additionalServices: List<ServiceRegistrationData>
+        get() = listOf(service(::FirDiagnosticCollectorService))
+
+    private val seenModules = mutableSetOf<TestModule>()
+
     override fun processModule(module: TestModule, info: FirOutputArtifact) {
         for (part in info.partsForDependsOnModules) {
-            var hasError = false
+            seenModules.add(part.module)
 
             val ignoreErrors = IGNORE_FIR_DIAGNOSTICS in part.module.directives
-            for ((firFile, diagnostics) in part.firAnalyzerFacade.runCheckers()) {
-                for (diagnostic in diagnostics) {
+
+            val diagnosticsPerFile = testServices.firDiagnosticCollectorService.getFrontendDiagnosticsForModule(info)
+            for ((firFile, diagnostics) in diagnosticsPerFile) {
+                for ((diagnostic, mode) in diagnostics) {
+                    if (mode == KmpCompilationMode.METADATA) continue
                     if (diagnostic.severity == Severity.ERROR) {
-                        hasError = true
                         if (!ignoreErrors) {
                             val diagnosticText = RootDiagnosticRendererFactory(diagnostic).render(diagnostic)
                             val range = diagnostic.textRanges.first()
                             val locationText = firFile.source?.psi?.containingFile?.let { psiFile ->
                                 PsiDiagnosticUtils.atLocation(psiFile, range)
                             } ?: "${firFile.name}:$range"
-                            throw IllegalStateException("${diagnostic.factory.name}: $diagnosticText at $locationText")
+                            error("${diagnostic.factory.name}: $diagnosticText at $locationText")
                         }
                     }
                 }
             }
-
-            if (!hasError && ignoreErrors) {
-                assertions.fail { "Test contains $IGNORE_FIR_DIAGNOSTICS directive but no errors was reported. Please remove directive" }
-            }
         }
     }
 
-    override fun processAfterAllModules(someAssertionWasFailed: Boolean) {}
+    override fun processAfterAllModules(someAssertionWasFailed: Boolean) {
+        // The `IGNORE_FIR_DIAGNOSTICS` directive is global and could have been used for
+        // a module that we haven't yet analyzed.
+        // See: `compiler/testData/diagnostics/tests/multiplatform/topLevelFun/inlineFun.kt`
+
+        val ignoreErrors = IGNORE_FIR_DIAGNOSTICS in testServices.moduleStructure.allDirectives
+        val hasError = testServices.firDiagnosticCollectorService.containsErrorDiagnostics
+
+        if (!hasError && ignoreErrors) {
+            assertions.fail { "Test contains $IGNORE_FIR_DIAGNOSTICS directive but no errors was reported. Please remove directive" }
+        }
+    }
 }

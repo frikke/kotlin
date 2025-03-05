@@ -5,27 +5,17 @@
 
 package org.jetbrains.kotlin.test.services.impl
 
-import org.jetbrains.kotlin.config.LanguageFeature
-import org.jetbrains.kotlin.platform.CommonPlatforms
-import org.jetbrains.kotlin.platform.TargetPlatform
-import org.jetbrains.kotlin.platform.js.JsPlatforms
-import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
-import org.jetbrains.kotlin.platform.jvm.isJvm
-import org.jetbrains.kotlin.platform.konan.NativePlatforms
 import org.jetbrains.kotlin.test.Assertions
-import org.jetbrains.kotlin.test.TargetBackend
 import org.jetbrains.kotlin.test.TestInfrastructureInternals
 import org.jetbrains.kotlin.test.builders.LanguageVersionSettingsBuilder
 import org.jetbrains.kotlin.test.directives.AdditionalFilesDirectives
 import org.jetbrains.kotlin.test.directives.ModuleStructureDirectives
-import org.jetbrains.kotlin.test.directives.TargetPlatformEnum
 import org.jetbrains.kotlin.test.directives.model.ComposedRegisteredDirectives
 import org.jetbrains.kotlin.test.directives.model.Directive
 import org.jetbrains.kotlin.test.directives.model.DirectivesContainer
 import org.jetbrains.kotlin.test.directives.model.RegisteredDirectives
 import org.jetbrains.kotlin.test.model.*
 import org.jetbrains.kotlin.test.services.*
-import org.jetbrains.kotlin.test.services.impl.TestModuleStructureImpl.Companion.toArtifactKind
 import org.jetbrains.kotlin.test.util.joinToArrayString
 import org.jetbrains.kotlin.utils.DFS
 import java.io.File
@@ -46,7 +36,7 @@ class ModuleStructureExtractorImpl(
     private val environmentConfigurators: List<AbstractEnvironmentConfigurator>
 ) : ModuleStructureExtractor(testServices, additionalSourceProviders, moduleStructureTransformers) {
     companion object {
-        private val allowedExtensionsForFiles = listOf(".kt", ".kts", ".java", ".js", ".mjs", ".config")
+        private val allowedExtensionsForFiles = listOf(".kt", ".kts", ".java", ".js", ".mjs", ".config", ".xml")
 
         /*
          * ([^()\n]+) module name
@@ -65,7 +55,7 @@ class ModuleStructureExtractorImpl(
         var result = extractor.splitTestDataByModules()
         for (transformer in moduleStructureTransformers) {
             result = try {
-                transformer.transformModuleStructure(result)
+                transformer.transformModuleStructure(result, testServices.defaultsProvider)
             } catch (e: Throwable) {
                 throw ExceptionFromModuleStructureTransformer(e, result)
             }
@@ -73,7 +63,7 @@ class ModuleStructureExtractorImpl(
         return result
     }
 
-    private inner class ModuleStructureExtractorWorker constructor(
+    private inner class ModuleStructureExtractorWorker(
         private val testDataFiles: List<File>,
         private val directivesContainer: DirectivesContainer,
     ) {
@@ -89,19 +79,16 @@ class ModuleStructureExtractorImpl(
             get() = currentTestDataFile.name
 
         private var currentModuleName: String? = null
-        private var currentModuleTargetPlatform: TargetPlatform? = null
-        private var currentModuleFrontendKind: FrontendKind<*>? = null
-        private var currentModuleTargetBackend: TargetBackend? = null
         private var currentModuleLanguageVersionSettingsBuilder: LanguageVersionSettingsBuilder = initLanguageSettingsBuilder()
         private var dependenciesOfCurrentModule = mutableListOf<DependencyDescription>()
         private var filesOfCurrentModule = mutableListOf<TestFile>()
+        private val mutableFilesListPerModule = mutableMapOf<TestModule, MutableList<TestFile>>()
 
         private var currentFileName: String? = null
+        private var currentSnippetNumber: Int = 1
         private var firstFileInModule: Boolean = true
         private var linesOfCurrentFile = mutableListOf<String>()
         private var endLineNumberOfLastFile = -1
-
-        private var allowFilesWithSameNames = false
 
         private var directivesBuilder = RegisteredDirectivesParser(directivesContainer, assertions)
         private var moduleDirectivesBuilder: RegisteredDirectivesParser = directivesBuilder
@@ -130,7 +117,9 @@ class ModuleStructureExtractorImpl(
             finishModule(lineNumber = -1)
             val sortedModules = sortModules(modules)
             checkCycles(modules)
-            return TestModuleStructureImpl(sortedModules, testDataFiles)
+            return TestModuleStructureImpl(sortedModules, testDataFiles).also {
+                generateAdditionalFiles(it)
+            }
         }
 
         private fun sortModules(modules: List<TestModule>): List<TestModule> {
@@ -139,7 +128,7 @@ class ModuleStructureExtractorImpl(
             }
             return DFS.topologicalOrder(modules) { module ->
                 module.allDependencies.map {
-                    val moduleName = it.moduleName
+                    val moduleName = it.dependencyModule.name
                     moduleByName[moduleName] ?: error("Module \"$moduleName\" not found while observing dependencies of \"${module.name}\"")
                 }
             }.asReversed()
@@ -151,7 +140,7 @@ class ModuleStructureExtractorImpl(
                 val moduleName = module.name
                 visited.add(moduleName)
                 for (dependency in module.allDependencies) {
-                    val dependencyName = dependency.moduleName
+                    val dependencyName = dependency.dependencyModule.name
                     if (dependencyName == moduleName) {
                         error("Module $moduleName has dependency to itself")
                     }
@@ -176,6 +165,9 @@ class ModuleStructureExtractorImpl(
                     if (currentModuleName != null) {
                         finishModule(lineNumber)
                     } else {
+                        if (currentFileName != null) {
+                            error("Defining `// FILE` before `// MODULE` is prohibited: it's unclear if the directives before the first `// FILE` are global- or module-specific")
+                        }
                         finishGlobalDirectives()
                     }
                     val (moduleName, dependencies, friends, dependsOn) = splitRawModuleStringToNameAndDependencies(
@@ -183,37 +175,34 @@ class ModuleStructureExtractorImpl(
                     )
                     currentModuleName = moduleName
                     val kind = defaultsProvider.defaultDependencyKind
-                    dependencies.mapTo(dependenciesOfCurrentModule) { name ->
-                        DependencyDescription(name, kind, DependencyRelation.RegularDependency)
+
+                    fun String.toDependencyDescription(relation: DependencyRelation): DependencyDescription {
+                        val dependantModule = modules.find { it.name == this } ?: error("Module $this not found")
+                        val specificKind = when (relation) {
+                            DependencyRelation.DependsOnDependency -> DependencyKind.Source
+                            else -> kind
+                        }
+                        return DependencyDescription(dependantModule, specificKind, relation)
                     }
-                    friends.mapTo(dependenciesOfCurrentModule) { name ->
-                        DependencyDescription(name, kind, DependencyRelation.FriendDependency)
-                    }
-                    dependsOn.mapTo(dependenciesOfCurrentModule) { name ->
-                        DependencyDescription(name, DependencyKind.Source, DependencyRelation.DependsOnDependency)
-                    }
+
+                    dependencies.mapTo(dependenciesOfCurrentModule) { it.toDependencyDescription(DependencyRelation.RegularDependency) }
+                    friends.mapTo(dependenciesOfCurrentModule) { it.toDependencyDescription(DependencyRelation.FriendDependency) }
+                    dependsOn.mapTo(dependenciesOfCurrentModule) { it.toDependencyDescription(DependencyRelation.DependsOnDependency) }
                 }
-                ModuleStructureDirectives.DEPENDENCY,
-                ModuleStructureDirectives.DEPENDS_ON -> {
-                    val name = values.first() as String
-                    val kind = values.getOrNull(1)?.let { valueOfOrNull(it as String) } ?: defaultsProvider.defaultDependencyKind
-                    val relation = when (directive) {
-                        ModuleStructureDirectives.DEPENDENCY -> DependencyRelation.RegularDependency
-                        ModuleStructureDirectives.DEPENDS_ON -> DependencyRelation.DependsOnDependency
-                        else -> error("Should not be here")
+                ModuleStructureDirectives.SNIPPET -> {
+                    fun snippetName() = "snippet_${"%03d".format(currentSnippetNumber)}"
+                    if (linesOfCurrentFile.all { it.isBlank() }) {
+                        finishGlobalDirectives()
+                    } else {
+                        finishModule(lineNumber)
+
+                        dependenciesOfCurrentModule.add(
+                            DependencyDescription(modules.last(), DependencyKind.Source, DependencyRelation.FriendDependency)
+                        )
+                        currentSnippetNumber++
                     }
-                    dependenciesOfCurrentModule.add(DependencyDescription(name, kind, relation))
-                }
-                ModuleStructureDirectives.TARGET_FRONTEND -> {
-                    val name = values.singleOrNull() as? String? ?: assertions.fail {
-                        "Target frontend specified incorrectly\nUsage: ${directive.description}"
-                    }
-                    currentModuleFrontendKind = FrontendKinds.fromString(name) ?: assertions.fail {
-                        "Unknown frontend: $name"
-                    }
-                }
-                ModuleStructureDirectives.TARGET_BACKEND_KIND -> {
-                    currentModuleTargetBackend = values.single() as TargetBackend
+                    currentModuleName = snippetName()
+                    currentFileName = "$currentModuleName.kts"
                 }
                 ModuleStructureDirectives.FILE -> {
                     if (currentFileName != null) {
@@ -222,43 +211,6 @@ class ModuleStructureExtractorImpl(
                         resetFileCaches()
                     }
                     currentFileName = (values.first() as String).also(::validateFileName)
-                }
-                ModuleStructureDirectives.ALLOW_FILES_WITH_SAME_NAMES -> {
-                    allowFilesWithSameNames = true
-                }
-                ModuleStructureDirectives.TARGET_PLATFORM -> {
-                    if (currentModuleTargetPlatform != null) {
-                        assertions.fail { "Target platform already specified twice for module $currentModuleName" }
-                    }
-                    val platforms = values.map { (it as TargetPlatformEnum).targetPlatform }
-                    currentModuleTargetPlatform = when (platforms.size) {
-                        0 -> assertions.fail { "Target platform specified incorrectly\nUsage: ${directive.description}" }
-                        1 -> platforms.single()
-                        else -> {
-                            if (TargetPlatformEnum.Common in values) {
-                                assertions.fail { "You can't specify `Common` platform in combination with others" }
-                            }
-                            TargetPlatform(platforms.flatMapTo(mutableSetOf()) { it.componentPlatforms })
-                        }
-                    }
-                }
-                ModuleStructureDirectives.JVM_TARGET -> {
-                    if (!defaultsProvider.defaultPlatform.isJvm()) return false
-                    if (currentModuleTargetPlatform != null) {
-                        assertions.fail { "Target platform already specified twice for module $currentModuleName" }
-                    }
-                    currentModuleTargetPlatform = if (values.size != 1) {
-                        assertions.fail { "JVM target should be single" }
-                    } else {
-                        when (values.single()) {
-                            "1.6" -> JvmPlatforms.jvm6
-                            "1.8" -> JvmPlatforms.jvm8
-                            "11" -> JvmPlatforms.jvm11
-                            "17" -> JvmPlatforms.jvm17
-                            else -> assertions.fail { "Incorrect value for JVM target" }
-                        }
-                    }
-                    return false // Workaround for FE and FIR
                 }
                 else -> return false
             }
@@ -330,11 +282,11 @@ class ModuleStructureExtractorImpl(
         private fun finishModule(lineNumber: Int) {
             finishFile(lineNumber)
             val isImplicitModule = currentModuleName == null
-            val moduleDirectives = moduleDirectivesBuilder.build() + testServices.defaultDirectives + globalDirectives
+            val moduleDirectives = testServices.defaultDirectives + globalDirectives + moduleDirectivesBuilder.build()
             moduleDirectives.forEach { it.checkDirectiveApplicability(contextIsGlobal = isImplicitModule, contextIsModule = true) }
 
-            val targetBackend = currentModuleTargetBackend ?: defaultsProvider.defaultTargetBackend
-            val frontendKind = currentModuleFrontendKind ?: defaultsProvider.defaultFrontend
+            val targetBackend = defaultsProvider.targetBackend
+            val frontendKind = defaultsProvider.frontendKind
 
             currentModuleLanguageVersionSettingsBuilder.configureUsingDirectives(
                 moduleDirectives, environmentConfigurators, targetBackend, useK2 = frontendKind == FrontendKinds.FIR
@@ -342,49 +294,17 @@ class ModuleStructureExtractorImpl(
             val moduleName = currentModuleName
                 ?: testServices.defaultDirectives[ModuleStructureDirectives.MODULE].firstOrNull()
                 ?: DEFAULT_MODULE_NAME
-            val targetPlatform = currentModuleTargetPlatform ?: parseModulePlatformByName(moduleName) ?: defaultsProvider.defaultPlatform
             val testModule = TestModule(
                 name = moduleName,
-                targetPlatform = targetPlatform,
-                targetBackend = targetBackend,
-                frontendKind = currentModuleFrontendKind ?: defaultsProvider.defaultFrontend,
-                backendKind = BackendKinds.fromTargetBackend(targetBackend),
-                binaryKind = defaultsProvider.defaultArtifactKind ?: targetPlatform.toArtifactKind(),
                 files = filesOfCurrentModule,
                 allDependencies = dependenciesOfCurrentModule,
                 directives = moduleDirectives,
                 languageVersionSettings = currentModuleLanguageVersionSettingsBuilder.build()
             )
-            if (testModule.frontendKind != FrontendKinds.FIR ||
-                !testModule.languageVersionSettings.supportsFeature(LanguageFeature.MultiPlatformProjects) ||
-                modules.isEmpty()
-            ) {
-                additionalSourceProviders.flatMapTo(filesOfCurrentModule) { additionalSourceProvider ->
-                    additionalSourceProvider.produceAdditionalFiles(
-                        globalDirectives ?: RegisteredDirectives.Empty,
-                        testModule
-                    ).also { additionalFiles ->
-                        require(additionalFiles.all { it.isAdditional }) {
-                            "Files produced by ${additionalSourceProvider::class.qualifiedName} should have flag `isAdditional = true`"
-                        }
-                    }
-                }
-            }
+            mutableFilesListPerModule[testModule] = filesOfCurrentModule
             modules += testModule
             firstFileInModule = true
             resetModuleCaches()
-        }
-
-        private fun parseModulePlatformByName(moduleName: String): TargetPlatform? {
-            val nameSuffix = moduleName.substringAfterLast("-", "").uppercase()
-            return when {
-                nameSuffix == "COMMON" -> CommonPlatforms.defaultCommonPlatform
-                nameSuffix == "JVM" -> JvmPlatforms.unspecifiedJvmPlatform // TODO(dsavvinov): determine JvmTarget precisely
-                nameSuffix == "JS" -> JsPlatforms.defaultJsPlatform
-                nameSuffix == "NATIVE" -> NativePlatforms.unspecifiedNativePlatform
-                nameSuffix.isEmpty() -> null // TODO(dsavvinov): this leads to 'null'-platform in ModuleDescriptor
-                else -> throw IllegalStateException("Can't determine platform by name $nameSuffix")
-            }
         }
 
         private fun finishFile(lineNumber: Int) {
@@ -394,7 +314,7 @@ class ModuleStructureExtractorImpl(
                 "module_${currentModuleName}_$defaultFileName"
             }
             val filename = currentFileName ?: actualDefaultFileName
-            if (!allowFilesWithSameNames && filesOfCurrentModule.any { it.name == filename }) {
+            if (filesOfCurrentModule.any { it.name == filename }) {
                 error("File with name \"$filename\" already defined in module ${currentModuleName ?: actualDefaultFileName}")
             }
             val directives = fileDirectivesBuilder?.build()?.onEach { it.checkDirectiveApplicability(contextIsFile = true) }
@@ -422,9 +342,6 @@ class ModuleStructureExtractorImpl(
         private fun resetModuleCaches() {
             firstFileInModule = true
             currentModuleName = null
-            currentModuleTargetPlatform = null
-            currentModuleTargetBackend = null
-            currentModuleFrontendKind = null
             currentModuleLanguageVersionSettingsBuilder = initLanguageSettingsBuilder()
             filesOfCurrentModule = mutableListOf()
             dependenciesOfCurrentModule = mutableListOf()
@@ -464,6 +381,22 @@ class ModuleStructureExtractorImpl(
 
         private fun initLanguageSettingsBuilder(): LanguageVersionSettingsBuilder {
             return defaultsProvider.newLanguageSettingsBuilder()
+        }
+
+        private fun generateAdditionalFiles(testModuleStructure: TestModuleStructure) {
+            for ((module, files) in mutableFilesListPerModule) {
+                additionalSourceProviders.flatMapTo(files) { additionalSourceProvider ->
+                    additionalSourceProvider.produceAdditionalFiles(
+                        globalDirectives ?: RegisteredDirectives.Empty,
+                        module,
+                        testModuleStructure
+                    ).also { additionalFiles ->
+                        require(additionalFiles.all { it.isAdditional }) {
+                            "Files produced by ${additionalSourceProvider::class.qualifiedName} should have flag `isAdditional = true`"
+                        }
+                    }
+                }
+            }
         }
     }
 

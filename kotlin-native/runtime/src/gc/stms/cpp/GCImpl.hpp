@@ -6,44 +6,24 @@
 #pragma once
 
 #include "GC.hpp"
+#include "GCState.hpp"
+#include "GCThread.hpp"
 
-#include "SameThreadMarkAndSweep.hpp"
+namespace kotlin::gc {
 
-namespace kotlin {
-namespace gc {
-
-using GCImpl = SameThreadMarkAndSweep;
-
+// Stop-the-world mark & sweep. The GC runs in a separate thread, finalizers run in another thread of their own.
 class GC::Impl : private Pinned {
 public:
-    Impl() noexcept : gc_(objectFactory_, gcScheduler_) {}
+    Impl(alloc::Allocator& allocator, gcScheduler::GCScheduler& gcScheduler) noexcept : gcThread_(state_, allocator, gcScheduler) {}
 
-    mm::ObjectFactory<gc::GCImpl>& objectFactory() noexcept { return objectFactory_; }
-    GCScheduler& gcScheduler() noexcept { return gcScheduler_; }
-    GCImpl& gc() noexcept { return gc_; }
-
-private:
-    mm::ObjectFactory<gc::GCImpl> objectFactory_;
-    GCScheduler gcScheduler_;
-    GCImpl gc_;
+    GCStateHolder state_;
+    internal::GCThread gcThread_;
 };
 
-class GC::ThreadData::Impl : private Pinned {
-public:
-    Impl(GC& gc, mm::ThreadData& threadData) noexcept :
-        gcScheduler_(gc.impl_->gcScheduler().NewThreadData()),
-        gc_(gc.impl_->gc(), threadData, gcScheduler_),
-        objectFactoryThreadQueue_(gc.impl_->objectFactory(), gc_.CreateAllocator()) {}
+class GC::ThreadData::Impl {};
 
-    GCSchedulerThreadData& gcScheduler() noexcept { return gcScheduler_; }
-    GCImpl::ThreadData& gc() noexcept { return gc_; }
-    mm::ObjectFactory<GCImpl>::ThreadQueue& objectFactoryThreadQueue() noexcept { return objectFactoryThreadQueue_; }
+namespace barriers {
+class ExternalRCRefReleaseGuard::Impl {};
+} // namespace barriers
 
-private:
-    GCSchedulerThreadData gcScheduler_;
-    GCImpl::ThreadData gc_;
-    mm::ObjectFactory<GCImpl>::ThreadQueue objectFactoryThreadQueue_;
-};
-
-} // namespace gc
-} // namespace kotlin
+} // namespace kotlin::gc

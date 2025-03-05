@@ -1,0 +1,18 @@
+KaClassErrorType:
+  abbreviation: null
+  annotations: []
+  candidateSymbols: []
+  errorMessage: Symbol not found for kotlin/Any
+  nullability: NON_NULLABLE
+  presentableText: kotlin.Any
+  qualifiers: [
+    KaUnresolvedClassTypeQualifier:
+      name: kotlin
+      typeArguments: []
+    KaUnresolvedClassTypeQualifier:
+      name: Any
+      typeArguments: []
+  ]
+
+Rendered type:
+kotlin.Any

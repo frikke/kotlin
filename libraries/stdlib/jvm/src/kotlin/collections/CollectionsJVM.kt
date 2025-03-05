@@ -10,7 +10,6 @@ package kotlin.collections
 
 import kotlin.collections.builders.ListBuilder
 import kotlin.internal.InlineOnly
-import kotlin.internal.apiVersionIsAtLeast
 
 /**
  * Returns a new read-only list containing only the specified object [element].
@@ -20,6 +19,13 @@ import kotlin.internal.apiVersionIsAtLeast
  * @sample samples.collections.Collections.Lists.singletonReadOnlyList
  */
 public actual fun <T> listOf(element: T): List<T> = java.util.Collections.singletonList(element)
+
+/**
+ * Returns a new [ArrayList] from the given Array.
+ */
+@kotlin.internal.InlineOnly
+internal actual inline fun <T> Array<out T>.asArrayList(): ArrayList<T> =
+    ArrayList(asCollection(isVarargs = true))
 
 @PublishedApi
 @SinceKotlin("1.3")
@@ -63,7 +69,7 @@ public inline fun <T> java.util.Enumeration<T>.toList(): List<T> = java.util.Col
 
 
 /**
- * Returns a new list with the elements of this list randomly shuffled.
+ * Returns a new list with the elements of this collection randomly shuffled.
  */
 @SinceKotlin("1.2")
 public actual fun <T> Iterable<T>.shuffled(): List<T> = toMutableList().apply { shuffle() }
@@ -76,14 +82,23 @@ public actual fun <T> Iterable<T>.shuffled(): List<T> = toMutableList().apply { 
 public fun <T> Iterable<T>.shuffled(random: java.util.Random): List<T> = toMutableList().apply { shuffle(random) }
 
 
+@Suppress("DEPRECATION_ERROR")
 @kotlin.internal.InlineOnly
-internal actual inline fun copyToArrayImpl(collection: Collection<*>): Array<Any?> =
+internal actual inline fun collectionToArray(collection: Collection<*>): Array<Any?> =
     kotlin.jvm.internal.collectionToArray(collection)
 
 @kotlin.internal.InlineOnly
-@Suppress("UNCHECKED_CAST")
-internal actual inline fun <T> copyToArrayImpl(collection: Collection<*>, array: Array<T>): Array<T> =
+@Suppress("UNCHECKED_CAST", "DEPRECATION_ERROR")
+internal actual inline fun <T> collectionToArray(collection: Collection<*>, array: Array<T>): Array<T> =
     kotlin.jvm.internal.collectionToArray(collection, array as Array<Any?>) as Array<T>
+
+internal actual fun <T> terminateCollectionToArray(collectionSize: Int, array: Array<T>): Array<T> {
+    if (collectionSize < array.size) {
+        @Suppress("UNCHECKED_CAST")
+        array[collectionSize] = null as T // null-terminate
+    }
+    return array
+}
 
 // copies typed varargs array to array of objects
 internal actual fun <T> Array<out T>.copyToArrayOfAny(isVarargs: Boolean): Array<out Any?> =
@@ -99,10 +114,7 @@ internal actual fun <T> Array<out T>.copyToArrayOfAny(isVarargs: Boolean): Array
 @InlineOnly
 internal actual inline fun checkIndexOverflow(index: Int): Int {
     if (index < 0) {
-        if (apiVersionIsAtLeast(1, 3, 0))
-            throwIndexOverflow()
-        else
-            throw ArithmeticException("Index overflow has happened.")
+        throwIndexOverflow()
     }
     return index
 }
@@ -112,10 +124,9 @@ internal actual inline fun checkIndexOverflow(index: Int): Int {
 @InlineOnly
 internal actual inline fun checkCountOverflow(count: Int): Int {
     if (count < 0) {
-        if (apiVersionIsAtLeast(1, 3, 0))
-            throwCountOverflow()
-        else
-            throw ArithmeticException("Count overflow has happened.")
+        throwCountOverflow()
     }
     return count
 }
+
+

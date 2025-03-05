@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -12,9 +12,9 @@ import org.jetbrains.kotlin.builtins.PrimitiveType
 import org.jetbrains.kotlin.codegen.CompilationException
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
+import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.deepCopyWithVariables
 import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrExpressionBody
@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.ir.expressions.impl.IrBranchImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrDelegatingConstructorCallImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrGetValueImpl
+import org.jetbrains.kotlin.ir.expressions.impl.fromSymbolOwner
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.IrConstructorSymbol
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
@@ -46,7 +47,7 @@ import org.jetbrains.kotlinx.serialization.compiler.resolve.SerialEntityNames.UN
 import org.jetbrains.kotlinx.serialization.compiler.resolve.SerializationPackages
 import org.jetbrains.kotlinx.serialization.compiler.resolve.bitMaskSlotCount
 
-object SERIALIZATION_PLUGIN_ORIGIN : IrDeclarationOriginImpl("KOTLINX_SERIALIZATION", true)
+val SERIALIZATION_PLUGIN_ORIGIN = IrDeclarationOriginImpl("KOTLINX_SERIALIZATION", true)
 
 internal typealias FunctionWithArgs = Pair<IrFunctionSymbol, List<IrExpression>>
 
@@ -113,6 +114,7 @@ open class SerializerIrGenerator(
         lateinit var prop: IrProperty
 
         // how to (auto)create backing field and getter/setter?
+        @OptIn(ObsoleteDescriptorBasedAPI::class)
         compilerContext.symbolTable.withReferenceScope(irClass) {
             prop = generatePropertyMissingParts(desc, desc.name, serialDescImplClass.starProjectedType, irClass, desc.visibility)
 
@@ -209,7 +211,7 @@ open class SerializerIrGenerator(
                 primaryCtor.symbol
             ).apply {
                 irClass.typeParameters.forEachIndexed { index, irTypeParameter ->
-                    putTypeArgument(index, irTypeParameter.defaultType)
+                    typeArguments[index] = irTypeParameter.defaultType
                 }
             }
 
@@ -344,8 +346,11 @@ open class SerializerIrGenerator(
     )
 
     // returns null: Any? for boxed types and 0: <number type> for primitives
-    private fun IrBuilderWithScope.defaultValueAndType(descriptor: IrProperty): Pair<IrExpression, IrType> {
-        val T = descriptor.getter!!.returnType
+    private fun IrBuilderWithScope.defaultValueAndType(
+        property: IrProperty,
+        expectedPropertyType: IrType? = null,
+    ): Pair<IrExpression, IrType> {
+        val T = expectedPropertyType ?: property.getter!!.returnType
         val defaultPrimitive: IrExpression? =
             if (T.isMarkedNullable()) null
             else when (T.getPrimitiveType()) {
@@ -400,14 +405,15 @@ open class SerializerIrGenerator(
         // var bitMask0 = 0, bitMask1 = 0...
         val bitMasks = (0 until blocksCnt).map { irTemporary(irInt(0), "bitMask$it", isMutable = true) }
         // var local0 = null, local1 = null ...
-        val serialPropertiesMap = serializableProperties.mapIndexed { i, prop -> i to prop.ir }.associate { (i, descriptor) ->
-            val (expr, type) = defaultValueAndType(descriptor)
-            descriptor to irTemporary(expr, "local$i", type, isMutable = true)
+        val serialPropertiesMap = serializableProperties.mapIndexed { i, prop -> i to prop }.associate { (i, serializableProp) ->
+            val ir = serializableProp.ir
+            val (expr, type) = defaultValueAndType(ir, serializableProp.type)
+            ir to irTemporary(expr, "local$i", type, isMutable = true)
         }
-        // var transient0 = null, transient0 = null ...
-        val transientsPropertiesMap = transients.mapIndexed { i, prop -> i to prop }.associate { (i, descriptor) ->
-            val (expr, type) = defaultValueAndType(descriptor)
-            descriptor to irTemporary(expr, "transient$i", type, isMutable = true)
+        // var transient0 = null, transient1 = null ...
+        val transientsPropertiesMap = transients.mapIndexed { i, prop -> i to prop }.associate { (i, irProperty) ->
+            val (expr, type) = defaultValueAndType(irProperty)
+            irProperty to irTemporary(expr, "transient$i", type, isMutable = true)
         }
 
         //input = input.beginStructure(...)
@@ -461,7 +467,7 @@ open class SerializerIrGenerator(
         val decodeSequentiallyCall = irInvoke(localInput.get(), inputClass.functionByName(CallingConventions.decodeSequentially))
 
         val sequentialPart = irBlock {
-            decoderCalls.forEach { (_, expr) -> +expr.deepCopyWithVariables() }
+            decoderCalls.forEach { (_, expr) -> +expr.deepCopyWithoutPatchingParents() }
         }
 
         val byIndexPart: IrExpression = irWhile().also { loop ->
@@ -509,7 +515,7 @@ open class SerializerIrGenerator(
 
         val typeArgs = (loadFunc.returnType as IrSimpleType).arguments.map { (it as IrTypeProjection).type }
         val deserCtor: IrConstructorSymbol? = serializableIrClass.findSerializableSyntheticConstructor()
-        if (serializableIrClass.isInternalSerializable && deserCtor != null) {
+        if (serializableIrClass.shouldHaveGeneratedMethods() && deserCtor != null) {
             var args: List<IrExpression> = serializableProperties.map { serialPropertiesMap.getValue(it.ir).get() }
             args = bitMasks.map { irGet(it) } + args + irNull()
             +irReturn(irInvoke(null, deserCtor, typeArgs, args))

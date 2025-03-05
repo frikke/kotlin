@@ -1,4 +1,4 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: BACKEND
 interface Inv<T : CharSequence>
 
 fun <E : CharSequence> id(i: Inv<E>): Inv<E> = i

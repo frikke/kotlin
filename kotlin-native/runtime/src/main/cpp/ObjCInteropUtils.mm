@@ -8,10 +8,11 @@
 #if KONAN_OBJC_INTEROP
 
 #import <objc/runtime.h>
-#import <CoreFoundation/CFString.h>
-#import <Foundation/NSException.h>
-#import <Foundation/NSString.h>
+#import <CoreFoundation/CoreFoundation.h>
+#import <Foundation/Foundation.h>
+#import "CompilerConstants.hpp"
 #import "Memory.h"
+#import "KString.h"
 #import "ObjCInteropUtils.h"
 #import "ObjCInteropUtilsPrivate.h"
 
@@ -59,18 +60,30 @@ OBJ_GETTER(Kotlin_Interop_CreateKStringFromNSString, NSString* str) {
     RETURN_OBJ(nullptr);
   }
 
-  CFStringRef immutableCopyOrSameStr = CFStringCreateCopy(nullptr, (CFStringRef)str);
-
+  KRef result;
+  auto immutableCopyOrSameStr = CFStringCreateCopy(nullptr, (CFStringRef)str);
   auto length = CFStringGetLength(immutableCopyOrSameStr);
-  CFRange range = {0, length};
-  ArrayHeader* result = AllocArrayInstance(theStringTypeInfo, length, OBJ_RESULT)->array();
-  KChar* rawResult = CharArrayAddressOfElementAt(result, 0);
+  if (length == 0) RETURN_RESULT_OF0(TheEmptyString);
 
-  CFStringGetCharacters(immutableCopyOrSameStr, range, rawResult);
-
-  result->obj()->SetAssociatedObject((void*)immutableCopyOrSameStr);
-
-  RETURN_OBJ(result->obj());
+  auto encoding = CFStringGetFastestEncoding(immutableCopyOrSameStr);
+  switch (encoding) {
+    case kCFStringEncodingASCII:
+    case kCFStringEncodingNonLossyASCII:
+    case kCFStringEncodingISOLatin1:
+      if (kotlin::compiler::latin1Strings()) {
+        result = CreateUninitializedString(StringEncoding::kLatin1, length, OBJ_RESULT);
+        CFStringGetBytes(immutableCopyOrSameStr, {0, length}, encoding, '?', false,
+          reinterpret_cast<UInt8*>(StringHeader::of(result)->data()), length, nullptr);
+        break;
+      }
+    default:
+      result = CreateUninitializedString(StringEncoding::kUTF16, length, OBJ_RESULT);
+      CFStringGetCharacters(immutableCopyOrSameStr, {0, length},
+        reinterpret_cast<UniChar*>(StringHeader::of(result)->data()));
+      break;
+  }
+  result->SetAssociatedObject((void*)immutableCopyOrSameStr);
+  RETURN_OBJ(result);
 }
 
 // Note: this body is used for init methods with signatures differing from this;

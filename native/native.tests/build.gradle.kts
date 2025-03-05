@@ -1,69 +1,85 @@
-import org.jetbrains.kotlin.ideaExt.idea
-
 plugins {
     kotlin("jvm")
     id("jps-compatible")
 }
 
-project.configureJvmToolchain(JdkMajorVersion.JDK_11_0)
-
 dependencies {
-    testImplementation(kotlinStdlib())
-    testImplementation(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
-    testImplementation(intellijCore())
-    testImplementation(commonDependency("commons-lang:commons-lang"))
-    testImplementation(commonDependency("org.jetbrains.teamcity:serviceMessages"))
-    testImplementation(project(":kotlin-compiler-runner-unshaded"))
-    testImplementation(projectTests(":compiler:tests-common"))
-    testImplementation(projectTests(":compiler:tests-common-new"))
-    testImplementation(projectTests(":compiler:test-infrastructure"))
+    // Reexport these dependencies to every user of nativeTest()
+    testApi(kotlinStdlib())
+    testApi(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
+    testApi(intellijCore())
+    testApi(commonDependency("commons-lang:commons-lang"))
+    testApi(commonDependency("org.jetbrains.teamcity:serviceMessages"))
+    testApi(project(":kotlin-compiler-runner-unshaded"))
+    testApi(projectTests(":compiler:tests-common"))
+    testApi(projectTests(":compiler:tests-integration"))
+    testApi(projectTests(":compiler:tests-common-new"))
+    testApi(projectTests(":compiler:test-infrastructure"))
+    testApi(project(":native:kotlin-native-utils"))
+    testApi(project(":native:executors"))
+
     testImplementation(projectTests(":generators:test-generator"))
-    testImplementation(project(":native:kotlin-native-utils"))
-    testImplementation(project(":native:executors"))
-    testApiJUnit5()
+    testImplementation(project(":compiler:ir.serialization.native"))
+    testImplementation(project(":compiler:fir:native"))
+    testImplementation(project(":core:compiler.common.native"))
+    testImplementation(project(":kotlin-util-klib-abi"))
+    testImplementation(project(":native:swift:swift-export-standalone"))
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
     testImplementation(commonDependency("org.jetbrains.kotlinx", "kotlinx-metadata-klib"))
-    testImplementation(commonDependency("org.jetbrains.kotlinx", "kotlinx-coroutines-core")) { isTransitive = false }
+    testImplementation(libs.kotlinx.coroutines.core) { isTransitive = false }
 
-    testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps:trove4j"))
-    testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps.fastutil:intellij-deps-fastutil"))
+    testRuntimeOnly(libs.intellij.fastutil)
 }
-
-val generationRoot = projectDir.resolve("tests-gen")
 
 sourceSets {
     "main" { none() }
     "test" {
         projectDefault()
-        java.srcDirs(generationRoot.name)
+        generatedTestDir()
     }
 }
 
-if (kotlinBuildProperties.isInJpsBuildIdeaSync) {
-    apply(plugin = "idea")
-    idea {
-        module.generatedSourceDirs.addAll(listOf(generationRoot))
-    }
-}
+testsJar {}
 
 // Tasks that run different sorts of tests. Most frequent use case: running specific tests at TeamCity.
 val infrastructureTest = nativeTest("infrastructureTest", "infrastructure")
-val codegenBoxTest = nativeTest("codegenBoxTest", "codegen & !frontend-fir")
+val codegenBoxTest = nativeTest("codegenBoxTest", "codegen & frontend-classic")
 val codegenBoxK2Test = nativeTest("codegenBoxK2Test", "codegen & frontend-fir")
-val stdlibTest = nativeTest("stdlibTest", "stdlib & !frontend-fir")
-val stdlibK2Test = nativeTest("stdlibK2Test", "stdlib & frontend-fir")
-val kotlinTestLibraryTest = nativeTest("kotlinTestLibraryTest", "kotlin-test & !frontend-fir")
-val kotlinTestLibraryK2Test = nativeTest("kotlinTestLibraryK2Test", "kotlin-test & frontend-fir")
+val stdlibTest = nativeTest("stdlibTest", "stdlib")
+val kotlinTestLibraryTest = nativeTest("kotlinTestLibraryTest", "kotlin-test")
 val partialLinkageTest = nativeTest("partialLinkageTest", "partial-linkage")
 val cinteropTest = nativeTest("cinteropTest", "cinterop")
 val debuggerTest = nativeTest("debuggerTest", "debugger")
 val cachesTest = nativeTest("cachesTest", "caches")
-val klibContentsTest = nativeTest("klibContentsTest", "klib-contents & !frontend-fir")
-val klibContentsK2Test = nativeTest("klibContentsK2Test", "klib-contents & frontend-fir")
+val klibTest = nativeTest("klibTest", "klib")
+val standaloneTest = nativeTest("standaloneTest", "standalone")
+val gcTest = nativeTest("gcTest", "gc")
 
 val testTags = findProperty("kotlin.native.tests.tags")?.toString()
 // Note: arbitrary JUnit tag expressions can be used in this property.
 // See https://junit.org/junit5/docs/current/user-guide/#running-tests-tag-expressions
-val test by nativeTest("test", testTags)
+val test by nativeTest(
+    "test",
+    testTags,
+    requirePlatformLibs = true,
+    defineJDKEnvVariables = listOf(
+        JdkMajorVersion.JDK_1_8,  // required in CompilerOutputTest via AbstractCliTest.getNormalizedCompilerOutput
+        JdkMajorVersion.JDK_11_0, // required in CompilerOutputTest via AbstractCliTest.getNormalizedCompilerOutput
+        JdkMajorVersion.JDK_17_0, // required in CompilerOutputTest via AbstractCliTest.getNormalizedCompilerOutput
+        JdkMajorVersion.JDK_21_0,
+    )
+) {
+    options {
+        // See [org.jetbrains.kotlin.konan.test.KlibCrossCompilationIdentityTest.FULL_CROSS_DIST_ENABLED_PROPERTY]
+        // See also kotlin-native/build-tools/src/main/kotlin/org/jetbrains/kotlin/nativeFullCrossDist.kt
+        systemProperty(
+            "kotlin.native.internal.fullCrossDistEnabled",
+            kotlinBuildProperties.getOrNull("kotlin.native.pathToDarwinDist") != null
+        )
+    }
+}
 
 val generateTests by generator("org.jetbrains.kotlin.generators.tests.GenerateNativeTestsKt") {
     javaLauncher.set(project.getToolchainLauncherFor(JdkMajorVersion.JDK_11_0))

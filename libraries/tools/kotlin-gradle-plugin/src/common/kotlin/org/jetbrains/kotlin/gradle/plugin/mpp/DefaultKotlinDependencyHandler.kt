@@ -8,18 +8,18 @@ package org.jetbrains.kotlin.gradle.plugin.mpp
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.ExternalModuleDependency
-import org.gradle.api.artifacts.ModuleDependency
 import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.model.ObjectFactory
 import org.jetbrains.kotlin.gradle.plugin.HasKotlinDependencies
 import org.jetbrains.kotlin.gradle.plugin.KotlinDependencyHandler
-import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.GradleKpmModule
-import org.jetbrains.kotlin.gradle.plugin.mpp.pm20.util.ComputedCapability
 import org.jetbrains.kotlin.gradle.targets.js.npm.NpmDependency
 import org.jetbrains.kotlin.gradle.targets.js.npm.directoryNpmDependency
 import org.jetbrains.kotlin.gradle.targets.js.npm.moduleName
+import org.jetbrains.kotlin.gradle.utils.newInstance
 import java.io.File
+import javax.inject.Inject
 
-class DefaultKotlinDependencyHandler(
+internal open class DefaultKotlinDependencyHandler @Inject constructor(
     val parent: HasKotlinDependencies,
     override val project: Project
 ) : KotlinDependencyHandler {
@@ -71,17 +71,7 @@ class DefaultKotlinDependencyHandler(
         configurationName: String,
         dependencyNotation: Any
     ): Dependency? {
-        val dependency = when (dependencyNotation) {
-            is GradleKpmModule -> project.dependencies.create(dependencyNotation.project).apply {
-                (this as ModuleDependency).capabilities {
-                    if (dependencyNotation.moduleClassifier != null) {
-                        it.requireCapability(ComputedCapability.fromModule(dependencyNotation))
-                    }
-                }
-            }
-            else -> dependencyNotation
-        }
-        return project.dependencies.add(configurationName, dependency)
+        return project.dependencies.add(configurationName, dependencyNotation)
     }
 
     private fun addDependencyByStringNotation(
@@ -208,3 +198,8 @@ class DefaultKotlinDependencyHandler(
             scope = scope,
         )
 }
+
+internal fun ObjectFactory.DefaultKotlinDependencyHandler(
+    parent: HasKotlinDependencies,
+    project: Project,
+) = newInstance<DefaultKotlinDependencyHandler>(parent, project)

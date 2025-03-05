@@ -5,21 +5,20 @@
 
 package org.jetbrains.kotlin.scripting.compiler.test
 
-import junit.framework.TestCase
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.scripting.compiler.plugin.getBaseCompilerArgumentsFromProperty
 import org.jetbrains.kotlin.scripting.compiler.plugin.impl.ScriptJvmCompilerIsolated
-import org.jetbrains.kotlin.utils.tryConstructClassFromStringArgs
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
-import kotlin.reflect.full.createInstance
 import kotlin.reflect.full.declaredMembers
 import kotlin.script.experimental.api.*
 import kotlin.script.experimental.host.toScriptSource
 import kotlin.script.experimental.jvm.defaultJvmScriptingHostConfiguration
+import kotlin.test.*
 
-class ScriptCompilerTest : TestCase() {
+class ScriptCompilerTest {
 
+    @Test
     fun testCompilationWithRefinementError() {
         val res = compile("nonsense".toScriptSource()) {
             refineConfiguration {
@@ -34,6 +33,19 @@ class ScriptCompilerTest : TestCase() {
         assertTrue(res.reports.none { it.message.contains("nonsense") })
     }
 
+    @Test
+    fun testDeprecationAnnotation() {
+        val res = compile("""
+            @Deprecated("BECAUSE")
+            fun deprecatedFunction() {}
+            deprecatedFunction()
+        """.trimIndent().toScriptSource()) {}
+
+        assertTrue(res is ResultWithDiagnostics.Success)
+        assertTrue(res.reports.any { it.message.contains("deprecatedFunction(): Unit' is deprecated. BECAUSE") })
+    }
+
+    @Test
     fun testSimpleVarAccess() {
         val res = compileToClass(
             """
@@ -42,11 +54,12 @@ class ScriptCompilerTest : TestCase() {
             """.trimIndent().toScriptSource()
         )
 
-        val kclass = res.valueOrThrow()
-        val scriptInstance = kclass.createInstance()
+        val kclass = res.valueOrThrow().java
+        val scriptInstance = kclass.constructors.first().newInstance()
         assertNotNull(scriptInstance)
     }
 
+    @Test
     fun testLambdaWithProperty() {
         val versionProperties = java.util.Properties()
         "".reader().use { propInput ->
@@ -63,11 +76,12 @@ class ScriptCompilerTest : TestCase() {
             """.trimIndent().toScriptSource()
         )
 
-        val kclass = res.valueOrThrow()
-        val scriptInstance = kclass.createInstance()
+        val kclass = res.valueOrThrow().java
+        val scriptInstance = kclass.constructors.first().newInstance()
         assertNotNull(scriptInstance)
     }
 
+    @Test
     fun testTypeAliases() {
         val res = compileToClass(
             """
@@ -85,6 +99,7 @@ class ScriptCompilerTest : TestCase() {
         assertEquals("Clazz", nestedClasses[0].simpleName)
     }
 
+    @Test
     fun testDestructingDeclarations() {
         val res = compileToClass(
             """
@@ -95,8 +110,8 @@ class ScriptCompilerTest : TestCase() {
         )
 
         val kClass = res.valueOrThrow()
-        val scriptInstance = kClass.createInstance()
         val members = kClass.declaredMembers
+        val scriptInstance = kClass.java.constructors.first().newInstance()
         val namesToMembers = members.associateBy { it.name }
 
         fun prop(name: String) = namesToMembers[name]!! as KProperty<*>
@@ -108,6 +123,25 @@ class ScriptCompilerTest : TestCase() {
         assertEquals(3, propValue("c"))
         assertEquals(Char::class, propType("d"))
         assertNull(namesToMembers["_"])
+    }
+
+    @Test
+    fun testSimpleReflection() {
+        val res = compileToClass(
+            """
+                val c = 3
+                class A {
+                    class B
+                }
+                val a = A()
+            """.trimIndent().toScriptSource()
+        )
+
+        val kClass = res.valueOrThrow()
+        val members = kClass.declaredMembers
+        assertEquals(2, members.size)
+        val nestedClasses = kClass.nestedClasses
+        assertEquals(1, nestedClasses.size)
     }
 
     fun compile(

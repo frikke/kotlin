@@ -1,5 +1,7 @@
-// !LANGUAGE: +EnumEntries
+// RUN_PIPELINE_TILL: BACKEND
+// LANGUAGE: +EnumEntries -PrioritizedEnumEntries
 // WITH_STDLIB
+// FIR_DUMP
 
 package pckg
 
@@ -12,7 +14,7 @@ enum class A {
 val A.Companion.entries: Int get() = 0
 
 fun test() {
-    A.entries
+    <!DEPRECATED_ACCESS_TO_ENUM_ENTRY_COMPANION_PROPERTY!>A.entries<!>
     A.Companion.entries
 
     with(A) {

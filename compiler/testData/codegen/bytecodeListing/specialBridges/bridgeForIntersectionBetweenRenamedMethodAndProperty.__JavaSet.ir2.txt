@@ -1,0 +1,2 @@
+(Full dump is not available: null)
+CLASS IR_EXTERNAL_JAVA_DECLARATION_STUB CLASS name:JavaSet modality:OPEN visibility:public superTypes:[<root>.C; kotlin.collections.MutableSet<@[FlexibleNullability] T of <root>.JavaSet?>]

@@ -31,12 +31,18 @@ object StandardNames {
     @JvmField val DATA_CLASS_COMPONENT_PREFIX = "component"
 
     @JvmField val HASHCODE_NAME = Name.identifier("hashCode")
+    @JvmField val TO_STRING_NAME = Name.identifier("toString")
+    @JvmField val EQUALS_NAME = Name.identifier("equals")
 
     @JvmField val CHAR_CODE = Name.identifier("code")
 
     @JvmField val NAME = Name.identifier("name")
 
+    @JvmField val MAIN = Name.identifier("main")
+
     @JvmField val NEXT_CHAR = Name.identifier("nextChar")
+
+    @JvmField val IMPLICIT_LAMBDA_PARAMETER_NAME = Name.identifier("it")
 
     @JvmField val CONTEXT_FUNCTION_TYPE_PARAMETER_COUNT_NAME = Name.identifier("count")
 
@@ -81,6 +87,12 @@ object StandardNames {
     @JvmField
     val KOTLIN_INTERNAL_FQ_NAME = BUILT_INS_PACKAGE_FQ_NAME.child(Name.identifier("internal"))
 
+    @JvmField
+    val CONCURRENT_PACKAGE_FQ_NAME = BUILT_INS_PACKAGE_FQ_NAME.child(Name.identifier("concurrent"))
+
+    @JvmField
+    val CONCURRENT_ATOMICS_PACKAGE_FQ_NAME = CONCURRENT_PACKAGE_FQ_NAME.child(Name.identifier("atomics"))
+
     val NON_EXISTENT_CLASS = FqName("error.NonExistentClass")
 
     @JvmField
@@ -91,7 +103,8 @@ object StandardNames {
         ANNOTATION_PACKAGE_FQ_NAME,
         KOTLIN_REFLECT_FQ_NAME,
         KOTLIN_INTERNAL_FQ_NAME,
-        COROUTINES_PACKAGE_FQ_NAME
+        COROUTINES_PACKAGE_FQ_NAME,
+        CONCURRENT_ATOMICS_PACKAGE_FQ_NAME
     )
 
     object FqNames {
@@ -145,6 +158,8 @@ object StandardNames {
         @JvmField val unsafeVariance: FqName = fqName("UnsafeVariance")
         @JvmField val publishedApi: FqName = fqName("PublishedApi")
         @JvmField val accessibleLateinitPropertyLiteral: FqName = internalName("AccessibleLateinitPropertyLiteral")
+        @JvmField val platformDependent: FqName = FqName("kotlin.internal.PlatformDependent")
+        @JvmField val platformDependentClassId: ClassId = ClassId.topLevel(platformDependent)
 
         @JvmField val iterator: FqName = collectionsFqName("Iterator")
         @JvmField val iterable: FqName = collectionsFqName("Iterable")
@@ -164,6 +179,7 @@ object StandardNames {
         @JvmField val mutableMapEntry: FqName = mutableMap.child(Name.identifier("MutableEntry"))
 
         @JvmField val kClass: FqNameUnsafe = reflect("KClass")
+        @JvmField val kType: FqNameUnsafe = reflect("KType")
         @JvmField val kCallable: FqNameUnsafe = reflect("KCallable")
         @JvmField val kProperty0: FqNameUnsafe = reflect("KProperty0")
         @JvmField val kProperty1: FqNameUnsafe = reflect("KProperty1")
@@ -175,6 +191,7 @@ object StandardNames {
         @JvmField val kMutablePropertyFqName: FqNameUnsafe = reflect("KMutableProperty")
         @JvmField val kProperty: ClassId = ClassId.topLevel(kPropertyFqName.toSafe())
         @JvmField val kDeclarationContainer: FqNameUnsafe = reflect("KDeclarationContainer")
+        @JvmField val findAssociatedObject: FqNameUnsafe = reflect("findAssociatedObject")
 
         @JvmField val uByteFqName: FqName = fqName("UByte")
         @JvmField val uShortFqName: FqName = fqName("UShort")
@@ -188,6 +205,14 @@ object StandardNames {
         @JvmField val uShortArrayFqName: FqName = fqName("UShortArray")
         @JvmField val uIntArrayFqName: FqName = fqName("UIntArray")
         @JvmField val uLongArrayFqName: FqName = fqName("ULongArray")
+
+        @JvmField val atomicInt: FqName = concurrentAtomics("AtomicInt")
+        @JvmField val atomicLong: FqName = concurrentAtomics("AtomicLong")
+        @JvmField val atomicBoolean: FqName = concurrentAtomics("AtomicBoolean")
+        @JvmField val atomicReference: FqName = concurrentAtomics("AtomicReference")
+        @JvmField val atomicIntArray: FqName = concurrentAtomics("AtomicIntArray")
+        @JvmField val atomicLongArray: FqName = concurrentAtomics("AtomicLongArray")
+        @JvmField val atomicArray: FqName = concurrentAtomics("AtomicArray")
 
         @JvmField val primitiveTypeShortNames: Set<Name> = newHashSetWithExpectedSize<Name>(PrimitiveType.values().size).apply {
             PrimitiveType.values().mapTo(this) { it.typeName }
@@ -239,6 +264,14 @@ object StandardNames {
 
         private fun internalName(simpleName: String): FqName {
             return KOTLIN_INTERNAL_FQ_NAME.child(Name.identifier(simpleName))
+        }
+
+        private fun concurrent(simpleName: String): FqName {
+            return CONCURRENT_PACKAGE_FQ_NAME.child(Name.identifier(simpleName))
+        }
+
+        private fun concurrentAtomics(simpleName: String): FqName {
+            return CONCURRENT_ATOMICS_PACKAGE_FQ_NAME.child(Name.identifier(simpleName))
         }
     }
 

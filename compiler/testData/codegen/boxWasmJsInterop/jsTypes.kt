@@ -4,6 +4,10 @@ import kotlin.test.*
 
 fun jsRepresentation(x: JsAny): String = js("(typeof x) + ':' + String(x)")
 
+@Suppress("INCOMPATIBLE_TYPES")
+fun castToKotlinString(jsAny: JsAny?): String? =
+    if (jsAny is String) jsAny as String else null
+
 fun box(): String {
     // JsNumber
     val jsNum10: JsNumber = 10.toJsNumber()
@@ -22,6 +26,7 @@ fun box(): String {
     assertTrue(jsNumAsAny is JsNumber)
     assertTrue(jsNumAsAny !is JsString)
     assertTrue(jsNumAsAny !is JsBoolean)
+    assertTrue(jsNumAsAny !is JsBigInt)
     assertTrue((jsNumAsAny as JsNumber).toInt() == 10)
     assertTrue(jsRepresentation(jsNum10) == "number:10")
 
@@ -32,6 +37,7 @@ fun box(): String {
     assertTrue(jsStr1.toString() == "str1")
     assertTrue((jsStr1 as Any) is JsString)
     assertTrue((jsStr1 as Any) !is JsNumber)
+    assertTrue((jsStr1 as Any) !is JsBigInt)
     assertTrue(jsRepresentation(jsStr1) == "string:str1")
 
     // JsString
@@ -39,6 +45,8 @@ fun box(): String {
     assertTrue(jsBoolTrue == true.toJsBoolean())
     assertTrue(jsBoolTrue != false.toJsBoolean())
     assertTrue(jsRepresentation(jsBoolTrue) == "boolean:true")
+    assertNull(castToKotlinString(jsStr1))
+
 
     // JsArray
     val jsArray: JsArray<JsString> = JsArray()
@@ -56,6 +64,27 @@ fun box(): String {
     val c = listOf(1)
     assertTrue(c.toJsReference().get() === c.toJsReference().get())
     assertTrue(c.toJsReference() === c.toJsReference())
+
+    // JsBigInt
+    val jsBigInt10: JsBigInt = 10L.toJsBigInt()
+    val anotherJsBigInt10: JsBigInt = 10L.toJsBigInt()
+    assertTrue(jsBigInt10 == anotherJsBigInt10)
+    assertTrue(jsBigInt10.toLong() == 10L)
+    assertTrue(anotherJsBigInt10.toLong() == 10L)
+    val jsBigIntAsJsAny: JsAny = jsBigInt10
+    assertTrue(jsBigIntAsJsAny == anotherJsBigInt10)
+    assertTrue(jsBigIntAsJsAny is JsBigInt)
+    assertTrue(jsBigIntAsJsAny !is JsNumber)
+    assertTrue(jsBigIntAsJsAny !is JsString)
+    assertTrue(jsBigIntAsJsAny !is JsBoolean)
+    assertTrue((jsBigIntAsJsAny as JsBigInt).toLong() == 10L)
+    val jsBigIntAsAny: Any = jsBigInt10
+    assertTrue(jsBigIntAsAny == anotherJsBigInt10)
+    assertTrue(jsBigIntAsAny is JsBigInt)
+    assertTrue(jsBigIntAsAny !is JsNumber)
+    assertTrue(jsBigIntAsAny !is JsString)
+    assertTrue(jsBigIntAsAny !is JsBoolean)
+    assertTrue((jsBigIntAsAny as JsBigInt).toLong() == 10L)
 
     return "OK"
 }

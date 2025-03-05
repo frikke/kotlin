@@ -5,13 +5,11 @@
 
 package kotlin.native.concurrent
 
-import kotlin.native.internal.Frozen
-
 /**
  * State of the future object.
  */
 @ObsoleteWorkersApi
-enum class FutureState(val value: Int) {
+public enum class FutureState(public val value: Int) {
     INVALID(0),
     /** Future is scheduled for execution. */
     SCHEDULED(1),
@@ -28,7 +26,7 @@ enum class FutureState(val value: Int) {
  */
 @Suppress("NON_PUBLIC_PRIMARY_CONSTRUCTOR_OF_INLINE_CLASS")
 @ObsoleteWorkersApi
-public value class Future<T> @PublishedApi internal constructor(val id: Int) {
+public value class Future<T> @PublishedApi internal constructor(public val id: Int) {
     /**
      * Blocks execution until the future is ready.
      *

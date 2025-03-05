@@ -5,9 +5,17 @@
 
 package org.jetbrains.kotlin.gradle.testbase
 
+import org.gradle.api.logging.LogLevel
+import org.gradle.api.tasks.testing.AbstractTestTask
+import org.gradle.api.tasks.testing.logging.TestLogEvent
+import org.gradle.util.GradleVersion
+import org.jetbrains.kotlin.gradle.plugin.mpp.KmpIsolatedProjectsSupport
+import org.jetbrains.kotlin.gradle.util.isTeamCityRun
+import java.io.PrintWriter
 import java.nio.file.Paths
 import java.nio.file.attribute.PosixFilePermission
 import kotlin.io.path.*
+import kotlin.test.fail
 
 /**
  * Makes a snapshot of the current state of [TestProject] into [destinationPath].
@@ -17,7 +25,21 @@ import kotlin.io.path.*
  *
  * To run task with the same build option as test - use `run.sh` (or `run.bat`) script.
  */
-fun TestProject.makeSnapshotTo(destinationPath: String) {
+fun TestProject.makeSnapshotTo(
+    destinationPath: String,
+    buildOptions: BuildOptions = this.buildOptions,
+    useSnapshotWithInjections: Boolean = false,
+) {
+    if (isTeamCityRun) fail("Please remove `makeSnapshotTo()` call from test. It is utility for local debugging only!")
+    if (!useSnapshotWithInjections && usesInjections) fail(
+        """
+            Test project tries to make a snapshot with injections. Rebuilding test classes will result in the updated behavior in the snapshot.
+              
+            Please opt-in explicitly using "makeSnapshotTo(..., useSnapshotWithInjections = true)"
+            
+        """.trimIndent()
+    )
+
     val dest = Paths
         .get(destinationPath)
         .resolve(projectName)
@@ -28,19 +50,36 @@ fun TestProject.makeSnapshotTo(destinationPath: String) {
         }
 
     projectPath.copyRecursively(dest)
-    dest.resolve("gradle.properties").append(
-        """
-            kotlin_version=${buildOptions.kotlinVersion}
-            test_fixes_version=${TestVersions.Kotlin.CURRENT}
-            """.trimIndent()
-    )
+
+    val gradlePropertiesFile = dest.resolve("gradle.properties")
+    val gradlePropertiesFromBuildOptions = buildOptions.asGradleProperties(gradleVersion).toMutableMap()
+    if (gradlePropertiesFile.exists()) {
+        val propertiesRegex = """^\s*(\S+)=(.*)""".toRegex()
+        val content = gradlePropertiesFile.readLines()
+            .map {
+                val trimmedLine = it.trimStart()
+                val match = propertiesRegex.matchEntire(trimmedLine) ?: return@map trimmedLine
+                val (key, value) = match.destructured
+                val overriddenValue = gradlePropertiesFromBuildOptions.remove(key)
+                if (overriddenValue != null && value != overriddenValue) {
+                    "# $trimmedLine // overridden by buildOptions with\n$key=$overriddenValue\n"
+                } else {
+                    "${trimmedLine}\n"
+                }
+            }
+        gradlePropertiesFile.writeLines(content)
+    }
+
+    val gradlePropertiesContent = gradlePropertiesFromBuildOptions.entries.joinToString("\n") { "${it.key}=${it.value}" }
+    gradlePropertiesFile.appendText("# Gradle Properties from project's buildOptions\n$gradlePropertiesContent")
 
     dest.resolve("run.sh").run {
         writeText(
             """
-                #!/usr/bin/env sh
-                ./gradlew ${buildOptions.toArguments(gradleVersion).joinToString(separator = " ")} ${'$'}@ 
-                """.trimIndent()
+            |#!/usr/bin/env sh
+            |${formatEnvironmentForScript(envCommand = "export")}
+            |./gradlew ${buildOptions.toArguments(gradleVersion).joinToString(separator = " ")} ${'$'}@ 
+            |""".trimMargin()
         )
 
         setPosixFilePermissions(
@@ -55,17 +94,18 @@ fun TestProject.makeSnapshotTo(destinationPath: String) {
     dest.resolve("run.bat").run {
         writeText(
             """
-                @rem Executing Gradle build
-                gradlew.bat ${buildOptions.toArguments(gradleVersion).joinToString(separator = " ")} %* 
-                """.trimIndent()
+            |@rem Executing Gradle build
+            |${formatEnvironmentForScript(envCommand = "set")}
+            |gradlew.bat ${buildOptions.toArguments(gradleVersion).joinToString(separator = " ")} %* 
+            |""".trimMargin()
         )
     }
 
     val wrapperDir = dest.resolve("gradle").resolve("wrapper").apply { createDirectories() }
     wrapperDir.resolve("gradle-wrapper.properties").writeText(
         """
-            distributionUrl=https\://services.gradle.org/distributions/gradle-${gradleVersion.version}-bin.zip
-            """.trimIndent()
+        distributionUrl=https\://services.gradle.org/distributions/gradle-${gradleVersion.version}-bin.zip
+        """.trimIndent()
     )
     // Copied from 'Wrapper' task class implementation
     val projectRoot = Paths.get("../../../")
@@ -80,17 +120,19 @@ fun TestProject.makeSnapshotTo(destinationPath: String) {
     }
 }
 
-/**
- *
- * Configures the JVM memory settings for the Gradle project.
- * @param memorySizeInGb The amount of memory to allocate to the JVM, in gigabytes.
- *                     Defaults to 1 gigabyte.
- */
-fun GradleProject.configureJvmMemory(memorySizeInGb: Number = 1) {
-    addPropertyToGradleProperties(
-        propertyName = "org.gradle.jvmargs",
-        mapOf("-Xmx" to "-Xmx${memorySizeInGb}g")
-    )
+private fun BuildOptions.asGradleProperties(gradleVersion: GradleVersion): Map<String, String> {
+    val propertyRegex = """^-[DP](.+)=(.*)""".toRegex()
+    return toArguments(gradleVersion)
+        .mapNotNull {
+            val match = propertyRegex.matchEntire(it) ?: return@mapNotNull null
+            match.groupValues[1] to match.groupValues[2]
+        }.toMap()
+}
+
+private fun TestProject.formatEnvironmentForScript(envCommand: String): String {
+    return environmentVariables.environmentalVariables.asSequence().joinToString(separator = "\n|") { (key, value) ->
+        "$envCommand $key=\"$value\""
+    }
 }
 
 /**
@@ -105,7 +147,7 @@ fun GradleProject.configureJvmMemory(memorySizeInGb: Number = 1) {
  */
 fun GradleProject.addPropertyToGradleProperties(
     propertyName: String,
-    propertyValues: Map<String, String>
+    propertyValues: Map<String, String>,
 ) {
     if (!gradleProperties.exists()) gradleProperties.createFile()
 
@@ -157,3 +199,85 @@ fun GradleProject.addPropertyToGradleProperties(
 
     }
 }
+
+/**
+ * Configures 'archivesBaseName' in Gradle older and newer versions compatible way avoiding
+ * deprecation warnings.
+ */
+internal fun TestProject.addArchivesBaseNameCompat(
+    archivesBaseName: String,
+) {
+    if (gradleVersion >= GradleVersion.version(TestVersions.Gradle.G_8_5)) {
+        buildGradle.appendText(
+            """
+            |
+            |base {
+            |    archivesName = '$archivesBaseName'
+            |}
+            """.trimMargin()
+        )
+    } else {
+        buildGradle.appendText(
+            """
+            |
+            |base {
+            |    archivesBaseName = '$archivesBaseName'
+            |}
+            """.trimMargin()
+        )
+    }
+}
+
+/**
+ * Chooses compiler version used for JVM compilation in the build tools API mode.
+ *
+ * If the chosen version requires additional repositories, please consider using [DependencyManagement.DefaultDependencyManagement].
+ *
+ * Ensure [BuildOptions.runViaBuildToolsApi] is set to true for the builds!
+ */
+internal fun TestProject.chooseCompilerVersion(
+    version: String,
+) {
+    buildGradle.append(
+        //language=Gradle
+        """
+        kotlin {
+            compilerVersion.set("$version")
+        }
+        """.trimIndent()
+    )
+}
+
+internal fun TestProject.enablePassedTestLogging(level: LogLevel = DEFAULT_LOG_LEVEL) {
+    buildScriptInjection {
+        project.tasks.withType(AbstractTestTask::class.java).configureEach { task ->
+            task.testLogging {
+                it.get(level).events(TestLogEvent.PASSED)
+            }
+        }
+    }
+}
+
+internal val TestProject.kmpIsolatedProjectsSupportEnabled: Boolean
+    get() {
+        val mode = buildOptions.kmpIsolatedProjectsSupport
+        return when (mode) {
+            KmpIsolatedProjectsSupport.ENABLE -> true
+            KmpIsolatedProjectsSupport.DISABLE -> false
+            KmpIsolatedProjectsSupport.AUTO, null -> buildOptions.isolatedProjects.toBooleanFlag(gradleVersion)
+        }
+    }
+
+val Throwable.fullMessage
+    get(): String = java.io.StringWriter().use {
+        PrintWriter(it).use {
+            this.printStackTrace(it)
+        }
+        it
+    }.toString()
+
+/**
+ * @return `true` if 'withJava()' method should not produce a configuration error.
+ */
+internal val TestProject.isWithJavaSupported: Boolean
+    get() = gradleVersion < GradleVersion.version(TestVersions.Gradle.G_8_7)

@@ -5,108 +5,82 @@
 
 package org.jetbrains.kotlin.fir.session
 
-import org.jetbrains.kotlin.config.LanguageVersionSettings
-import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
-import org.jetbrains.kotlin.fir.FirModuleData
+import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.FirVisibilityChecker
 import org.jetbrains.kotlin.fir.SessionConfiguration
-import org.jetbrains.kotlin.fir.analysis.FirEmptyOverridesBackwardCompatibilityHelper
-import org.jetbrains.kotlin.fir.analysis.FirOverridesBackwardCompatibilityHelper
+import org.jetbrains.kotlin.fir.analysis.checkers.FirIdentityLessPlatformDeterminer
 import org.jetbrains.kotlin.fir.analysis.checkers.FirPlatformDiagnosticSuppressor
+import org.jetbrains.kotlin.fir.analysis.js.checkers.FirJsIdentityLessPlatformDeterminer
+import org.jetbrains.kotlin.fir.analysis.js.checkers.FirJsModuleKind
 import org.jetbrains.kotlin.fir.analysis.js.checkers.FirJsPlatformDiagnosticSuppressor
 import org.jetbrains.kotlin.fir.checkers.registerJsCheckers
-import org.jetbrains.kotlin.fir.deserialization.ModuleDataProvider
-import org.jetbrains.kotlin.fir.deserialization.SingleModuleDataProvider
-import org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar
-import org.jetbrains.kotlin.fir.java.FirProjectSessionProvider
-import org.jetbrains.kotlin.fir.resolve.calls.ConeCallConflictResolverFactory
-import org.jetbrains.kotlin.fir.resolve.providers.impl.FirBuiltinSyntheticFunctionInterfaceProvider
-import org.jetbrains.kotlin.fir.resolve.providers.impl.FirExtensionSyntheticFunctionInterfaceProvider
-import org.jetbrains.kotlin.fir.scopes.FirKotlinScopeProvider
-import org.jetbrains.kotlin.fir.scopes.FirPlatformClassMapper
-import org.jetbrains.kotlin.incremental.components.LookupTracker
-import org.jetbrains.kotlin.library.KotlinLibrary
-import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.fir.declarations.FirTypeSpecificityComparatorProvider
+import org.jetbrains.kotlin.fir.deserialization.FirTypeDeserializer
+import org.jetbrains.kotlin.fir.resolve.calls.overloads.ConeCallConflictResolverFactory
+import org.jetbrains.kotlin.fir.scopes.FirDefaultImportProviderHolder
+import org.jetbrains.kotlin.fir.types.typeContext
+import org.jetbrains.kotlin.js.config.JSConfigurationKeys
+import org.jetbrains.kotlin.js.resolve.JsPlatformAnalyzerServices
+import org.jetbrains.kotlin.js.resolve.JsTypeSpecificityComparatorWithoutDelegate
+import org.jetbrains.kotlin.serialization.js.ModuleKind
 
-object FirJsSessionFactory : FirAbstractSessionFactory() {
-    fun createModuleBasedSession(
-        moduleData: FirModuleData,
-        sessionProvider: FirProjectSessionProvider,
-        extensionRegistrars: List<FirExtensionRegistrar>,
-        languageVersionSettings: LanguageVersionSettings = LanguageVersionSettingsImpl.DEFAULT,
-        lookupTracker: LookupTracker?,
-        icData: KlibIcData? = null,
-        registerExtraComponents: ((FirSession) -> Unit) = {},
-        init: FirSessionConfigurator.() -> Unit
-    ): FirSession {
-        return createModuleBasedSession(
-            moduleData,
-            sessionProvider,
-            extensionRegistrars,
-            languageVersionSettings,
-            lookupTracker,
-            null,
-            init,
-            registerExtraComponents = { session ->
-                session.registerJsSpecificComponents()
-                registerExtraComponents(session)
-            },
-            registerExtraCheckers = { it.registerJsCheckers() },
-            createKotlinScopeProvider = { FirKotlinScopeProvider() },
-            createProviders = { session, kotlinScopeProvider, symbolProvider, generatedSymbolsProvider, syntheticFunctionInterfaceProvider, dependencies ->
-                listOfNotNull(
-                    symbolProvider,
-                    generatedSymbolsProvider,
-                    icData?.let {
-                        KlibIcCacheBasedSymbolProvider(
-                            session,
-                            SingleModuleDataProvider(moduleData),
-                            kotlinScopeProvider,
-                            it,
-                        )
-                    },
-                    syntheticFunctionInterfaceProvider,
-                    *dependencies.toTypedArray(),
-                )
-            }
-        )
+@OptIn(SessionConfiguration::class)
+object FirJsSessionFactory : AbstractFirKlibSessionFactory<FirJsSessionFactory.Context, FirJsSessionFactory.Context>() {
+
+    // ==================================== Library session ====================================
+
+    override fun createLibraryContext(configuration: CompilerConfiguration): Context {
+        return Context(configuration)
     }
 
-    fun createLibrarySession(
-        mainModuleName: Name,
-        resolvedLibraries: List<KotlinLibrary>,
-        sessionProvider: FirProjectSessionProvider,
-        moduleDataProvider: ModuleDataProvider,
-        extensionRegistrars: List<FirExtensionRegistrar>,
-        languageVersionSettings: LanguageVersionSettings = LanguageVersionSettingsImpl.DEFAULT,
-        registerExtraComponents: ((FirSession) -> Unit),
-    ): FirSession = createLibrarySession(
-        mainModuleName,
-        sessionProvider,
-        moduleDataProvider,
-        languageVersionSettings,
-        extensionRegistrars,
-        registerExtraComponents = {
-            it.registerJsSpecificComponents()
-            registerExtraComponents(it)
-        },
-        createKotlinScopeProvider = { FirKotlinScopeProvider() },
-        createProviders = { session, builtinsModuleData, kotlinScopeProvider ->
-            listOfNotNull(
-                KlibBasedSymbolProvider(session, moduleDataProvider, kotlinScopeProvider, resolvedLibraries),
-                FirBuiltinSyntheticFunctionInterfaceProvider(session, builtinsModuleData, kotlinScopeProvider),
-                FirExtensionSyntheticFunctionInterfaceProvider.createIfNeeded(session, builtinsModuleData, kotlinScopeProvider),
-            )
-        }
-    )
+    override fun createFlexibleTypeFactory(session: FirSession): FirTypeDeserializer.FlexibleTypeFactory {
+        return JsFlexibleTypeFactory(session)
+    }
 
-    @OptIn(SessionConfiguration::class)
-    fun FirSession.registerJsSpecificComponents() {
-        register(FirVisibilityChecker::class, FirVisibilityChecker.Default)
+    override fun FirSession.registerLibrarySessionComponents(c: Context) {
+        registerComponents(c.configuration)
+    }
+
+    // ==================================== Platform session ====================================
+
+    override fun createSourceContext(configuration: CompilerConfiguration): Context {
+        return Context(configuration)
+    }
+
+    override fun FirSessionConfigurator.registerPlatformCheckers(c: Context) {
+        registerJsCheckers()
+    }
+
+    override fun FirSessionConfigurator.registerExtraPlatformCheckers(c: Context) {}
+
+    override fun FirSession.registerSourceSessionComponents(c: Context) {
+        registerComponents(c.configuration)
+    }
+
+    // ==================================== Common parts ====================================
+
+    private fun FirSession.registerComponents(compilerConfiguration: CompilerConfiguration) {
+        val moduleKind = compilerConfiguration.get(JSConfigurationKeys.MODULE_KIND, ModuleKind.PLAIN)
+        registerDefaultComponents()
+        registerJsComponents(moduleKind)
+    }
+
+    fun FirSession.registerJsComponents(moduleKind: ModuleKind?) {
         register(ConeCallConflictResolverFactory::class, JsCallConflictResolverFactory)
-        register(FirPlatformClassMapper::class, FirPlatformClassMapper.Default)
-        register(FirOverridesBackwardCompatibilityHelper::class, FirEmptyOverridesBackwardCompatibilityHelper)
+        register(
+            FirTypeSpecificityComparatorProvider::class,
+            FirTypeSpecificityComparatorProvider(JsTypeSpecificityComparatorWithoutDelegate(typeContext))
+        )
         register(FirPlatformDiagnosticSuppressor::class, FirJsPlatformDiagnosticSuppressor())
+        register(FirIdentityLessPlatformDeterminer::class, FirJsIdentityLessPlatformDeterminer)
+
+        if (moduleKind != null) {
+            register(FirJsModuleKind::class, FirJsModuleKind(moduleKind))
+        }
+        register(FirDefaultImportProviderHolder::class, FirDefaultImportProviderHolder(JsPlatformAnalyzerServices))
     }
+
+    // ==================================== Utilities ====================================
+
+    class Context(val configuration: CompilerConfiguration)
 }

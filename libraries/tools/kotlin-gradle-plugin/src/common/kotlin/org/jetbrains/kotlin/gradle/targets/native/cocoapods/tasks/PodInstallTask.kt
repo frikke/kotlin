@@ -9,23 +9,27 @@ package org.jetbrains.kotlin.gradle.targets.native.tasks
 
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
-import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.*
+import org.gradle.work.DisableCachingByDefault
 import org.jetbrains.kotlin.gradle.plugin.cocoapods.CocoapodsExtension.CocoapodsDependency
 import org.jetbrains.kotlin.gradle.plugin.cocoapods.CocoapodsExtension.SpecRepos
-import org.jetbrains.kotlin.gradle.plugin.cocoapods.cocoapodsBuildDirs
 import org.jetbrains.kotlin.gradle.targets.native.cocoapods.MissingCocoapodsMessage
 import org.jetbrains.kotlin.gradle.targets.native.cocoapods.MissingSpecReposMessage
+import org.jetbrains.kotlin.gradle.utils.RunProcessResult
 import java.io.File
 
+@DisableCachingByDefault
 abstract class PodInstallTask : AbstractPodInstallTask() {
 
-    @get:Optional
-    @get:InputFile
+    @Deprecated("Use PodspecTask#outputFile")
+    @get:Internal
     abstract val podspec: Property<File?>
 
     @get:Input
     abstract val frameworkName: Property<String>
+
+    @get:Input
+    abstract val useStaticFramework: Property<Boolean>
 
     @get:Nested
     abstract val specRepos: Property<SpecRepos>
@@ -33,40 +37,14 @@ abstract class PodInstallTask : AbstractPodInstallTask() {
     @get:Nested
     abstract val pods: ListProperty<CocoapodsDependency>
 
-    @get:InputDirectory
-    abstract val dummyFramework: Property<File>
-
-    private val framework = project.provider { project.cocoapodsBuildDirs.framework.resolve("${frameworkName.get()}.framework") }
-    private val tmpFramework = dummyFramework.map { dummy -> dummy.parentFile.resolve("tmp.framework").also { it.deleteOnExit() } }
-
-    override fun doPodInstall() {
-        // We always need to execute 'pod install' with the dummy framework because the one left from a previous build
-        // may have a wrong linkage type. So we temporarily swap them, run 'pod install' and then swap them back
-        framework.rename(tmpFramework)
-        dummyFramework.rename(framework)
-        super.doPodInstall()
-        framework.rename(dummyFramework)
-        tmpFramework.rename(framework)
-    }
-
-    private fun Provider<File>.rename(dest: Provider<File>) = get().rename(dest.get())
-
-    private fun File.rename(dest: File) {
-        if (!exists()) {
-            mkdirs()
-        }
-
-        check(renameTo(dest)) { "Can't rename '${this}' to '${dest}'" }
-    }
-
-    override fun handleError(retCode: Int, error: String, process: Process): String? {
+    override fun handleError(result: RunProcessResult): String? {
         val specReposMessages = MissingSpecReposMessage(specRepos.get()).missingMessage
         val cocoapodsMessages = pods.get().map { MissingCocoapodsMessage(it).missingMessage }
 
         return listOfNotNull(
-            "'pod install' command failed with code $retCode.",
+            "'pod install' command failed with code ${result.retCode}.",
             "Error message:",
-            error.lines().filter { it.isNotBlank() }.joinToString("\n"),
+            result.stdErr.lines().filter { it.isNotBlank() }.joinToString("\n"),
             """
             |        Please, check that podfile contains following lines in header:
             |        $specReposMessages

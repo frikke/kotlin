@@ -25,7 +25,9 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 val IrDeclaration.isSyntheticPrimaryConstructor: Boolean
     get() = origin == PrimaryConstructorLowering.SYNTHETIC_PRIMARY_CONSTRUCTOR
 
-// Create primary constructor if it doesn't exist
+/**
+ * Creates a primary constructor if it doesn't exist.
+ */
 class PrimaryConstructorLowering(val context: JsCommonBackendContext) : DeclarationTransformer {
 
     private var IrClass.syntheticPrimaryConstructor by context.mapping.classToSyntheticPrimaryConstructor
@@ -42,7 +44,9 @@ class PrimaryConstructorLowering(val context: JsCommonBackendContext) : Declarat
         return null
     }
 
-    object SYNTHETIC_PRIMARY_CONSTRUCTOR : IrDeclarationOriginImpl("SYNTHETIC_PRIMARY_CONSTRUCTOR")
+    companion object {
+        val SYNTHETIC_PRIMARY_CONSTRUCTOR by IrDeclarationOriginImpl
+    }
 
     private val unitType = context.irBuiltIns.unitType
 
@@ -61,6 +65,9 @@ class PrimaryConstructorLowering(val context: JsCommonBackendContext) : Declarat
     }
 }
 
+/**
+ * Generates a delegating constructor to the synthetic primary constructor.
+ */
 class DelegateToSyntheticPrimaryConstructor(context: JsCommonBackendContext) : BodyLoweringPass {
 
     private var IrClass.syntheticPrimaryConstructor by context.mapping.classToSyntheticPrimaryConstructor
@@ -75,7 +82,6 @@ class DelegateToSyntheticPrimaryConstructor(context: JsCommonBackendContext) : B
                         IrDelegatingConstructorCallImpl(
                             startOffset, endOffset, type,
                             primary.symbol,
-                            valueArgumentsCount = primary.valueParameters.size,
                             typeArgumentsCount = primary.typeParameters.size
                         )
                     }

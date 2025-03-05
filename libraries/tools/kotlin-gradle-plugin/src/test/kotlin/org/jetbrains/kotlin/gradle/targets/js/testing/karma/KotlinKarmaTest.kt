@@ -18,19 +18,34 @@ class KotlinKarmaTest {
         val loadWasm = createLoadWasm(npmProjectDir.toFile(), executableFile.toFile())
 
         assertEquals(
-            "static/load.js",
+            "static/load.mjs",
             loadWasm.relativeTo(npmProjectDir.toFile()).invariantSeparatorsPath
         )
 
         assertEquals(
             """
-            import exports from "../kotlin/main.mjs";
-            
-            exports.startUnitTests();
-            
-            window.__karma__.loaded();
+            import { startUnitTests } from "../kotlin/main.mjs"
+            try {
+                startUnitTests()
+                window.__karma__.loaded();
+            } catch (e) {
+                window.__karma__.error("Problem with loading", void 0, void 0, void 0, e)
+            }
             """.trimIndent(),
             loadWasm.readText().trimIndent()
+        )
+    }
+
+    @Test
+    fun checkBasify() {
+        val npmProjectDir = createTempDirectory("tmp")
+        val executableFile = npmProjectDir.resolve("kotlin/main.wasm")
+
+        val based = basify(npmProjectDir.toFile(), executableFile.toFile())
+
+        assertEquals(
+            "/base/kotlin/main.wasm",
+            based
         )
     }
 }

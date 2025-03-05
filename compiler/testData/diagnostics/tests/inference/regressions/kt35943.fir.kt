@@ -1,8 +1,9 @@
-// !DIAGNOSTICS: -UNUSED_EXPRESSION
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNUSED_EXPRESSION
 
 class Inv<I>
 fun <T> create(): Inv<T> = TODO()
 
 fun main() {
-    <!NEW_INFERENCE_ERROR!>if (true) create() else null<!>
+    <!NEW_INFERENCE_ERROR!>if (true) <!CANNOT_INFER_PARAMETER_TYPE!>create<!>() else null<!>
 }

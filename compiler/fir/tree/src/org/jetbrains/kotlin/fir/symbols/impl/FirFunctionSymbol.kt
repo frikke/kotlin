@@ -8,16 +8,19 @@ package org.jetbrains.kotlin.fir.symbols.impl
 import org.jetbrains.kotlin.fir.FirLabel
 import org.jetbrains.kotlin.fir.contracts.FirResolvedContractDescription
 import org.jetbrains.kotlin.fir.declarations.*
+import org.jetbrains.kotlin.fir.declarations.synthetic.FirSyntheticProperty
+import org.jetbrains.kotlin.fir.declarations.synthetic.FirSyntheticPropertyAccessor
 import org.jetbrains.kotlin.fir.expressions.FirDelegatedConstructorCall
 import org.jetbrains.kotlin.fir.references.FirControlFlowGraphReference
 import org.jetbrains.kotlin.fir.references.toResolvedConstructorSymbol
+import org.jetbrains.kotlin.fir.symbols.SymbolInternals
 import org.jetbrains.kotlin.fir.symbols.lazyResolveToPhase
 import org.jetbrains.kotlin.mpp.ConstructorSymbolMarker
 import org.jetbrains.kotlin.mpp.FunctionSymbolMarker
 import org.jetbrains.kotlin.mpp.SimpleFunctionSymbolMarker
 import org.jetbrains.kotlin.name.*
 
-sealed class FirFunctionSymbol<D : FirFunction>(override val callableId: CallableId) : FirCallableSymbol<D>(), FunctionSymbolMarker {
+sealed class FirFunctionSymbol<out D : FirFunction>(override val callableId: CallableId) : FirCallableSymbol<D>(), FunctionSymbolMarker {
     val valueParameterSymbols: List<FirValueParameterSymbol>
         get() = fir.valueParameters.map { it.symbol }
 
@@ -44,11 +47,19 @@ open class FirNamedFunctionSymbol(callableId: CallableId) : FirFunctionSymbol<Fi
 
 interface FirIntersectionCallableSymbol {
     val intersections: Collection<FirCallableSymbol<*>>
+
+    /**
+     * `true` iff a call to `nonSubsumed()` for `intersections` would result into a list with more than one symbol.
+     * Intuitively, `false` means this intersection is, strictly speaking, redundant, but we still created it
+     * as an implementation detail.
+     */
+    val containsMultipleNonSubsumed: Boolean
 }
 
 class FirIntersectionOverrideFunctionSymbol(
     callableId: CallableId,
     override val intersections: Collection<FirCallableSymbol<*>>,
+    override val containsMultipleNonSubsumed: Boolean,
 ) : FirNamedFunctionSymbol(callableId), FirIntersectionCallableSymbol
 
 class FirConstructorSymbol(callableId: CallableId) : FirFunctionSymbol<FirConstructor>(callableId), ConstructorSymbolMarker {
@@ -70,8 +81,6 @@ class FirConstructorSymbol(callableId: CallableId) : FirFunctionSymbol<FirConstr
     val delegatedConstructorCallIsThis: Boolean
         get() = fir.delegatedConstructor?.isThis == true
 
-    val delegatedConstructorCallIsSuper: Boolean
-        get() = fir.delegatedConstructor?.isSuper == true
 }
 
 /**
@@ -83,20 +92,42 @@ class FirConstructorSymbol(callableId: CallableId) : FirFunctionSymbol<FirConstr
  */
 abstract class FirSyntheticPropertySymbol(propertyId: CallableId, val getterId: CallableId) : FirPropertySymbol(propertyId) {
     abstract fun copy(): FirSyntheticPropertySymbol
+
+    @SymbolInternals
+    val syntheticProperty: FirSyntheticProperty
+        get() = fir as FirSyntheticProperty
+
+    override val getterSymbol: FirSyntheticPropertyAccessorSymbol?
+        get() = super.getterSymbol as FirSyntheticPropertyAccessorSymbol?
+
+    override val setterSymbol: FirSyntheticPropertyAccessorSymbol?
+        get() = super.setterSymbol as FirSyntheticPropertyAccessorSymbol?
 }
 
 // ------------------------ unnamed ------------------------
 
-sealed class FirFunctionWithoutNameSymbol<F : FirFunction>(stubName: Name) : FirFunctionSymbol<F>(CallableId(FqName("special"), stubName))
+sealed class FirFunctionWithoutNameSymbol<out F : FirFunction>(stubName: Name) : FirFunctionSymbol<F>(CallableId(FqName("special"), stubName))
 
 class FirAnonymousFunctionSymbol : FirFunctionWithoutNameSymbol<FirAnonymousFunction>(Name.identifier("anonymous")) {
     val label: FirLabel? get() = fir.label
+    val isLambda: Boolean get() = fir.isLambda
 }
 
-class FirPropertyAccessorSymbol : FirFunctionWithoutNameSymbol<FirPropertyAccessor>(Name.identifier("accessor")) {
+open class FirPropertyAccessorSymbol : FirFunctionWithoutNameSymbol<FirPropertyAccessor>(Name.identifier("accessor")) {
     val isGetter: Boolean get() = fir.isGetter
     val isSetter: Boolean get() = fir.isSetter
-    val propertySymbol get() = fir.propertySymbol
+    open val propertySymbol: FirPropertySymbol get() = fir.propertySymbol
 }
 
-class FirErrorFunctionSymbol : FirFunctionWithoutNameSymbol<FirErrorFunction>(Name.identifier("error"))
+class FirSyntheticPropertyAccessorSymbol : FirPropertyAccessorSymbol() {
+    override val propertySymbol: FirSyntheticPropertySymbol
+        get() = super.propertySymbol as FirSyntheticPropertySymbol
+
+    val delegateFunctionSymbol: FirNamedFunctionSymbol
+        get() = (fir as FirSyntheticPropertyAccessor).delegate.symbol
+}
+
+interface FirErrorCallableSymbol<F : FirCallableDeclaration>
+
+class FirErrorFunctionSymbol : FirFunctionWithoutNameSymbol<FirErrorFunction>(Name.identifier("error")),
+    FirErrorCallableSymbol<FirErrorFunction>

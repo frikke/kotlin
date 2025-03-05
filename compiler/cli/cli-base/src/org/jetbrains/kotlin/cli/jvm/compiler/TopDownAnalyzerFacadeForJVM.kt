@@ -36,12 +36,13 @@ import org.jetbrains.kotlin.incremental.components.EnumWhenTracker
 import org.jetbrains.kotlin.incremental.components.ExpectActualTracker
 import org.jetbrains.kotlin.incremental.components.InlineConstTracker
 import org.jetbrains.kotlin.incremental.components.LookupTracker
-import org.jetbrains.kotlin.ir.backend.jvm.jvmLibrariesProvidedByDefault
 import org.jetbrains.kotlin.javac.components.JavacBasedClassFinder
 import org.jetbrains.kotlin.javac.components.JavacBasedSourceElementFactory
 import org.jetbrains.kotlin.javac.components.StubJavaResolverCache
 import org.jetbrains.kotlin.konan.properties.propertyList
 import org.jetbrains.kotlin.library.KLIB_PROPERTY_DEPENDS
+import org.jetbrains.kotlin.library.KOTLIN_JS_STDLIB_NAME
+import org.jetbrains.kotlin.library.KOTLIN_NATIVE_STDLIB_NAME
 import org.jetbrains.kotlin.library.KotlinLibrary
 import org.jetbrains.kotlin.library.metadata.KlibMetadataFactories
 import org.jetbrains.kotlin.library.metadata.NullFlexibleTypeDeserializer
@@ -49,7 +50,6 @@ import org.jetbrains.kotlin.load.java.JavaClassesTracker
 import org.jetbrains.kotlin.load.java.lazy.ModuleClassResolver
 import org.jetbrains.kotlin.load.java.structure.JavaClass
 import org.jetbrains.kotlin.load.java.structure.impl.VirtualFileBoundJavaClass
-import org.jetbrains.kotlin.load.kotlin.DeserializationComponentsForJava
 import org.jetbrains.kotlin.load.kotlin.PackagePartProvider
 import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackageFragmentProvider
 import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackagePartProvider
@@ -234,10 +234,7 @@ object TopDownAnalyzerFacadeForJVM {
 
         if (incrementalComponents != null) {
             targetIds?.mapTo(additionalProviders) { targetId ->
-                IncrementalPackageFragmentProvider(
-                    files, module, storageManager, container.get<DeserializationComponentsForJava>().components,
-                    incrementalComponents.getIncrementalCache(targetId), targetId, container.get()
-                )
+                IncrementalPackageFragmentProvider(files, module, storageManager, targetId)
             }
         }
 
@@ -345,7 +342,7 @@ private fun getModuleDescriptorByLibrary(
 
     val dependencies = current.manifestProperties.propertyList(KLIB_PROPERTY_DEPENDS, escapeInQuotes = true).mapNotNull {
         mapping[it] ?: run {
-            assert(it in jvmLibrariesProvidedByDefault) { "Unknown library $it" }
+            assert(it == KOTLIN_NATIVE_STDLIB_NAME || it == KOTLIN_JS_STDLIB_NAME) { "Unknown library $it" }
             null
         }
     }

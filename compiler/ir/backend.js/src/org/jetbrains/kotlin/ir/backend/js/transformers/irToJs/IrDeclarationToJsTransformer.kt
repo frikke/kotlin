@@ -8,10 +8,11 @@ package org.jetbrains.kotlin.ir.backend.js.transformers.irToJs
 import org.jetbrains.kotlin.ir.backend.js.lower.JsCodeOutliningLowering
 import org.jetbrains.kotlin.ir.backend.js.utils.JsGenerationContext
 import org.jetbrains.kotlin.ir.declarations.*
+import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.js.backend.ast.*
 
 @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
-class IrDeclarationToJsTransformer : BaseIrElementToJsNodeTransformer<JsStatement, JsGenerationContext> {
+class IrDeclarationToJsTransformer : BaseIrElementToJsNodeTransformer<JsStatement, JsGenerationContext>() {
 
     override fun visitSimpleFunction(declaration: IrSimpleFunction, context: JsGenerationContext): JsStatement {
         require(!declaration.isExpect)
@@ -30,19 +31,19 @@ class IrDeclarationToJsTransformer : BaseIrElementToJsNodeTransformer<JsStatemen
         ).generate()
     }
 
-    override fun visitErrorDeclaration(declaration: IrErrorDeclaration, data: JsGenerationContext): JsStatement {
-        // To avoid compiler crash with UnimplementedException just in case I added this visitor to catch uncovered cases
-        return JsSingleLineComment("\$error code: declaration")
-    }
-
     override fun visitField(declaration: IrField, context: JsGenerationContext): JsStatement {
         val fieldName = context.getNameForField(declaration)
 
         if (declaration.isExternal) return JsEmpty
 
         if (declaration.initializer != null) {
+            val eagerInitializationAnnotation = context.staticContext.backendContext.propertyLazyInitialization.eagerInitialization
             val initializer = declaration.initializer!!.accept(IrElementToJsExpressionTransformer(), context)
-            context.staticContext.initializerBlock.statements += jsAssignment(fieldName.makeRef(), initializer).makeStmt()
+            val initializerBlock = when {
+                declaration.correspondingPropertySymbol?.owner?.hasAnnotation(eagerInitializationAnnotation) == true -> context.staticContext.eagerInitializerBlock
+                else -> context.staticContext.initializerBlock
+            }
+            initializerBlock.statements += jsAssignment(fieldName.makeRef(), initializer).makeStmt()
         }
 
         return JsVars(JsVars.JsVar(fieldName))

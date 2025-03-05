@@ -1,5 +1,5 @@
-// !DIAGNOSTICS: -NON_TOPLEVEL_CLASS_DECLARATION
-// !MARK_DYNAMIC_CALLS
+// DIAGNOSTICS: -NON_TOPLEVEL_CLASS_DECLARATION
+// MARK_DYNAMIC_CALLS
 
 fun test(d: dynamic) {
     <!DEBUG_INFO_DYNAMIC!>+<!>d
@@ -37,7 +37,7 @@ fun test(d: dynamic) {
         val plus: dynamic = null
     }
 
-    C() <!PROPERTY_AS_OPERATOR!>+<!> 5 // todo should be marked as DEBUG_INFO_DYNAMIC
+    C() + 5 // todo should be marked as DEBUG_INFO_DYNAMIC
     C().<!DEBUG_INFO_DYNAMIC!>plus(5)<!>
 
     d == d

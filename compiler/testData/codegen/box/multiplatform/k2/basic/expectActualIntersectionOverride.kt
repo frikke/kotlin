@@ -1,5 +1,4 @@
-// IGNORE_BACKEND_K1: JVM, JVM_IR, JS, JS_IR, JS_IR_ES6, NATIVE
-// !LANGUAGE: +MultiPlatformProjects
+// LANGUAGE: +MultiPlatformProjects
 // ISSUE: KT-58124
 
 // MODULE: common
@@ -13,7 +12,9 @@ interface I2 {
     fun f(): String
 }
 
-expect class C() : I1, I2
+expect class C() : I1, I2 {
+    override fun f(): String
+}
 
 fun test() = C().f()
 
@@ -21,7 +22,7 @@ fun test() = C().f()
 // FILE: platform.kt
 
 actual class C : I1, I2 {
-    override fun f() = "OK"
+    actual override fun f() = "OK"
 }
 
 fun box() = test()

@@ -8,11 +8,10 @@ import llvm.*
 import org.jetbrains.kotlin.backend.konan.driver.PhaseContext
 import org.jetbrains.kotlin.backend.konan.llvm.*
 import org.jetbrains.kotlin.backend.konan.llvm.objc.patchObjCRuntimeModule
+import org.jetbrains.kotlin.backend.konan.serialization.CacheDeserializationStrategy
 import org.jetbrains.kotlin.konan.file.isBitcode
-import org.jetbrains.kotlin.konan.library.KONAN_STDLIB_NAME
 import org.jetbrains.kotlin.konan.target.CompilerOutputKind
-import org.jetbrains.kotlin.library.BaseKotlinLibrary
-import org.jetbrains.kotlin.library.uniqueName
+import org.jetbrains.kotlin.library.isNativeStdlib
 import org.jetbrains.kotlin.utils.addToStdlib.ifNotEmpty
 import java.io.File
 
@@ -22,14 +21,20 @@ import java.io.File
 val KonanConfig.isFinalBinary: Boolean get() = when (this.produce) {
     CompilerOutputKind.PROGRAM, CompilerOutputKind.DYNAMIC,
     CompilerOutputKind.STATIC -> true
-    CompilerOutputKind.DYNAMIC_CACHE, CompilerOutputKind.STATIC_CACHE,
+    CompilerOutputKind.DYNAMIC_CACHE, CompilerOutputKind.STATIC_CACHE, CompilerOutputKind.HEADER_CACHE,
     CompilerOutputKind.LIBRARY, CompilerOutputKind.BITCODE -> false
     CompilerOutputKind.FRAMEWORK -> !omitFrameworkBinary
-    else -> error("not supported: ${this.produce}")
+    CompilerOutputKind.TEST_BUNDLE -> true
 }
 
 val CompilerOutputKind.isNativeLibrary: Boolean
     get() = this == CompilerOutputKind.DYNAMIC || this == CompilerOutputKind.STATIC
+
+/**
+ * Return true if compiler has to generate a C API for dynamic/static library.
+ */
+val KonanConfig.produceCInterface: Boolean
+    get() = this.produce.isNativeLibrary && this.cInterfaceGenerationMode != CInterfaceGenerationMode.NONE
 
 val CompilerOutputKind.involvesBitcodeGeneration: Boolean
     get() = this != CompilerOutputKind.LIBRARY
@@ -50,8 +55,14 @@ internal val CacheDeserializationStrategy?.containsRuntime: Boolean
 internal val NativeGenerationState.shouldLinkRuntimeNativeLibraries: Boolean
     get() = producedLlvmModuleContainsStdlib && cacheDeserializationStrategy.containsRuntime
 
-val CompilerOutputKind.isCache: Boolean
+val CompilerOutputKind.isFullCache: Boolean
     get() = this == CompilerOutputKind.STATIC_CACHE || this == CompilerOutputKind.DYNAMIC_CACHE
+
+val CompilerOutputKind.isHeaderCache: Boolean
+    get() = this == CompilerOutputKind.HEADER_CACHE
+
+val CompilerOutputKind.isCache: Boolean
+    get() = this.isFullCache || this.isHeaderCache
 
 internal fun produceCStubs(generationState: NativeGenerationState) {
     generationState.cStubsManager.compile(
@@ -62,10 +73,6 @@ internal fun produceCStubs(generationState: NativeGenerationState) {
         parseAndLinkBitcodeFile(generationState, generationState.llvm.module, it.absolutePath)
     }
 }
-
-private val BaseKotlinLibrary.isStdlib: Boolean
-    get() = uniqueName == KONAN_STDLIB_NAME
-
 
 private data class LlvmModules(
         val runtimeModules: List<LLVMModuleRef>,
@@ -81,7 +88,7 @@ private fun collectLlvmModules(generationState: NativeGenerationState, generated
     val config = generationState.config
 
     val (bitcodePartOfStdlib, bitcodeLibraries) = generationState.dependenciesTracker.bitcodeToLink
-            .partition { it.isStdlib && generationState.producedLlvmModuleContainsStdlib }
+            .partition { it.isNativeStdlib && generationState.producedLlvmModuleContainsStdlib }
             .toList()
             .map { libraries ->
                 libraries.flatMap { it.bitcodePaths }.filter { it.isBitcode }
@@ -92,17 +99,20 @@ private fun collectLlvmModules(generationState: NativeGenerationState, generated
     val additionalBitcodeFilesToLink = generationState.llvm.additionalProducedBitcodeFiles
     val exceptionsSupportNativeLibrary = listOf(config.exceptionsSupportNativeLibrary)
             .takeIf { config.produce == CompilerOutputKind.DYNAMIC_CACHE }.orEmpty()
+    val xcTestRunnerNativeLibrary = listOf(config.xcTestLauncherNativeLibrary)
+            .takeIf { config.produce == CompilerOutputKind.TEST_BUNDLE }.orEmpty()
     val additionalBitcodeFiles = nativeLibraries +
             generatedBitcodeFiles +
             additionalBitcodeFilesToLink +
             bitcodeLibraries +
-            exceptionsSupportNativeLibrary
+            exceptionsSupportNativeLibrary +
+            xcTestRunnerNativeLibrary
 
     val runtimeNativeLibraries = config.runtimeNativeLibraries
 
 
     fun parseBitcodeFiles(files: List<String>): List<LLVMModuleRef> = files.map { bitcodeFile ->
-        val parsedModule = parseBitcodeFile(generationState.llvmContext, bitcodeFile)
+        val parsedModule = parseBitcodeFile(generationState, generationState.messageCollector, generationState.llvmContext, bitcodeFile)
         if (!generationState.shouldUseDebugInfoFromNativeLibs()) {
             LLVMStripModuleDebugInfo(parsedModule)
         }
@@ -123,12 +133,21 @@ private fun collectLlvmModules(generationState: NativeGenerationState, generated
 private fun linkAllDependencies(generationState: NativeGenerationState, generatedBitcodeFiles: List<String>) {
     val (runtimeModules, additionalModules) = collectLlvmModules(generationState, generatedBitcodeFiles)
     // TODO: Possibly slow, maybe to a separate phase?
-    val optimizedRuntimeModules = RuntimeLinkageStrategy.pick(generationState, runtimeModules).run()
+    val optimizedRuntimeModules = linkRuntimeModules(generationState, runtimeModules)
 
-    (optimizedRuntimeModules + additionalModules).forEach {
-        val failed = llvmLinkModules2(generationState, generationState.llvm.module, it)
+    // When the main module `generationState.llvmModule` is very large it is much faster to
+    // link all the auxiliary modules together first before linking with the main module.
+    val linkedModules = (optimizedRuntimeModules + additionalModules).reduceOrNull { acc, module ->
+        val failed = llvmLinkModules2(generationState, acc, module)
         if (failed != 0) {
-            error("Failed to link ${it.getName()}")
+            error("Failed to link ${module.getName()}")
+        }
+        return@reduceOrNull acc
+    }
+    linkedModules?.let {
+        val failed = llvmLinkModules2(generationState, generationState.llvmModule, it)
+        if (failed != 0) {
+            error("Failed to link runtime and additional modules into main module")
         }
     }
 }
@@ -141,7 +160,8 @@ internal fun insertAliasToEntryPoint(context: PhaseContext, module: LLVMModuleRe
     val entryPointName = config.entryPointName
     val entryPoint = LLVMGetNamedFunction(module, entryPointName)
             ?: error("Module doesn't contain `$entryPointName`")
-    LLVMAddAlias(module, LLVMTypeOf(entryPoint)!!, entryPoint, "main")
+    val programAddressSpace = LLVMGetProgramAddressSpace(module)
+    LLVMAddAlias2(module, getGlobalFunctionType(entryPoint), programAddressSpace, entryPoint, "main")
 }
 
 internal fun linkBitcodeDependencies(generationState: NativeGenerationState,
@@ -149,7 +169,10 @@ internal fun linkBitcodeDependencies(generationState: NativeGenerationState,
     val config = generationState.config
     val produce = config.produce
 
-    if (produce == CompilerOutputKind.FRAMEWORK && config.produceStaticFramework) {
+    val staticFramework = produce == CompilerOutputKind.FRAMEWORK && config.produceStaticFramework
+    val swiftExport = config.swiftExport && produce == CompilerOutputKind.STATIC
+
+    if (staticFramework || swiftExport) {
         embedAppleLinkerOptionsToBitcode(generationState.llvm, config)
     }
     linkAllDependencies(generationState, generatedBitcodeFiles.map { it.absoluteFile.normalize().path })
@@ -157,7 +180,7 @@ internal fun linkBitcodeDependencies(generationState: NativeGenerationState,
 }
 
 private fun parseAndLinkBitcodeFile(generationState: NativeGenerationState, llvmModule: LLVMModuleRef, path: String) {
-    val parsedModule = parseBitcodeFile(generationState.llvmContext, path)
+    val parsedModule = parseBitcodeFile(generationState, generationState.messageCollector, generationState.llvmContext, path)
     if (!generationState.shouldUseDebugInfoFromNativeLibs()) {
         LLVMStripModuleDebugInfo(parsedModule)
     }

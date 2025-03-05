@@ -12,31 +12,40 @@ import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.impl.FirDeclarationStatusImpl
+import org.jetbrains.kotlin.fir.declarations.impl.FirDeclarationStatusWithAlteredDefaults
 import org.jetbrains.kotlin.fir.declarations.impl.FirResolvedDeclarationStatusImpl
+import org.jetbrains.kotlin.fir.declarations.impl.FirResolvedDeclarationStatusWithAlteredDefaults
 import org.jetbrains.kotlin.fir.declarations.utils.isEnumClass
-import org.jetbrains.kotlin.fir.expressions.FirBlock
-import org.jetbrains.kotlin.fir.expressions.FirExpression
+import org.jetbrains.kotlin.fir.declarations.utils.isStatic
+import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.renderer.FirRenderer
+import org.jetbrains.kotlin.fir.symbols.FirBasedSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirCallableSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirClassLikeSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirPropertyAccessorSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirReplSnippetSymbol
 import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.fir.types.builder.*
 import org.jetbrains.kotlin.fir.types.impl.*
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.util.OperatorNameConventions
+import org.jetbrains.kotlin.util.OperatorNameConventions.STATEMENT_LIKE_OPERATORS
 import org.jetbrains.kotlin.util.wrapIntoFileAnalysisExceptionIfNeeded
 import org.jetbrains.kotlin.util.wrapIntoSourceCodeAnalysisExceptionIfNeeded
 
-// TODO: rewrite
-fun FirBlock.returnExpressions(): List<FirExpression> = listOfNotNull(statements.lastOrNull() as? FirExpression)
+val FirBlock.lastExpression: FirExpression?
+    get() = statements.lastOrNull() as? FirExpression
 
 fun <R : FirTypeRef> R.copyWithNewSourceKind(newKind: KtFakeSourceElementKind): R {
-    if (source == null) return this
-    if (source?.kind == newKind) return this
-    return copyWithNewSource(source?.fakeElement(newKind))
+    val source = source ?: return this
+    if (source.kind == newKind) return this
+    return copyWithNewSource(source.fakeElement(newKind))
 }
 
 // do we need a deep copy here ?
-fun <R : FirTypeRef> R.copyWithNewSource(newSource: KtSourceElement?): R {
-    if (source?.kind == newSource?.kind) return this
+fun <R : FirTypeRef> R.copyWithNewSource(newSource: KtSourceElement): R {
+    if (source?.kind == newSource.kind) return this
 
     @Suppress("UNCHECKED_CAST")
     return when (val typeRef = this) {
@@ -52,9 +61,6 @@ fun <R : FirTypeRef> R.copyWithNewSource(newSource: KtSourceElement?): R {
             qualifier += typeRef.qualifier
             annotations += typeRef.annotations
         }
-        is FirImplicitTypeRef -> newSource?.let {
-            buildImplicitTypeRefCopy(typeRef) { source = it }
-        } ?: FirImplicitTypeRefImplWithoutSource
         is FirFunctionTypeRefImpl -> buildFunctionTypeRefCopy(typeRef) {
             source = newSource
         }
@@ -80,8 +86,6 @@ val FirFile.packageFqName: FqName
 val FirElement.psi: PsiElement? get() = (source as? KtPsiSourceElement)?.psi
 val FirElement.realPsi: PsiElement? get() = (source as? KtRealPsiSourceElement)?.psi
 
-val FirContextReceiver.labelName: Name? get() = customLabelName ?: labelNameFromTypeRef
-
 fun FirElement.renderWithType(): String =
     FirRenderer().renderElementWithTypeAsString(this)
 
@@ -97,6 +101,7 @@ fun FirDeclarationStatus.copy(
     isOperator: Boolean = this.isOperator,
     isInfix: Boolean = this.isInfix,
     isInline: Boolean = this.isInline,
+    isValue: Boolean = this.isValue,
     isTailRec: Boolean = this.isTailRec,
     isExternal: Boolean = this.isExternal,
     isConst: Boolean = this.isConst,
@@ -118,27 +123,100 @@ fun FirDeclarationStatus.copy(
     } else {
         FirDeclarationStatusImpl(newVisibility, newModality)
     }
-    return newStatus.apply {
-        this.isExpect = isExpect
-        this.isActual = isActual
-        this.isOverride = isOverride
-        this.isOperator = isOperator
-        this.isInfix = isInfix
-        this.isInline = isInline
-        this.isTailRec = isTailRec
-        this.isExternal = isExternal
-        this.isConst = isConst
-        this.isLateInit = isLateInit
-        this.isInner = isInner
-        this.isCompanion = isCompanion
-        this.isData = isData
-        this.isSuspend = isSuspend
-        this.isStatic = isStatic
-        this.isFromSealedClass = isFromSealedClass
-        this.isFromEnumClass = isFromEnumClass
-        this.isFun = isFun
-        this.hasStableParameterNames = hasStableParameterNames
+    copyStatusAttributes(
+        from = this,
+        to = newStatus,
+        isExpect = isExpect,
+        isActual = isActual,
+        isOverride = isOverride,
+        isOperator = isOperator,
+        isInfix = isInfix,
+        isInline = isInline,
+        isValue = isValue,
+        isTailRec = isTailRec,
+        isExternal = isExternal,
+        isConst = isConst,
+        isLateInit = isLateInit,
+        isInner = isInner,
+        isCompanion = isCompanion,
+        isData = isData,
+        isSuspend = isSuspend,
+        isStatic = isStatic,
+        isFromSealedClass = isFromSealedClass,
+        isFromEnumClass = isFromEnumClass,
+        isFun = isFun,
+        hasStableParameterNames = hasStableParameterNames,
+    )
+    return newStatus
+}
+
+fun FirDeclarationStatus.copyWithNewDefaults(
+    visibility: Visibility? = this.visibility,
+    modality: Modality? = this.modality,
+    defaultVisibility: Visibility = this.defaultVisibility,
+    defaultModality: Modality = this.defaultModality,
+): FirDeclarationStatus {
+    val newVisibility = visibility ?: this.visibility
+    val newModality = modality ?: this.modality
+
+    val newStatus = when (this) {
+        is FirResolvedDeclarationStatus -> FirResolvedDeclarationStatusWithAlteredDefaults(
+            newVisibility, newModality!!,
+            defaultVisibility, defaultModality,
+            effectiveVisibility
+        )
+        else -> FirDeclarationStatusWithAlteredDefaults(newVisibility, newModality, defaultVisibility, defaultModality)
     }
+
+    copyStatusAttributes(from = this, to = newStatus)
+
+    return newStatus
+}
+
+private fun copyStatusAttributes(
+    from: FirDeclarationStatus,
+    to: FirDeclarationStatusImpl,
+    isExpect: Boolean = from.isExpect,
+    isActual: Boolean = from.isActual,
+    isOverride: Boolean = from.isOverride,
+    isOperator: Boolean = from.isOperator,
+    isInfix: Boolean = from.isInfix,
+    isInline: Boolean = from.isInline,
+    isValue: Boolean = from.isValue,
+    isTailRec: Boolean = from.isTailRec,
+    isExternal: Boolean = from.isExternal,
+    isConst: Boolean = from.isConst,
+    isLateInit: Boolean = from.isLateInit,
+    isInner: Boolean = from.isInner,
+    isCompanion: Boolean = from.isCompanion,
+    isData: Boolean = from.isData,
+    isSuspend: Boolean = from.isSuspend,
+    isStatic: Boolean = from.isStatic,
+    isFromSealedClass: Boolean = from.isFromSealedClass,
+    isFromEnumClass: Boolean = from.isFromEnumClass,
+    isFun: Boolean = from.isFun,
+    hasStableParameterNames: Boolean = from.hasStableParameterNames,
+) {
+    to.isExpect = isExpect
+    to.isActual = isActual
+    to.isOverride = isOverride
+    to.isOperator = isOperator
+    to.isInfix = isInfix
+    to.isInline = isInline
+    to.isValue = isValue
+    to.isTailRec = isTailRec
+    to.isExternal = isExternal
+    to.isConst = isConst
+    to.isLateInit = isLateInit
+    to.isInner = isInner
+    to.isCompanion = isCompanion
+    to.isData = isData
+    to.isSuspend = isSuspend
+    to.isStatic = isStatic
+    to.isFromSealedClass = isFromSealedClass
+    to.isFromEnumClass = isFromEnumClass
+    to.isFun = isFun
+    to.hasStableParameterNames = hasStableParameterNames
 }
 
 inline fun <R> whileAnalysing(session: FirSession, element: FirElement, block: () -> R): R {
@@ -255,4 +333,61 @@ fun <T> List<T>.smartPlus(other: List<T>): List<T> = when {
 }
 
 // Source element may be missing if the class came from a library
-fun FirVariable.isEnumEntries(containingClass: FirClass) = name == StandardNames.ENUM_ENTRIES && containingClass.isEnumClass
+fun FirVariable.isEnumEntries(containingClass: FirClass) = isStatic && name == StandardNames.ENUM_ENTRIES && containingClass.isEnumClass
+fun FirVariable.isEnumEntries(containingClassSymbol: FirClassSymbol<*>): Boolean {
+    return isStatic && name == StandardNames.ENUM_ENTRIES && containingClassSymbol.isEnumClass
+}
+
+val FirExpression.isArraySet: Boolean
+    get() {
+        val name = (this as? FirFunctionCall)?.calleeReference?.name ?: return false
+        return origin == FirFunctionCallOrigin.Operator && name == OperatorNameConventions.SET
+    }
+
+val FirExpression.isStatementLikeExpression: Boolean
+    get() = when (this) {
+        is FirFunctionCall -> origin == FirFunctionCallOrigin.Operator && calleeReference.name in STATEMENT_LIKE_OPERATORS
+        else -> isIndexedAssignment
+    }
+
+private val FirExpression.isIndexedAssignment: Boolean
+    get() = this is FirBlock && statements.lastOrNull()?.source?.kind == KtFakeSourceElementKind.ImplicitUnit.IndexedAssignmentCoercion
+
+fun FirBasedSymbol<*>.packageFqName(): FqName {
+    return when (this) {
+        is FirClassLikeSymbol<*> -> classId.packageFqName
+        is FirPropertyAccessorSymbol -> propertySymbol.packageFqName()
+        is FirCallableSymbol<*> -> callableId.packageName
+        is FirReplSnippetSymbol -> FqName.ROOT // TODO: add package FQN to snippet symbol (KT-74126)
+        else -> error("No package fq name for $this")
+    }
+}
+
+fun FirOperation.toAugmentedAssignSourceKind() = when (this) {
+    FirOperation.PLUS_ASSIGN -> KtFakeSourceElementKind.DesugaredPlusAssign
+    FirOperation.MINUS_ASSIGN -> KtFakeSourceElementKind.DesugaredMinusAssign
+    FirOperation.TIMES_ASSIGN -> KtFakeSourceElementKind.DesugaredTimesAssign
+    FirOperation.DIV_ASSIGN -> KtFakeSourceElementKind.DesugaredDivAssign
+    FirOperation.REM_ASSIGN -> KtFakeSourceElementKind.DesugaredRemAssign
+    else -> error("Unexpected operator: $name")
+}
+
+fun ConeKotlinType.toFirResolvedTypeRef(
+    source: KtSourceElement? = null,
+    delegatedTypeRef: FirTypeRef? = null
+): FirResolvedTypeRef {
+    return if (this is ConeErrorType) {
+        buildErrorTypeRef {
+            this.source = source
+            diagnostic = this@toFirResolvedTypeRef.diagnostic
+            coneType = this@toFirResolvedTypeRef
+            this.delegatedTypeRef = delegatedTypeRef
+        }
+    } else {
+        buildResolvedTypeRef {
+            this.source = source
+            coneType = this@toFirResolvedTypeRef
+            this.delegatedTypeRef = delegatedTypeRef
+        }
+    }
+}

@@ -15,6 +15,7 @@ import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSymbolOwner
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.symbols.isPublicApi
+import org.jetbrains.kotlin.ir.util.DelicateSymbolTableApi
 import org.jetbrains.kotlin.ir.util.IdSignature
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.library.IrLibrary
@@ -25,7 +26,8 @@ import org.jetbrains.kotlin.library.impl.*
 class ICData(val icData: List<SerializedIrFile>, val containsErrorCode: Boolean)
 
 class ICKotlinLibrary(private val icData: List<SerializedIrFile>) : IrLibrary {
-    override val dataFlowGraph: ByteArray? = null
+    override val hasIr get() = true
+    override val hasFileEntriesTable get() = true
 
     private inline fun <K, R : IrTableReader<K>> Array<R?>.itemBytes(fileIndex: Int, key: K, factory: () -> R): ByteArray {
         val reader = this[fileIndex] ?: factory().also { this[fileIndex] = it }
@@ -51,6 +53,7 @@ class ICKotlinLibrary(private val icData: List<SerializedIrFile>) : IrLibrary {
     private val indexedStrings = arrayOfNulls<IrArrayMemoryReader>(icData.size)
     private val indexedDebugInfos = arrayOfNulls<IrArrayMemoryReader?>(icData.size)
     private val indexedBodies = arrayOfNulls<IrArrayMemoryReader>(icData.size)
+    private val indexedFileEntries = arrayOfNulls<IrArrayMemoryReader>(icData.size)
 
     override fun irDeclaration(index: Int, fileIndex: Int): ByteArray =
         indexedDeclarations.itemBytes(fileIndex, DeclarationId(index)) {
@@ -82,6 +85,11 @@ class ICKotlinLibrary(private val icData: List<SerializedIrFile>) : IrLibrary {
             icData[fileIndex].debugInfo?.let { IrArrayMemoryReader(it) }
         }
 
+    override fun fileEntry(index: Int, fileIndex: Int): ByteArray? =
+        indexedFileEntries.itemNullableBytes(fileIndex, index) {
+            IrArrayMemoryReader(icData[fileIndex].fileEntries)
+        }
+
     override fun file(index: Int): ByteArray = icData[index].fileData
 
     override fun fileCount(): Int = icData.size
@@ -95,6 +103,8 @@ class ICKotlinLibrary(private val icData: List<SerializedIrFile>) : IrLibrary {
     override fun declarations(fileIndex: Int): ByteArray = icData[fileIndex].declarations
 
     override fun bodies(fileIndex: Int): ByteArray = icData[fileIndex].bodies
+
+    override fun fileEntries(fileIndex: Int): ByteArray? = icData[fileIndex].fileEntries
 }
 
 class CurrentModuleWithICDeserializer(
@@ -124,9 +134,9 @@ class CurrentModuleWithICDeserializer(
 
     override fun deserializedSymbolNotFound(idSig: IdSignature): Nothing = delegate.deserializedSymbolNotFound(idSig)
 
-    override fun addModuleReachableTopLevel(idSig: IdSignature) {
-        assert(idSig in icDeserializer)
-        icDeserializer.addModuleReachableTopLevel(idSig)
+    override fun addModuleReachableTopLevel(topLevelDeclarationSignature: IdSignature) {
+        assert(topLevelDeclarationSignature in icDeserializer)
+        icDeserializer.addModuleReachableTopLevel(topLevelDeclarationSignature)
     }
 
     override fun deserializeReachableDeclarations() {
@@ -143,9 +153,10 @@ class CurrentModuleWithICDeserializer(
         return this !is DeserializedDescriptor
     }
 
+    @OptIn(DelicateSymbolTableApi::class)
     override fun init(delegate: IrModuleDeserializer) {
         val knownBuiltIns = irBuiltIns.knownBuiltins.map { (it as IrSymbolOwner).symbol }.toSet()
-        symbolTable.forEachDeclarationSymbol {
+        symbolTable.descriptorExtension.forEachDeclarationSymbol {
             assert(it.isPublicApi)
             if (it.descriptor.isDirtyDescriptor()) { // public && non-deserialized should be dirty symbol
                 if (it !in knownBuiltIns) {

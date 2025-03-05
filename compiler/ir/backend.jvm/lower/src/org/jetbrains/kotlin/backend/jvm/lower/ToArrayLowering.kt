@@ -6,9 +6,8 @@
 package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.ClassLoweringPass
-import org.jetbrains.kotlin.backend.common.ir.addDispatchReceiver
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.ir.isJvmInterface
@@ -17,6 +16,7 @@ import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.builders.declarations.addFunction
 import org.jetbrains.kotlin.ir.builders.declarations.addTypeParameter
 import org.jetbrains.kotlin.ir.builders.declarations.addValueParameter
+import org.jetbrains.kotlin.ir.builders.declarations.buildReceiverParameter
 import org.jetbrains.kotlin.ir.builders.irBlockBody
 import org.jetbrains.kotlin.ir.builders.irCall
 import org.jetbrains.kotlin.ir.builders.irGet
@@ -33,14 +33,18 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.utils.DFS
 
-internal val toArrayPhase = makeIrFilePhase(
-    ::ToArrayLowering,
-    name = "ToArray",
-    description = "Handle toArray functions"
-)
-
-private class ToArrayLowering(private val context: JvmBackendContext) : ClassLoweringPass {
-    private val symbols = context.ir.symbols
+/**
+ * Handles [java.util.Collection.toArray] functions. There are two functions which are declared in Java `Collection`, but not in Kotlin:
+ *
+ *     Object[] toArray();
+ *     <T> T[] toArray(T[] a);
+ *
+ * This phase generates `toArray` overrides for `Collection` subclasses which call `kotlin.jvm.internal.CollectionToArray.toArray`,
+ * unless the function is already declared in the class.
+ */
+@PhaseDescription(name = "ToArray")
+internal class ToArrayLowering(private val context: JvmBackendContext) : ClassLoweringPass {
+    private val symbols = context.symbols
 
     override fun lower(irClass: IrClass) {
         if (irClass.isJvmInterface || !irClass.isCollectionSubClass) return
@@ -61,10 +65,11 @@ private class ToArrayLowering(private val context: JvmBackendContext) : ClassLow
                     superTypes.add(context.irBuiltIns.anyNType)
                 }
                 returnType = context.irBuiltIns.arrayClass.typeWith(elementType.defaultType)
-                val receiver = addDispatchReceiver {
-                    type = irClass.defaultType
+                val receiver = buildReceiverParameter {
                     origin = JvmLoweredDeclarationOrigin.TO_ARRAY
+                    type = irClass.defaultType
                 }
+                parameters += receiver
                 val prototype = addValueParameter("array", returnType, JvmLoweredDeclarationOrigin.TO_ARRAY)
                 body = context.createIrBuilder(symbol).irBlockBody {
                     if (bridge == null) {
@@ -89,10 +94,11 @@ private class ToArrayLowering(private val context: JvmBackendContext) : ClassLow
                 modality = if (bridge != null) Modality.FINAL else Modality.OPEN
                 returnType = context.irBuiltIns.arrayClass.typeWith(context.irBuiltIns.anyNType)
             }.apply {
-                val receiver = addDispatchReceiver {
-                    type = irClass.defaultType
+                val receiver = buildReceiverParameter {
                     origin = JvmLoweredDeclarationOrigin.TO_ARRAY
+                    type = irClass.defaultType
                 }
+                parameters += receiver
                 body = context.createIrBuilder(symbol).irBlockBody {
                     if (bridge == null) {
                         +irReturn(irCall(symbols.nonGenericToArray, symbols.nonGenericToArray.owner.returnType).apply {

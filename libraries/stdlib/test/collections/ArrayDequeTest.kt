@@ -5,6 +5,7 @@
 
 package test.collections
 
+import test.*
 import test.collections.behaviors.iteratorBehavior
 import test.collections.behaviors.listIteratorBehavior
 import test.collections.behaviors.listIteratorProperties
@@ -351,7 +352,7 @@ class ArrayDequeTest {
     }
 
     private fun testArrayDeque(test: (bufferSize: Int, dequeSize: Int, head: Int, tail: Int) -> Unit) {
-        for (bufferSize in listOf(0, 2, 8)) {
+        for (bufferSize in listOf(0, 2, 8, 15)) {
             for (dequeSize in 0..bufferSize) {
                 for (tail in 0 until bufferSize) {
                     val head = tail - dequeSize
@@ -608,6 +609,40 @@ class ArrayDequeTest {
         }
     }
 
+    @Test
+    fun removeRange() = testArrayDeque { bufferSize: Int, dequeSize: Int, head: Int, tail: Int ->
+        for (fromIndex in 0..dequeSize) {
+            for (toIndex in fromIndex..dequeSize) {
+                val deque = generateArrayDeque(head, tail, bufferSize).apply { testRemoveRange(fromIndex, toIndex) }
+
+                val length = toIndex - fromIndex
+                val expectedHead = when {
+                    length == 0 -> head
+                    length == dequeSize -> 0
+                    fromIndex < dequeSize - toIndex -> head + length   // shift preceding elements
+                    else ->                                            // shift succeeding elements
+                        if (tail <= length - 1)
+                            head + bufferSize   // head becomes positive(head < tail)
+                        else
+                            head
+                }
+
+                val expectedElements = (head until tail).toMutableList().apply {
+                    repeat(length) { removeAt(fromIndex) }
+                }
+
+                deque.internalStructure { actualHead, actualElements ->
+                    assertEquals(
+                        expectedHead,
+                        actualHead,
+                        "bufferSize: $bufferSize, head: $head, tail: $tail, fromIndex: $fromIndex, toIndex: $toIndex"
+                    )
+                    assertEquals(expectedElements, actualElements.toList())
+                }
+            }
+        }
+    }
+
     @Suppress("INVISIBLE_MEMBER")
     @Test
     fun toArray() {
@@ -622,12 +657,20 @@ class ArrayDequeTest {
 
             val dest = Array(expected.size + 2) { it + 100 }
 
-            @Suppress("UNCHECKED_CAST")
-            val nullTerminatedExpected = (expected as Array<Any?>) + null + (expected.size + 101)
+            val expectedDest = buildList {
+                addAll(expected)
+                if (TestPlatform.current == TestPlatform.Jvm) {
+                    add(null)
+                } else {
+                    add(expected.size + 100)
+                }
+                add(expected.size + 101)
+            }.toTypedArray()
+
             val actual = deque.testToArray(dest)
             assertTrue(
-                nullTerminatedExpected contentEquals actual,
-                message = "Expected: ${nullTerminatedExpected.contentToString()}, Actual: ${actual.contentToString()}"
+                expectedDest contentEquals actual,
+                message = "Expected: ${expectedDest.contentToString()}, Actual: ${actual.contentToString()}"
             )
         }
 

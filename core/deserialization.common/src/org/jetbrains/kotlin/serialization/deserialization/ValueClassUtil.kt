@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2022 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -13,24 +13,17 @@ import org.jetbrains.kotlin.metadata.deserialization.NameResolver
 import org.jetbrains.kotlin.metadata.deserialization.TypeTable
 import org.jetbrains.kotlin.metadata.deserialization.inlineClassUnderlyingType
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.types.model.SimpleTypeMarker
+import org.jetbrains.kotlin.types.model.RigidTypeMarker
 
-fun <T : SimpleTypeMarker> ProtoBuf.Class.loadValueClassRepresentation(
+fun <T : RigidTypeMarker> ProtoBuf.Class.loadValueClassRepresentation(
     nameResolver: NameResolver,
     typeTable: TypeTable,
     typeDeserializer: (ProtoBuf.Type) -> T,
     typeOfPublicProperty: (Name) -> T?,
 ): ValueClassRepresentation<T>? {
     if (multiFieldValueClassUnderlyingNameCount > 0) {
-        val names = multiFieldValueClassUnderlyingNameList.map { nameResolver.getName(it) }
-        val typeIdCount = multiFieldValueClassUnderlyingTypeIdCount
-        val typeCount = multiFieldValueClassUnderlyingTypeCount
-        val types = when (typeIdCount to typeCount) {
-            names.size to 0 -> multiFieldValueClassUnderlyingTypeIdList.map { typeTable[it] }
-            0 to names.size -> multiFieldValueClassUnderlyingTypeList
-            else -> error("class ${nameResolver.getName(fqName)} has illegal multi-field value class representation")
-        }.map(typeDeserializer)
-        return MultiFieldValueClassRepresentation(names zip types)
+        val (names, types) = loadMultiFieldValueClassRepresentation(nameResolver, typeTable)
+        return MultiFieldValueClassRepresentation(names zip types.map(typeDeserializer))
     }
 
     if (hasInlineClassUnderlyingPropertyName()) {
@@ -42,4 +35,20 @@ fun <T : SimpleTypeMarker> ProtoBuf.Class.loadValueClassRepresentation(
     }
 
     return null
+}
+
+fun ProtoBuf.Class.loadMultiFieldValueClassRepresentation(
+    nameResolver: NameResolver,
+    typeTable: TypeTable,
+): Pair<List<Name>, List<ProtoBuf.Type>> {
+    val names = multiFieldValueClassUnderlyingNameList.map { nameResolver.getName(it) }
+    val typeIdCount = multiFieldValueClassUnderlyingTypeIdCount
+    val typeCount = multiFieldValueClassUnderlyingTypeCount
+    val types = when (typeIdCount to typeCount) {
+        names.size to 0 -> multiFieldValueClassUnderlyingTypeIdList.map { typeTable[it] }
+        0 to names.size -> multiFieldValueClassUnderlyingTypeList
+        else -> error("class ${nameResolver.getName(fqName)} has illegal multi-field value class representation")
+    }
+
+    return names to types
 }

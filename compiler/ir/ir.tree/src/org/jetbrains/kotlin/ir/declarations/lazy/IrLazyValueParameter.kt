@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.ir.declarations.lazy
 
 import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
+import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationParent
@@ -21,24 +22,21 @@ import org.jetbrains.kotlin.types.KotlinType
 
 @OptIn(ObsoleteDescriptorBasedAPI::class)
 class IrLazyValueParameter(
-    override val startOffset: Int,
-    override val endOffset: Int,
+    override var startOffset: Int,
+    override var endOffset: Int,
     override var origin: IrDeclarationOrigin,
     override val symbol: IrValueParameterSymbol,
     override val descriptor: ValueParameterDescriptor,
     override var name: Name,
-    override var index: Int,
     kotlinType: KotlinType,
     varargElementKotlinType: KotlinType?,
     override var isCrossinline: Boolean,
     override var isNoinline: Boolean,
     override var isHidden: Boolean,
-    override val isAssignable: Boolean,
+    override var isAssignable: Boolean,
     override val stubGenerator: DeclarationStubGenerator,
     override val typeTranslator: TypeTranslator,
 ) : IrValueParameter(), IrLazyDeclarationBase {
-    override lateinit var parent: IrDeclarationParent
-
     override var defaultValue: IrExpressionBody? = null
 
     override var annotations: List<IrConstructorCall> by createLazyAnnotations()
@@ -50,6 +48,8 @@ class IrLazyValueParameter(
     override var varargElementType: IrType? by lazyVar(stubGenerator.lock) {
         varargElementKotlinType?.toIrType()
     }
+
+    override var attributeOwnerId: IrElement = this
 
     init {
         symbol.bind(this)

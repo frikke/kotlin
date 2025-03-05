@@ -1,13 +1,19 @@
-import org.jetbrains.kotlin.gradle.targets.js.KotlinJsCompilerAttribute
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinUsages
+import org.jetbrains.kotlin.gradle.targets.js.KotlinJsCompilerAttribute
+import org.jetbrains.kotlin.konan.target.HostManager
 
 description = "Atomicfu Compiler Plugin"
 
 plugins {
     kotlin("jvm")
     id("jps-compatible")
+    id("d8-configuration")
 }
+
+// WARNING: Native target is host-dependent. Re-running the same build on another host OS may bring to a different result.
+val nativeTargetName = HostManager.host.name
 
 val antLauncherJar by configurations.creating
 val testJsRuntime by configurations.creating {
@@ -26,6 +32,16 @@ val atomicfuJsClasspath by configurations.creating {
 
 val atomicfuJvmClasspath by configurations.creating
 
+val atomicfuNativeKlib by configurations.creating {
+    attributes {
+        attribute(KotlinPlatformType.attribute, KotlinPlatformType.native)
+        // WARNING: Native target is host-dependent. Re-running the same build on another host OS may bring to a different result.
+        attribute(KotlinNativeTarget.konanTargetAttribute, nativeTargetName)
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(KotlinUsages.KOTLIN_API))
+        attribute(KotlinPlatformType.attribute, KotlinPlatformType.native)
+    }
+}
+
 val atomicfuJsIrRuntimeForTests by configurations.creating {
     attributes {
         attribute(KotlinPlatformType.attribute, KotlinPlatformType.js)
@@ -34,13 +50,23 @@ val atomicfuJsIrRuntimeForTests by configurations.creating {
     }
 }
 
+val atomicfuCompilerPluginForTests by configurations.creating
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
     compileOnly(intellijCore())
-    compileOnly(commonDependency("org.jetbrains.intellij.deps:asm-all"))
+    compileOnly(libs.intellij.asm)
+
+    compileOnly(project(":compiler:fir:cones"))
+    compileOnly(project(":compiler:fir:tree"))
+    compileOnly(project(":compiler:fir:resolve"))
+    compileOnly(project(":compiler:fir:plugin-utils"))
+    compileOnly(project(":compiler:fir:checkers"))
+    compileOnly(project(":compiler:fir:fir2ir"))
+    compileOnly(project(":compiler:fir:entrypoint"))
 
     compileOnly(project(":compiler:plugin-api"))
     compileOnly(project(":compiler:cli-common"))
@@ -48,8 +74,6 @@ dependencies {
     compileOnly(project(":compiler:backend"))
     compileOnly(project(":compiler:ir.backend.common"))
 
-    compileOnly(project(":js:js.frontend"))
-    compileOnly(project(":js:js.translator"))
     compileOnly(project(":compiler:backend.js"))
 
     compileOnly(project(":compiler:backend.jvm"))
@@ -63,19 +87,65 @@ dependencies {
     testApi(projectTests(":compiler:tests-compiler-utils"))
     testApi(projectTests(":compiler:tests-common-new"))
     testImplementation(projectTests(":generators:test-generator"))
+    testApi(project(":plugins:plugin-sandbox"))
+    testApi(project(":compiler:incremental-compilation-impl"))
+    testApi(projectTests(":compiler:incremental-compilation-impl"))
 
     testImplementation(projectTests(":js:js.tests"))
-    testApi(commonDependency("junit:junit"))
-    testApi(project(":kotlin-test:kotlin-test-jvm"))
+    testImplementation(libs.junit4)
+    testApi(kotlinTest())
+
+    // Dependencies for Kotlin/Native test infra:
+    if (!kotlinBuildProperties.isInIdeaSync) {
+        testImplementation(projectTests(":native:native.tests"))
+    }
+    testImplementation(project(":native:kotlin-native-utils"))
+    testImplementation(commonDependency("org.jetbrains.teamcity:serviceMessages"))
+
+    // todo: remove unnecessary dependencies
+    testImplementation(project(":kotlin-compiler-runner-unshaded"))
+
+    testImplementation(commonDependency("commons-lang:commons-lang"))
+    testImplementation(projectTests(":compiler:tests-common"))
+    testImplementation(projectTests(":compiler:tests-common-new"))
+    testImplementation(projectTests(":compiler:test-infrastructure"))
+    testCompileOnly("org.jetbrains.kotlinx:atomicfu:0.25.0")
+
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 
     testRuntimeOnly(kotlinStdlib())
     testRuntimeOnly(project(":kotlin-preloader")) // it's required for ant tests
     testRuntimeOnly(project(":compiler:backend-common"))
     testRuntimeOnly(commonDependency("org.fusesource.jansi", "jansi"))
 
-    atomicfuJsClasspath("org.jetbrains.kotlinx:atomicfu-js:0.17.1") { isTransitive = false }
-    atomicfuJvmClasspath("org.jetbrains.kotlinx:atomicfu:0.17.1") { isTransitive = false }
+    atomicfuJsClasspath("org.jetbrains.kotlinx:atomicfu-js:0.25.0") { isTransitive = false }
     atomicfuJsIrRuntimeForTests(project(":kotlinx-atomicfu-runtime"))  { isTransitive = false }
+    atomicfuJvmClasspath("org.jetbrains.kotlinx:atomicfu:0.25.0") { isTransitive = false }
+    atomicfuNativeKlib("org.jetbrains.kotlinx:atomicfu:0.25.0") { isTransitive = false }
+    atomicfuCompilerPluginForTests(project(":kotlin-atomicfu-compiler-plugin"))
+    // Implicit dependencies on native artifacts to run native tests on CI
+    implicitDependencies("org.jetbrains.kotlinx:atomicfu-linuxx64:0.25.0") {
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(KotlinUsages.KOTLIN_API))
+        }
+    }
+    implicitDependencies("org.jetbrains.kotlinx:atomicfu-macosarm64:0.25.0"){
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(KotlinUsages.KOTLIN_API))
+        }
+    }
+    implicitDependencies("org.jetbrains.kotlinx:atomicfu-macosx64:0.25.0"){
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(KotlinUsages.KOTLIN_API))
+        }
+    }
+    implicitDependencies("org.jetbrains.kotlinx:atomicfu-mingwx64:0.25.0"){
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(KotlinUsages.KOTLIN_API))
+        }
+    }
 
     embedded(project(":kotlinx-atomicfu-runtime")) {
         attributes {
@@ -86,26 +156,32 @@ dependencies {
         isTransitive = false
     }
 
-    testImplementation("org.jetbrains.kotlinx:atomicfu:0.17.1")
+    testImplementation("org.jetbrains.kotlinx:atomicfu:0.25.0")
 
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.9.1")
+    testRuntimeOnly(libs.junit.vintage.engine)
 }
 
 optInToExperimentalCompilerApi()
+optInToUnsafeDuringIrConstructionAPI()
+
+val generationRoot = projectDir.resolve("tests-gen")
 
 sourceSets {
     "main" { projectDefault() }
-    "test" { projectDefault() }
+    "test" {
+        projectDefault()
+        this.java.srcDir(generationRoot.name)
+    }
 }
 
-optInToExperimentalCompilerApi()
-
 testsJar()
-useD8Plugin()
 
 projectTest(jUnitMode = JUnitMode.JUnit5) {
-    useJUnitPlatform()
-    useJsIrBoxTests(version = version, buildDir = "$buildDir/")
+    useJUnitPlatform {
+        // Exclude all tests with the "atomicfu-native" tag. They should be launched by another test task.
+        excludeTags("atomicfu-native")
+    }
+    useJsIrBoxTests(version = version, buildDir = layout.buildDirectory)
 
     workingDir = rootDir
 
@@ -125,3 +201,20 @@ projectTest(jUnitMode = JUnitMode.JUnit5) {
 
 publish()
 standardPublicJars()
+
+val nativeTest = nativeTest(
+    taskName = "nativeTest",
+    tag = "atomicfu-native", // Include all tests with the "atomicfu-native" tag.
+    requirePlatformLibs = true,
+    customCompilerDependencies = listOf(atomicfuJvmClasspath),
+    customTestDependencies = listOf(atomicfuNativeKlib),
+    compilerPluginDependencies = listOf(atomicfuCompilerPluginForTests)
+)
+
+tasks.named("check") {
+    // Depend on the test task that launches Native tests so that it will also run together with tests
+    // for all other targets if K/N is enabled
+    if (kotlinBuildProperties.isKotlinNativeEnabled) {
+        dependsOn(nativeTest)
+    }
+}

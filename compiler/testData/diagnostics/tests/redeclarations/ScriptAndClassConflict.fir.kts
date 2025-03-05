@@ -1,8 +1,9 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FILE: f1.kt
 package test
 
 class A
-class F1
+class <!CLASSIFIER_REDECLARATION!>F1<!>
 
 // FILE: A.kts
 package test

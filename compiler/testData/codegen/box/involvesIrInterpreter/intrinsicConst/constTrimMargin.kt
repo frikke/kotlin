@@ -1,6 +1,5 @@
-// !LANGUAGE: +IntrinsicConstEvaluation
-// TARGET_BACKEND: JVM_IR
-// IGNORE_BACKEND_K1: JVM_IR
+// LANGUAGE: +IntrinsicConstEvaluation
+// IGNORE_BACKEND_K1: JVM_IR, JS_IR, JS_IR_ES6, NATIVE, WASM
 // WITH_STDLIB
 fun <T> T.id() = this
 

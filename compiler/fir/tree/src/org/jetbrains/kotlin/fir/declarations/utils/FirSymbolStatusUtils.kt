@@ -10,22 +10,13 @@ import org.jetbrains.kotlin.fir.symbols.impl.*
 
 // ---------------------- callables with status ----------------------
 
-inline val FirCallableSymbol<*>.modality: Modality? get() = resolvedStatus.modality
-inline val FirCallableSymbol<*>.modalityOrFinal: Modality get() = modality ?: Modality.FINAL
+inline val FirCallableSymbol<*>.modality: Modality get() = resolvedStatus.modality
 inline val FirCallableSymbol<*>.isAbstract: Boolean get() = resolvedStatus.modality == Modality.ABSTRACT
 inline val FirCallableSymbol<*>.isOpen: Boolean get() = resolvedStatus.modality == Modality.OPEN
-inline val FirCallableSymbol<*>.isFinal: Boolean
-    get() {
-        // member with unspecified modality is final
-        val modality = resolvedStatus.modality ?: return true
-        return modality == Modality.FINAL
-    }
+inline val FirCallableSymbol<*>.isFinal: Boolean get() = resolvedStatus.modality == Modality.FINAL
 
 inline val FirCallableSymbol<*>.visibility: Visibility get() = resolvedStatus.visibility
 inline val FirCallableSymbol<*>.effectiveVisibility: EffectiveVisibility get() = resolvedStatus.effectiveVisibility
-
-inline val FirCallableSymbol<*>.allowsToHaveFakeOverride: Boolean
-    get() = !Visibilities.isPrivate(visibility) && visibility != Visibilities.InvisibleFake
 
 inline val FirCallableSymbol<*>.isActual: Boolean get() = rawStatus.isActual
 inline val FirCallableSymbol<*>.isExpect: Boolean get() = rawStatus.isExpect
@@ -46,15 +37,9 @@ inline val FirCallableSymbol<*>.isFun: Boolean get() = rawStatus.isFun
 
 // ---------------------- class like with status ----------------------
 
-inline val FirClassLikeSymbol<*>.modality: Modality? get() = resolvedStatus.modality
+inline val FirClassLikeSymbol<*>.modality: Modality get() = resolvedStatus.modality
 inline val FirClassLikeSymbol<*>.isAbstract: Boolean get() = resolvedStatus.modality == Modality.ABSTRACT
-inline val FirClassLikeSymbol<*>.isOpen: Boolean get() = resolvedStatus.modality == Modality.OPEN
-inline val FirClassLikeSymbol<*>.isFinal: Boolean
-    get() {
-        // member with unspecified modality is final
-        val modality = resolvedStatus.modality ?: return true
-        return modality == Modality.FINAL
-    }
+inline val FirClassLikeSymbol<*>.isFinal: Boolean get() = resolvedStatus.modality == Modality.FINAL
 
 inline val FirClassLikeSymbol<*>.visibility: Visibility get() = resolvedStatus.visibility
 inline val FirClassLikeSymbol<*>.effectiveVisibility: EffectiveVisibility get() = resolvedStatus.effectiveVisibility
@@ -63,7 +48,16 @@ inline val FirClassLikeSymbol<*>.isActual: Boolean get() = rawStatus.isActual
 inline val FirClassLikeSymbol<*>.isExpect: Boolean get() = rawStatus.isExpect
 inline val FirClassLikeSymbol<*>.isInner: Boolean get() = rawStatus.isInner
 inline val FirClassLikeSymbol<*>.isStatic: Boolean get() = rawStatus.isStatic
+
+@SuspiciousValueClassCheck
 inline val FirClassLikeSymbol<*>.isInline: Boolean get() = rawStatus.isInline
+
+@SuspiciousValueClassCheck
+inline val FirClassLikeSymbol<*>.isValue: Boolean get() = rawStatus.isValue
+
+@OptIn(SuspiciousValueClassCheck::class)
+inline val FirClassLikeSymbol<*>.isInlineOrValue: Boolean get() = isInline || isValue
+
 inline val FirClassLikeSymbol<*>.isExternal: Boolean get() = rawStatus.isExternal
 inline val FirClassLikeSymbol<*>.isFromSealedClass: Boolean get() = rawStatus.isFromSealedClass
 inline val FirClassLikeSymbol<*>.isFromEnumClass: Boolean get() = rawStatus.isFromEnumClass
@@ -71,9 +65,6 @@ inline val FirClassLikeSymbol<*>.isFun: Boolean get() = rawStatus.isFun
 inline val FirClassLikeSymbol<*>.isCompanion: Boolean get() = rawStatus.isCompanion
 inline val FirClassLikeSymbol<*>.isData: Boolean get() = rawStatus.isData
 inline val FirClassLikeSymbol<*>.isSealed: Boolean get() = resolvedStatus.modality == Modality.SEALED
-
-inline val FirRegularClassSymbol.canHaveAbstractDeclaration: Boolean
-    get() = isAbstract || isSealed || isEnumClass
 
 // ---------------------- common classes ----------------------
 
@@ -97,8 +88,4 @@ inline val FirClassSymbol<*>.isEnumEntry: Boolean
 
 // ---------------------- specific callables ----------------------
 
-inline val FirPropertyAccessorSymbol.allowsToHaveFakeOverride: Boolean get() = visibility.allowsToHaveFakeOverride
-
-inline val FirPropertySymbol.allowsToHaveFakeOverride: Boolean get() = visibility.allowsToHaveFakeOverride
-
-inline val FirNamedFunctionSymbol.isLocal: Boolean get() = rawStatus.visibility == Visibilities.Local
+inline val FirFunctionSymbol<*>.isLocal: Boolean get() = rawStatus.visibility == Visibilities.Local

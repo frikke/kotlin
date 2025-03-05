@@ -1,2 +1,0 @@
-[type] A.B
-[qualifier] C.D.Companion.foo()

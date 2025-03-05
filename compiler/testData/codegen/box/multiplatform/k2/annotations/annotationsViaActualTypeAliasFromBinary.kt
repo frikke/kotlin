@@ -1,6 +1,5 @@
+// LANGUAGE: +MultiPlatformProjects
 // TARGET_BACKEND: JVM
-// IGNORE_BACKEND_K1: JVM, JVM_IR
-// !LANGUAGE: +MultiPlatformProjects
 // WITH_REFLECT
 
 // MODULE: common

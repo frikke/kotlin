@@ -14,7 +14,7 @@ import org.jetbrains.kotlin.ir.declarations.IrVariable
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
+import org.jetbrains.kotlin.ir.visitors.IrVisitor
 
 enum class ProgressionDirection {
     DECREASING {
@@ -258,8 +258,8 @@ internal abstract class HeaderInfoBuilder(
     context: CommonBackendContext,
     private val scopeOwnerSymbol: () -> IrSymbol,
     private val allowUnsignedBounds: Boolean = false
-) : IrElementVisitor<HeaderInfo?, IrCall?> {
-    private val symbols = context.ir.symbols
+) : IrVisitor<HeaderInfo?, IrCall?>() {
+    private val symbols = context.symbols
 
     protected open val progressionHandlers = listOf(
         CollectionIndicesHandler(context),

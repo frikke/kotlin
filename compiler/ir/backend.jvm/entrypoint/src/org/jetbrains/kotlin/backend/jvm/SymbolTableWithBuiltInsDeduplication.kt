@@ -5,15 +5,17 @@
 
 package org.jetbrains.kotlin.backend.jvm
 
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.containingPackage
+import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.IrFactory
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.util.DescriptorSymbolTableExtension
 import org.jetbrains.kotlin.ir.util.IdSignatureComposer
 import org.jetbrains.kotlin.ir.util.SymbolTable
-import org.jetbrains.kotlin.psi2ir.descriptors.IrBuiltInsOverDescriptors
 
 /**
  * A [SymbolTable] that de-duplicates built-ins for which multiple descriptor instances exist.
@@ -30,46 +32,46 @@ class SymbolTableWithBuiltInsDeduplication(
     signaturer: IdSignatureComposer,
     irFactory: IrFactory,
 ) : SymbolTable(signaturer, irFactory) {
-    /**
-     * As long as [IrBuiltIns] aren't bound, the symbol table will operate like [SymbolTable], as the initialization of built-ins requires
-     * a symbol table.
-     */
-    private var irBuiltIns: IrBuiltInsOverDescriptors? = null
+    private var builtIns: KotlinBuiltIns? = null
 
-    fun bindIrBuiltIns(irBuiltIns: IrBuiltInsOverDescriptors) {
-        if (this.irBuiltIns == null) {
-            this.irBuiltIns = irBuiltIns
+    fun bindBuiltIns(builtIns: KotlinBuiltIns) {
+        if (this.builtIns == null) {
+            this.builtIns = builtIns
         } else {
-            throw IllegalStateException("`irBuiltIns` have already been bound.")
+            throw IllegalStateException("`builtIns` have already been bound.")
         }
     }
 
-    /**
-     * Gets or creates the [IrClassSymbol] for [descriptor], or for the built-in descriptor with the same name if [descriptor] is a
-     * duplicate built-in.
-     *
-     * Note that not all built-in symbols may have been bound or created by the time [irBuiltIns] has been bound. However, [referenceClass]
-     * will create a symbol in such a case (via `super.referenceClass`) and [org.jetbrains.kotlin.ir.util.DeclarationStubGenerator] will
-     * create a stub for the symbol if [referenceClass] was invoked from the stub generator.
-     */
-    @ObsoleteDescriptorBasedAPI
-    override fun referenceClass(descriptor: ClassDescriptor): IrClassSymbol {
-        val irBuiltIns = this.irBuiltIns ?: return super.referenceClass(descriptor)
-
-        // We need to find out whether `descriptor` is possibly a built-in symbol before it's actually retrieved to break recursion as
-        // `irBuiltIns.findClass` uses `referenceClass` recursively.
-        val builtInDescriptor = irBuiltIns.findBuiltInClassDescriptor(descriptor)
-        if (builtInDescriptor != null) {
-            // We need to delegate to the supertype implementation here to break recursion. `findBuiltInClassDescriptor` will return
-            // `descriptor` even if `descriptor` was found via `findBuiltInClassDescriptor`.
-            return super.referenceClass(builtInDescriptor)
-        }
-
-        return super.referenceClass(descriptor)
+    override fun createDescriptorExtension(): DescriptorSymbolTableExtension {
+        return Extension()
     }
 
-    private fun IrBuiltInsOverDescriptors.findBuiltInClassDescriptor(descriptor: ClassDescriptor): ClassDescriptor? {
-        val packageFqName = descriptor.containingPackage() ?: return null
-        return findClassDescriptor(descriptor.name, packageFqName)
+    private inner class Extension : DescriptorSymbolTableExtension(this) {
+        /**
+         * Gets or creates the [IrClassSymbol] for [declaration], or for the built-in descriptor with the same name if [declaration] is a
+         * duplicate built-in.
+         *
+         * Note that not all built-in symbols may have been bound or created by the time [builtIns] has been bound. However, [referenceClass]
+         * will create a symbol in such a case (via `super.referenceClass`) and [org.jetbrains.kotlin.ir.util.DeclarationStubGenerator] will
+         * create a stub for the symbol if [referenceClass] was invoked from the stub generator.
+         */
+        @ObsoleteDescriptorBasedAPI
+        override fun referenceClass(declaration: ClassDescriptor): IrClassSymbol {
+            // We need to find out whether `descriptor` is possibly a built-in symbol before it's actually retrieved to break recursion as
+            // `irBuiltIns.findClass` uses `referenceClass` recursively.
+            val packageFqName = declaration.containingPackage() ?: return super.referenceClass(declaration)
+
+            val builtInDescriptor = builtIns?.builtInsModule?.getPackage(packageFqName)?.memberScope?.getContributedClassifier(
+                declaration.name,
+                NoLookupLocation.FROM_BACKEND
+            ) as? ClassDescriptor
+            if (builtInDescriptor != null) {
+                // We need to delegate to the supertype implementation here to break recursion. `findBuiltInClassDescriptor` will return
+                // `descriptor` even if `descriptor` was found via `findBuiltInClassDescriptor`.
+                return super.referenceClass(builtInDescriptor)
+            }
+
+            return super.referenceClass(declaration)
+        }
     }
 }

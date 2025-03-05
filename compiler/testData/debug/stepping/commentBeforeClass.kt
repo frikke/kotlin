@@ -1,3 +1,4 @@
+
 // FILE: test.kt
 
 fun box() {
@@ -9,13 +10,19 @@ class A {
 
 }
 
-// EXPECTATIONS JVM JVM_IR
-// test.kt:4 box
-// test.kt:8 <init>
-// test.kt:4 box
+// EXPECTATIONS JVM_IR
 // test.kt:5 box
+// test.kt:9 <init>
+// test.kt:5 box
+// test.kt:6 box
 
 // EXPECTATIONS JS_IR
-// test.kt:4 box
-// test.kt:8 <init>
 // test.kt:5 box
+// test.kt:9 <init>
+// test.kt:6 box
+
+// EXPECTATIONS WASM
+// test.kt:5 $box (4)
+// test.kt:11 $A.<init> (1)
+// test.kt:5 $box (4)
+// test.kt:6 $box (1)

@@ -53,13 +53,12 @@ abstract class KotlinMultiFileTestWithJava<M : KotlinBaseTest.TestModule, F : Ko
         val configuration = createConfiguration(
             extractConfigurationKind(files),
             getTestJdkKind(files),
-            backend,
             if (additionalClasspath == null) defaultClasspath else defaultClasspath + additionalClasspath,
             if (isJavaSourceRootNeeded()) listOf(javaFilesDir) else emptyList(),
             files
         )
         if (isScriptingNeeded(file)) {
-            loadScriptingPlugin(configuration)
+            loadScriptingPlugin(configuration, testRootDisposable)
         }
         if (isKotlinSourceRootNeeded()) {
             configuration.addKotlinSourceRoot(kotlinSourceRoot!!.path)
@@ -106,7 +105,6 @@ abstract class KotlinMultiFileTestWithJava<M : KotlinBaseTest.TestModule, F : Ko
         return File(filePath)
     }
 
-    @Throws(Exception::class)
     public override fun doTest(filePath: String) {
         val file = createTestFileFromPath(filePath)
         val expectedText = KtTestUtil.doLoadFile(file)

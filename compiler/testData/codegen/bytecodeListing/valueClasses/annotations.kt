@@ -1,7 +1,9 @@
-// !LANGUAGE: +ValueClasses
+// LANGUAGE: +ValueClasses
 // WITH_STDLIB
 // FIR_IDENTICAL
 // TARGET_BACKEND: JVM_IR
+// JVM_ABI_K1_K2_DIFF: KT-63843, KT-62582, also K2 stores annotations in metadata (KT-57919).
+
 import kotlin.reflect.KProperty
 
 

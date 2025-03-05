@@ -1,6 +1,3 @@
-// IGNORE_BACKEND: JVM
-// IGNORE_LIGHT_ANALYSIS
-
 fun box(): String =
     testBug(null)
 

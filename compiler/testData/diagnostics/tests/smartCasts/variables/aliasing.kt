@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
+// ISSUE: KT-56744
 // SKIP_TXT
 
 fun test() {

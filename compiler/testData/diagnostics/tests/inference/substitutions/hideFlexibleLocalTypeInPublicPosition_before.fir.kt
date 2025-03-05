@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // ISSUE: KT-30054
-// !LANGUAGE: -KeepNullabilityWhenApproximatingLocalType
+// LANGUAGE: -KeepNullabilityWhenApproximatingLocalType
 // FILE: J.java
 public class J {
     public static <T> T flexibleId(T x) { return x; }

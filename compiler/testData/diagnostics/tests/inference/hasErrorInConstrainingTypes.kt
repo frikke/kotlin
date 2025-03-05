@@ -1,4 +1,4 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: FRONTEND
 package n
 
 fun <T> foo(t: T, t1: T) {}

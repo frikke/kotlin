@@ -6,22 +6,18 @@
 package org.jetbrains.kotlin.gradle
 
 import org.gradle.util.GradleVersion
-import org.jetbrains.kotlin.gradle.plugin.KotlinJsCompilerType
 import org.jetbrains.kotlin.gradle.testbase.*
+import org.jetbrains.kotlin.gradle.testbase.BuildOptions.ConfigurationCacheProblems
+import org.jetbrains.kotlin.gradle.util.replaceText
+import org.jetbrains.kotlin.test.TestMetadata
 import org.junit.jupiter.api.DisplayName
 
-abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) : KGPBaseTest() {
-    @Suppress("DEPRECATION")
-    private val defaultJsOptions = BuildOptions.JsOptions(
-        useIrBackend = irBackend,
-        jsCompilerType = if (irBackend) KotlinJsCompilerType.IR else KotlinJsCompilerType.LEGACY,
-    )
-
-    final override val defaultBuildOptions =
+@JsGradlePluginTests
+class JsIrConfigurationCacheIT : KGPBaseTest() {
+    override val defaultBuildOptions =
         super.defaultBuildOptions.copy(
-            jsOptions = defaultJsOptions,
-            configurationCache = true,
-            configurationCacheProblems = BaseGradleIT.ConfigurationCacheProblems.FAIL
+            configurationCache = BuildOptions.ConfigurationCacheValue.ENABLED,
+            configurationCacheProblems = ConfigurationCacheProblems.FAIL
         )
 
     @DisplayName("configuration cache is working for kotlin2js plugin")
@@ -38,6 +34,7 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
 
     @DisplayName("configuration cache is working for kotlin/js browser project")
     @GradleTest
+    @TestMetadata("kotlin-js-browser-project")
     fun testBrowserDistribution(gradleVersion: GradleVersion) {
         project("kotlin-js-browser-project", gradleVersion) {
             assertSimpleConfigurationCacheScenarioWorks(
@@ -47,7 +44,7 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
                     ":app:packageJson",
                     ":app:publicPackageJson",
                     ":app:compileKotlinJs",
-                    if (irBackend) ":app:compileProductionExecutableKotlinJs" else ":app:processDceKotlinJs",
+                    ":app:compileProductionExecutableKotlinJs",
                     ":app:browserProductionWebpack",
                 )
             )
@@ -55,7 +52,7 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
     }
 
     @DisplayName("configuration cache is reused when idea.version system property is changed in browser project")
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_5)
+    @GradleTestVersions(minVersion = TestVersions.Gradle.G_8_0)
     @GradleTest
     fun testBrowserDistributionOnIdeaPropertyChange(gradleVersion: GradleVersion) {
         project("kotlin-js-browser-project", gradleVersion) {
@@ -68,7 +65,7 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
                 assertTasksUpToDate(
                     ":app:packageJson",
                     ":app:publicPackageJson",
-                    if (irBackend) ":app:compileProductionExecutableKotlinJs" else ":app:processDceKotlinJs",
+                    ":app:compileProductionExecutableKotlinJs",
                     ":app:browserProductionWebpack",
                 )
             }
@@ -88,13 +85,13 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
                     ":rootPackageJson",
                     ":compileKotlinJs",
                     ":nodeTest",
-                ) + if (irBackend) listOf(":compileProductionExecutableKotlinJs") else emptyList()
+                ) + listOf(":compileProductionExecutableKotlinJs")
             )
         }
     }
 
     @DisplayName("configuration cache is reused when idea.version system property is changed in node project")
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_5, maxVersion = TestVersions.Gradle.G_7_5)
+    @GradleTestVersions(minVersion = TestVersions.Gradle.G_8_0)
     @GradleTest
     fun testNodeJsOnIdeaPropertyChange(gradleVersion: GradleVersion) {
         project("kotlin-js-nodejs-project", gradleVersion) {
@@ -110,7 +107,7 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
                     ":rootPackageJson",
                     ":compileKotlinJs",
                     ":nodeTest",
-                ) + if (irBackend) listOf(":compileProductionExecutableKotlinJs") else emptyList()
+                ) + listOf(":compileProductionExecutableKotlinJs")
                 assertTasksUpToDate(*upToDateTasks.toTypedArray())
             }
         }
@@ -121,8 +118,28 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
     fun testTestDependencies(gradleVersion: GradleVersion) {
         project("kotlin-js-project-with-test-dependencies", gradleVersion) {
             assertSimpleConfigurationCacheScenarioWorks(
+                "assemble", "kotlinStorePackageLock",
+                buildOptions = defaultBuildOptions.copy(
+                    jsOptions = defaultBuildOptions.jsOptions?.copy(
+                        yarn = false
+                    )
+                ),
+                executedTaskNames = listOf(":rootPackageJson")
+            )
+        }
+    }
+
+    @DisplayName("KT-48241: configuration cache works with test dependencies for yarn.lock")
+    @GradleTest
+    fun testTestDependenciesYarnLock(gradleVersion: GradleVersion) {
+        project("kotlin-js-project-with-test-dependencies", gradleVersion) {
+            assertSimpleConfigurationCacheScenarioWorks(
                 "assemble", "kotlinStoreYarnLock",
-                buildOptions = defaultBuildOptions,
+                buildOptions = defaultBuildOptions.copy(
+                    jsOptions = defaultBuildOptions.jsOptions?.copy(
+                        yarn = true
+                    )
+                ),
                 executedTaskNames = listOf(":rootPackageJson")
             )
         }
@@ -132,11 +149,17 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
     @GradleTest
     fun testNodeJsRun(gradleVersion: GradleVersion) {
         project("kotlin-js-nodejs-project", gradleVersion) {
-            build("nodeRun", buildOptions = buildOptions) {
-                assertTasksExecuted(":nodeRun")
-                assertOutputContains(
-                    "Calculating task graph as no configuration cache is available for tasks: nodeRun"
-                )
+            build("nodeDevelopmentRun", buildOptions = buildOptions) {
+                assertTasksExecuted(":nodeDevelopmentRun")
+                if (gradleVersion < GradleVersion.version(TestVersions.Gradle.G_8_5)) {
+                    assertOutputContains(
+                        "Calculating task graph as no configuration cache is available for tasks: nodeDevelopmentRun"
+                    )
+                } else {
+                    assertOutputContains(
+                        "Calculating task graph as no cached configuration is available for tasks: nodeDevelopmentRun"
+                    )
+                }
 
                 assertConfigurationCacheStored()
             }
@@ -144,16 +167,33 @@ abstract class AbstractJsConfigurationCacheIT(protected val irBackend: Boolean) 
             build("clean", buildOptions = buildOptions)
 
             // Then run a build where tasks states are deserialized to check that they work correctly in this mode
-            build("nodeRun", buildOptions = buildOptions) {
-                assertTasksExecuted(":nodeRun")
+            build("nodeDevelopmentRun", buildOptions = buildOptions) {
+                assertTasksExecuted(":nodeDevelopmentRun")
                 assertConfigurationCacheReused()
             }
         }
     }
+
+    @DisplayName("Test with custom build logic plugin")
+    @GradleTest
+    fun testWithCustomBuildLogic(gradleVersion: GradleVersion) {
+        project("kotlin-js-build-logic", gradleVersion) {
+
+            settingsGradleKts
+                .replaceText(
+                    "pluginManagement {",
+                    """
+
+                    pluginManagement {
+                        includeBuild("build-logic")
+
+                    """.trimIndent()
+                )
+
+            assertSimpleConfigurationCacheScenarioWorks(
+                ":rootPackageJson",
+                buildOptions = defaultBuildOptions,
+            )
+        }
+    }
 }
-
-@JsGradlePluginTests
-class JsConfigurationCacheIT : AbstractJsConfigurationCacheIT(irBackend = false)
-
-@JsGradlePluginTests
-class JsIrConfigurationCacheIT : AbstractJsConfigurationCacheIT(irBackend = true)

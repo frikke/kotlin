@@ -1,45 +1,42 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.analysis.low.level.api.fir
 
 import com.intellij.psi.util.PsiTreeUtil
-import org.jetbrains.kotlin.analysis.providers.impl.declarationProviders.FileBasedKotlinDeclarationProvider
-import org.jetbrains.kotlin.analysis.low.level.api.fir.test.base.AbstractLowLevelApiSingleFileTest
+import org.jetbrains.kotlin.analysis.api.platform.declarations.KotlinFileBasedDeclarationProvider
+import org.jetbrains.kotlin.analysis.low.level.api.fir.test.configurators.AnalysisApiFirScriptTestConfigurator
 import org.jetbrains.kotlin.analysis.low.level.api.fir.test.configurators.AnalysisApiFirSourceTestConfigurator
+import org.jetbrains.kotlin.analysis.test.framework.base.AbstractAnalysisApiBasedTest
+import org.jetbrains.kotlin.analysis.test.framework.projectStructure.KtTestModule
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
+import org.jetbrains.kotlin.test.directives.model.DirectivesContainer
 import org.jetbrains.kotlin.test.directives.model.SimpleDirectivesContainer
 import org.jetbrains.kotlin.test.services.TestModuleStructure
 import org.jetbrains.kotlin.test.services.TestServices
+import org.jetbrains.kotlin.test.services.moduleStructure
 import kotlin.test.assertContains
 import kotlin.test.assertNotNull
 
-abstract class AbstractFileBasedKotlinDeclarationProviderTest : AbstractLowLevelApiSingleFileTest() {
-    override val configurator = AnalysisApiFirSourceTestConfigurator(analyseInDependentSession = false)
+abstract class AbstractFileBasedKotlinDeclarationProviderTest : AbstractAnalysisApiBasedTest() {
+    override val additionalDirectives: List<DirectivesContainer>
+        get() = super.additionalDirectives + listOf(Directives)
 
-    override fun configureTest(builder: TestConfigurationBuilder) {
-        super.configureTest(builder)
-        with(builder) {
-            useDirectives(Directives)
-        }
+    override fun doTestByMainFile(mainFile: KtFile, mainModule: KtTestModule, testServices: TestServices) {
+        val provider = KotlinFileBasedDeclarationProvider(mainFile)
+        assertContains(provider.findFilesForFacadeByPackage(mainFile.packageFqName), mainFile)
+
+        checkByDirectives(testServices.moduleStructure, provider)
+        checkByVisitor(mainFile, provider)
     }
 
-    override fun doTestByFileStructure(ktFile: KtFile, moduleStructure: TestModuleStructure, testServices: TestServices) {
-        val provider = FileBasedKotlinDeclarationProvider(ktFile)
-        assertContains(provider.findFilesForFacadeByPackage(ktFile.packageFqName), ktFile)
-
-        checkByDirectives(moduleStructure, provider)
-        checkByVisitor(ktFile, provider)
-    }
-
-    private fun checkByDirectives(moduleStructure: TestModuleStructure, provider: FileBasedKotlinDeclarationProvider) {
+    private fun checkByDirectives(moduleStructure: TestModuleStructure, provider: KotlinFileBasedDeclarationProvider) {
         for (directive in moduleStructure.allDirectives[Directives.CLASS]) {
             val classId = ClassId.fromString(directive)
             assert(provider.getAllClassesByClassId(classId).isNotEmpty()) { "Class $classId not found" }
@@ -63,7 +60,7 @@ abstract class AbstractFileBasedKotlinDeclarationProviderTest : AbstractLowLevel
         }
     }
 
-    private fun checkByVisitor(ktFile: KtFile, provider: FileBasedKotlinDeclarationProvider) {
+    private fun checkByVisitor(ktFile: KtFile, provider: KotlinFileBasedDeclarationProvider) {
         ktFile.accept(object : KtTreeVisitorVoid() {
             override fun visitClass(klass: KtClass) {
                 super.visitClass(klass)
@@ -151,4 +148,12 @@ private fun parseCallableId(rawString: String): CallableId {
         rawQualifier.endsWith('/') -> CallableId(FqName(rawQualifier.dropLast(1).replace('/', '.')), callableName)
         else -> CallableId(ClassId.fromString(rawQualifier, false), callableName)
     }
+}
+
+abstract class AbstractSourceFileBasedKotlinDeclarationProviderTest : AbstractFileBasedKotlinDeclarationProviderTest() {
+    override val configurator = AnalysisApiFirSourceTestConfigurator(analyseInDependentSession = false)
+}
+
+abstract class AbstractScriptFileBasedKotlinDeclarationProviderTest : AbstractFileBasedKotlinDeclarationProviderTest() {
+    override val configurator = AnalysisApiFirScriptTestConfigurator(analyseInDependentSession = false)
 }

@@ -1,3 +1,4 @@
+
 // FILE: test.kt
 
 interface I {
@@ -17,25 +18,32 @@ fun box() {
     c.f()
 }
 
-// EXPECTATIONS JVM JVM_IR
-// test.kt:16 box
-// test.kt:13 <init>
-// EXPECTATIONS JVM
-// test.kt:7 <clinit>
-// EXPECTATIONS JVM JVM_IR
-// test.kt:16 box
+// EXPECTATIONS JVM_IR
 // test.kt:17 box
-// test.kt:10 f
-// test.kt:-1 f
+// test.kt:14 <init>
+// test.kt:17 box
 // test.kt:18 box
+// test.kt:11 f
+// test.kt:-1 f
+// test.kt:19 box
 
 // EXPECTATIONS JS_IR
-// test.kt:16 box
-// test.kt:13 <init>
-// test.kt:7 <init>
-// test.kt:13 <init>
 // test.kt:17 box
-// test.kt:1 f
-// test.kt:10 f
-// test.kt:1 f
+// test.kt:14 <init>
+// test.kt:8 <init>
+// test.kt:14 <init>
 // test.kt:18 box
+// test.kt:1 f
+// test.kt:11 f
+// test.kt:1 f
+// test.kt:19 box
+
+// EXPECTATIONS WASM
+// test.kt:17 $box (12)
+// test.kt:14 $C.<init> (15)
+// test.kt:12 $O.<init> (1)
+// test.kt:14 $C.<init> (15, 16)
+// test.kt:18 $box (4, 6)
+// test.kt:11 $O.f (5)
+// test.kt:18 $box (6)
+// test.kt:19 $box (1)

@@ -10,7 +10,7 @@ import org.jetbrains.kotlin.descriptors.annotations.AnnotationUseSiteTarget
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.deserialization.AbstractAnnotationDeserializer
 import org.jetbrains.kotlin.fir.expressions.FirAnnotation
-import org.jetbrains.kotlin.fir.expressions.FirConstExpression
+import org.jetbrains.kotlin.fir.expressions.FirLiteralExpression
 import org.jetbrains.kotlin.fir.expressions.FirExpression
 import org.jetbrains.kotlin.fir.expressions.builder.buildAnnotation
 import org.jetbrains.kotlin.fir.java.createConstantIfAny
@@ -26,6 +26,7 @@ import org.jetbrains.kotlin.load.kotlin.getPropertySignature
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.deserialization.*
 import org.jetbrains.kotlin.metadata.jvm.JvmProtoBuf
+import org.jetbrains.kotlin.metadata.jvm.deserialization.ClassMapperLite
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmFlags
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
 import org.jetbrains.kotlin.name.ClassId
@@ -35,7 +36,7 @@ import org.jetbrains.kotlin.serialization.deserialization.builtins.BuiltInSerial
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
 import org.jetbrains.kotlin.types.ConstantValueKind
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
-import org.jetbrains.kotlin.utils.toMetadataVersion
+import org.jetbrains.kotlin.util.toMetadataVersion
 
 class JvmBinaryAnnotationDeserializer(
     val session: FirSession,
@@ -195,6 +196,18 @@ class JvmBinaryAnnotationDeserializer(
         return findJvmBinaryClassAndLoadMemberAnnotations(paramSignature)
     }
 
+    override fun loadEnumEntryAnnotations(
+        classId: ClassId,
+        enumEntryProto: ProtoBuf.EnumEntry,
+        nameResolver: NameResolver,
+    ): List<FirAnnotation> {
+        val signature = MemberSignature.fromFieldNameAndDesc(
+            nameResolver.getString(enumEntryProto.name),
+            ClassMapperLite.mapClass(classId.asString())
+        )
+        return findJvmBinaryClassAndLoadMemberAnnotations(signature)
+    }
+
     override fun loadExtensionReceiverParameterAnnotations(
         containerSource: DeserializedContainerSource?,
         callableProto: MessageLite,
@@ -216,13 +229,13 @@ class JvmBinaryAnnotationDeserializer(
     ): FirExpression? {
         val signature = getCallableSignature(propertyProto, nameResolver, typeTable, CallableKind.PROPERTY_GETTER) ?: return null
         val firExpr = annotationInfo.annotationMethodsDefaultValues[signature]
-        return if (firExpr is FirConstExpression<*> && expectedPropertyType.coneType.isUnsignedType && firExpr.kind.isSignedNumber)
+        return if (firExpr is FirLiteralExpression && expectedPropertyType.coneType.isUnsignedType && firExpr.kind.isSignedNumber)
             firExpr.value.createConstantIfAny(session, unsigned = true)
         else
             firExpr
     }
 
-    private val <T> ConstantValueKind<T>.isSignedNumber: Boolean
+    private val ConstantValueKind.isSignedNumber: Boolean
         get() = this is ConstantValueKind.Byte || this is ConstantValueKind.Short || this is ConstantValueKind.Int || this is ConstantValueKind.Long
 
     private fun computeJvmParameterIndexShift(classProto: ProtoBuf.Class?, message: MessageLite): Int {
@@ -343,7 +356,7 @@ private fun FirSession.loadMemberAnnotations(
             }
 
             override fun visitAnnotationMemberDefaultValue(): KotlinJvmBinaryClass.AnnotationArgumentVisitor? {
-                return annotationsLoader.loadAnnotationMethodDefaultValue(signature) { annotationMethodsDefaultValues[signature] = it }
+                return annotationsLoader.loadAnnotationMethodDefaultValue() { annotationMethodsDefaultValues[signature] = it }
             }
         }
 

@@ -1,18 +1,34 @@
 /*
- * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen
 
 import org.jetbrains.kotlin.ir.backend.js.ic.DirtyFileState
+import org.jetbrains.kotlin.backend.js.JsGenerationGranularity
 import org.jetbrains.kotlin.serialization.js.ModuleKind
 import java.io.File
 import java.util.regex.Pattern
 
-class ProjectInfo(val name: String, val modules: List<String>, val steps: List<ProjectBuildStep>, val muted: Boolean, val moduleKind: ModuleKind) {
+class ProjectInfo(
+    val name: String,
+    val modules: List<String>,
+    val steps: List<ProjectBuildStep>,
+    val muted: Boolean,
+    val moduleKind: ModuleKind,
+    val ignoredGranularities: Set<JsGenerationGranularity>,
+    val callMain: Boolean,
+    val checkTypeScriptDefinitions: Boolean
+) {
 
-    class ProjectBuildStep(val id: Int, val order: List<String>, val dirtyJS: List<String>, val language: List<String>)
+    class ProjectBuildStep(
+        val id: Int,
+        val order: List<String>,
+        val dirtyJsFiles: List<String>,
+        val dirtyJsModules: List<String>,
+        val language: List<String>,
+    )
 }
 
 class ModuleInfo(val moduleName: String) {
@@ -43,6 +59,12 @@ class ModuleInfo(val moduleName: String) {
     }
 
     class Dependency(val moduleName: String, val isFriend: Boolean)
+    enum class CompilerCase {
+        BOTTOM_V1,
+        BOTTOM_V2,
+        INTERMEDIATE,
+        DEFAULT
+    }
 
     class ModuleStep(
         val id: Int,
@@ -50,18 +72,24 @@ class ModuleInfo(val moduleName: String) {
         val modifications: List<Modification>,
         val expectedFileStats: Map<String, Set<String>>,
         val expectedDTS: Set<String>,
-        val rebuildKlib: Boolean
+        val rebuildKlib: Boolean,
+        val compiler: CompilerCase
     )
 
     val steps = hashMapOf</* step ID */ Int, ModuleStep>()
 }
 
 const val PROJECT_INFO_FILE = "project.info"
+private const val CALL_MAIN = "CALL_MAIN"
 private const val MODULES_LIST = "MODULES"
 private const val MODULES_KIND = "MODULE_KIND"
 private const val LIBS_LIST = "libs"
-private const val DIRTY_JS_MODULES_LIST = "dirty js"
+private const val DIRTY_JS_FILES_LIST = "dirty js files"
+private const val DIRTY_JS_MODULES_LIST = "dirty js modules"
 private const val LANGUAGE = "language"
+private const val IGNORE_PER_FILE = "IGNORE_PER_FILE"
+private const val IGNORE_PER_MODULE = "IGNORE_PER_MODULE"
+private const val TYPESCRIPT_DEFINITIONS = "TYPESCRIPT_DEFINITIONS"
 
 const val MODULE_INFO_FILE = "module.info"
 private const val DEPENDENCIES = "dependencies"
@@ -71,6 +99,7 @@ private const val MODIFICATION_UPDATE = "U"
 private const val MODIFICATION_DELETE = "D"
 private const val EXPECTED_DTS_LIST = "expected dts"
 private const val REBUILD_KLIB = "rebuild klib"
+private const val COMPILER = "compiler"
 
 private val STEP_PATTERN = Pattern.compile("^\\s*STEP\\s+(\\d+)\\.*(\\d+)?\\s*:?$")
 
@@ -108,7 +137,13 @@ abstract class InfoParser<Info>(protected val infoFile: File) {
 
 private fun String.splitAndTrim() = split(",").map { it.trim() }.filter { it.isNotBlank() }
 
-class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
+enum class ModelTarget {
+    ANY,
+    JS,
+    WASM,
+}
+
+class ProjectInfoParser(infoFile: File, private val target: ModelTarget = ModelTarget.ANY) : InfoParser<ProjectInfo>(infoFile) {
     private val moduleKindMap = mapOf(
         "plain" to ModuleKind.PLAIN,
         "commonjs" to ModuleKind.COMMON_JS,
@@ -119,7 +154,8 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
 
     private fun parseSteps(firstId: Int, lastId: Int): List<ProjectInfo.ProjectBuildStep> {
         val order = mutableListOf<String>()
-        val dirtyJS = mutableListOf<String>()
+        val dirtyJsFiles = mutableListOf<String>()
+        val dirtyJsModules = mutableListOf<String>()
         val language = mutableListOf<String>()
 
         loop { line ->
@@ -127,7 +163,12 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
             if (splitIndex < 0) throwSyntaxError(line)
 
             val split = line.split(":")
-            val op = split[0]
+            val opWithTarget = split[0]
+            val (op, opTarget) = parseOpAndTarget(opWithTarget) ?: throwSyntaxError(line)
+            if (opTarget != ModelTarget.ANY && opTarget != target) {
+                ++lineCounter
+                return@loop false
+            }
 
             if (op.matches(STEP_PATTERN.toRegex())) {
                 return@loop true // break the loop
@@ -138,7 +179,8 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
 
             when (op) {
                 LIBS_LIST -> order += split[1].splitAndTrim()
-                DIRTY_JS_MODULES_LIST -> dirtyJS += split[1].splitAndTrim()
+                DIRTY_JS_FILES_LIST -> dirtyJsFiles += split[1].splitAndTrim()
+                DIRTY_JS_MODULES_LIST -> dirtyJsModules += split[1].splitAndTrim()
                 LANGUAGE -> language += split[1].splitAndTrim()
                 else -> println(diagnosticMessage("Unknown op $op", line))
             }
@@ -146,14 +188,17 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
             false
         }
 
-        return (firstId..lastId).map { ProjectInfo.ProjectBuildStep(it, order, dirtyJS, language) }
+        return (firstId..lastId).map { ProjectInfo.ProjectBuildStep(it, order, dirtyJsFiles, dirtyJsModules, language) }
     }
 
     override fun parse(entryName: String): ProjectInfo {
         val libraries = mutableListOf<String>()
         val steps = mutableListOf<ProjectInfo.ProjectBuildStep>()
+        val ignoredGranularities = mutableSetOf<JsGenerationGranularity>()
         var muted = false
-        var moduleKind = ModuleKind.COMMON_JS
+        var callMain = false
+        var checkTypeScriptDefinitions = false
+        var moduleKind = ModuleKind.ES
 
         loop { line ->
             lineCounter++
@@ -167,10 +212,16 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
             if (splitIndex < 0) throwSyntaxError(line)
 
             val split = line.split(":")
-            val op = split[0]
+            val opWithTarget = split[0]
+            val (op, opTarget) = parseOpAndTarget(opWithTarget) ?: throwSyntaxError(line)
+            if (opTarget != ModelTarget.ANY && opTarget != target) return@loop false
 
             when {
                 op == MODULES_LIST -> libraries += split[1].splitAndTrim()
+                op == CALL_MAIN && split[1].trim() == "true" -> callMain = true
+                op == IGNORE_PER_FILE && split[1].trim() == "true" -> ignoredGranularities += JsGenerationGranularity.PER_FILE
+                op == IGNORE_PER_MODULE && split[1].trim() == "true" -> ignoredGranularities += JsGenerationGranularity.PER_MODULE
+                op == TYPESCRIPT_DEFINITIONS && split[1].trim() == "true" -> checkTypeScriptDefinitions = true
                 op == MODULES_KIND -> moduleKind = split[1].trim()
                     .ifEmpty { error("Module kind value should be provided if MODULE_KIND pragma was specified") }
                     .let { moduleKindMap[it] ?: error("Unknown MODULE_KIND value '$it'") }
@@ -200,11 +251,11 @@ class ProjectInfoParser(infoFile: File) : InfoParser<ProjectInfo>(infoFile) {
             false
         }
 
-        return ProjectInfo(entryName, libraries, steps, muted, moduleKind)
+        return ProjectInfo(entryName, libraries, steps, muted, moduleKind, ignoredGranularities, callMain, checkTypeScriptDefinitions)
     }
 }
 
-class ModuleInfoParser(infoFile: File) : InfoParser<ModuleInfo>(infoFile) {
+class ModuleInfoParser(infoFile: File, private val target: ModelTarget = ModelTarget.ANY) : InfoParser<ModuleInfo>(infoFile) {
 
     private fun parseModifications(): List<ModuleInfo.Modification> {
         val modifications = mutableListOf<ModuleInfo.Modification>()
@@ -239,6 +290,7 @@ class ModuleInfoParser(infoFile: File) : InfoParser<ModuleInfo>(infoFile) {
         val modifications = mutableListOf<ModuleInfo.Modification>()
         val expectedDTS = mutableSetOf<String>()
         var rebuildKlib = true
+        var compiler = ModuleInfo.CompilerCase.DEFAULT
 
         loop { line ->
             if (line.matches(STEP_PATTERN.toRegex()))
@@ -247,13 +299,24 @@ class ModuleInfoParser(infoFile: File) : InfoParser<ModuleInfo>(infoFile) {
 
             val opIndex = line.indexOf(':')
             if (opIndex < 0) throwSyntaxError(line)
-            val op = line.substring(0, opIndex)
+            val opWithTarget = line.substring(0, opIndex)
+
+            val (op, opTarget) = parseOpAndTarget(opWithTarget) ?: throwSyntaxError(line)
+            if (opTarget != ModelTarget.ANY && opTarget != target) {
+                if (op == MODIFICATIONS) parseModifications()
+                return@loop false
+            }
 
             fun getOpArgs() = line.substring(opIndex + 1).splitAndTrim()
 
-            val expectedState = DirtyFileState.values().find { it.str == op }
+            val expectedState = DirtyFileState.entries.find { it.str == op }
             if (expectedState != null) {
-                expectedFileStats[expectedState.str] = getOpArgs().toSet()
+                val stats = expectedFileStats[expectedState.str]
+                expectedFileStats[expectedState.str] = if (stats == null) {
+                    getOpArgs().toSet()
+                } else {
+                    stats + getOpArgs()
+                }
             } else {
                 when (op) {
                     DEPENDENCIES -> getOpArgs().forEach { regularDependencies += it }
@@ -263,6 +326,9 @@ class ModuleInfoParser(infoFile: File) : InfoParser<ModuleInfo>(infoFile) {
                     REBUILD_KLIB -> getOpArgs().singleOrNull()?.toBooleanStrictOrNull()?.let {
                         rebuildKlib = it
                     } ?: error(diagnosticMessage("$op expects true or false", line))
+                    COMPILER -> getOpArgs().singleOrNull()?.let { ModuleInfo.CompilerCase.valueOf(it) }?.let {
+                        compiler = it
+                    } ?: error(diagnosticMessage("$op expects values from CompilerCase enum", line))
                     else -> error(diagnosticMessage("Unknown op $op", line))
                 }
             }
@@ -285,7 +351,8 @@ class ModuleInfoParser(infoFile: File) : InfoParser<ModuleInfo>(infoFile) {
                 modifications = modifications,
                 expectedFileStats = expectedFileStats,
                 expectedDTS = expectedDTS,
-                rebuildKlib = rebuildKlib
+                rebuildKlib = rebuildKlib,
+                compiler = compiler
             )
         }
     }
@@ -309,4 +376,17 @@ class ModuleInfoParser(infoFile: File) : InfoParser<ModuleInfo>(infoFile) {
 
         return result
     }
+}
+
+private fun parseOpAndTarget(opWithTarget: String): Pair<String, ModelTarget>? {
+    val targetStartIndex = opWithTarget.indexOf('<')
+    val targetEndIndex = opWithTarget.indexOf('>')
+
+    if (targetEndIndex == -1) return opWithTarget to ModelTarget.ANY
+    if (targetStartIndex == -1) return null
+    if (targetStartIndex + 1 >= targetEndIndex) return null
+
+    val op = opWithTarget.substring(0, targetStartIndex).trim()
+    val target = opWithTarget.substring(targetStartIndex + 1, targetEndIndex)
+    return op to ModelTarget.valueOf(target.uppercase())
 }

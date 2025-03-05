@@ -5,9 +5,9 @@
 
 package org.jetbrains.kotlin.ir.backend.js.dce
 
-import org.jetbrains.kotlin.backend.common.ir.inlineFunction
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.backend.js.JsCommonBackendContext
+import org.jetbrains.kotlin.ir.backend.js.objectGetInstanceFunction
 import org.jetbrains.kotlin.ir.backend.js.utils.hasJsPolyfill
 import org.jetbrains.kotlin.ir.backend.js.utils.isAssociatedObjectAnnotatedAnnotation
 import org.jetbrains.kotlin.ir.declarations.*
@@ -15,7 +15,7 @@ import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.types.classifierOrNull
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
+import org.jetbrains.kotlin.ir.visitors.IrVisitor
 import java.io.File
 import java.util.*
 
@@ -33,7 +33,7 @@ abstract class UsefulDeclarationProcessor(
     protected abstract fun isExported(declaration: IrDeclaration): Boolean
     protected abstract val bodyVisitor: BodyVisitorBase
 
-    protected abstract inner class BodyVisitorBase : IrElementVisitor<Unit, IrDeclaration> {
+    protected abstract inner class BodyVisitorBase : IrVisitor<Unit, IrDeclaration>() {
         override fun visitValueAccess(expression: IrValueAccessExpression, data: IrDeclaration) {
             visitDeclarationReference(expression, data)
             expression.symbol.owner.enqueue(data, "variable access")
@@ -53,12 +53,9 @@ abstract class UsefulDeclarationProcessor(
             expression.symbol.owner.enqueue(data, "raw function access")
         }
 
-        override fun visitBlock(expression: IrBlock, data: IrDeclaration) {
-            super.visitBlock(expression, data)
-
-            if (expression is IrReturnableBlock) {
-                expression.inlineFunction?.addToUsefulPolyfilledDeclarations()
-            }
+        override fun visitInlinedFunctionBlock(inlinedBlock: IrInlinedFunctionBlock, data: IrDeclaration) {
+            super.visitInlinedFunctionBlock(inlinedBlock, data)
+            inlinedBlock.inlinedFunctionSymbol?.owner?.addToUsefulPolyfilledDeclarations()
         }
 
         override fun visitFieldAccess(expression: IrFieldAccessExpression, data: IrDeclaration) {
@@ -105,7 +102,7 @@ abstract class UsefulDeclarationProcessor(
         addReachabilityInfoIfNeeded(from, this, description, isContagiousOverridableDeclaration)
 
         if (isContagiousOverridableDeclaration) {
-            contagiousReachableDeclarations.add(this as IrOverridableDeclaration<*>)
+            contagiousReachableDeclarations.add(this)
         }
 
         if (!isReachable()) {
@@ -139,13 +136,17 @@ abstract class UsefulDeclarationProcessor(
 
     val usefulPolyfilledDeclarations = hashSetOf<IrDeclaration>()
 
+    protected open fun addConstructedClass(irClass: IrClass) {
+        constructedClasses += irClass
+    }
+
     protected open fun processField(irField: IrField): Unit = Unit
 
     protected open fun processClass(irClass: IrClass) {
         processSuperTypes(irClass)
 
         if (irClass.isObject && isExported(irClass)) {
-            context.mapping.objectToGetInstanceFunction[irClass]
+            irClass.objectGetInstanceFunction
                 ?.enqueue(irClass, "Exported object getInstance function")
         }
 
@@ -176,7 +177,7 @@ abstract class UsefulDeclarationProcessor(
         // Collect instantiated classes.
         irConstructor.constructedClass.let {
             it.enqueue(irConstructor, "constructed class")
-            constructedClasses += it
+            addConstructedClass(it)
         }
     }
 
@@ -231,7 +232,7 @@ abstract class UsefulDeclarationProcessor(
 
     protected open fun handleAssociatedObjects(): Unit = Unit
 
-    fun collectDeclarations(rootDeclarations: Iterable<IrDeclaration>): Set<IrDeclaration> {
+    fun collectDeclarations(rootDeclarations: Iterable<IrDeclaration>, dceDumpNameCache: DceDumpNameCache): Set<IrDeclaration> {
 
         rootDeclarations.forEach {
             it.enqueue(it, "<ROOT>")
@@ -270,7 +271,7 @@ abstract class UsefulDeclarationProcessor(
 
         if (reachabilityInfos != null) {
             if (printReachabilityInfo) {
-                println(transformToDotLikeString(reachabilityInfos))
+                println(transformToDotLikeString(reachabilityInfos, dceDumpNameCache))
             }
 
             if (dumpReachabilityInfoToFile != null) {
@@ -281,7 +282,7 @@ abstract class UsefulDeclarationProcessor(
                     else -> ::transformToDotLikeString
                 }
 
-                out.writeText(stringify(reachabilityInfos))
+                out.writeText(stringify(reachabilityInfos, dceDumpNameCache))
             }
         }
 
@@ -301,18 +302,24 @@ private data class ReachabilityInfo(
 private fun transformToStringBy(
     reachabilityInfos: List<ReachabilityInfo>,
     separator: String,
-    transformer: (sourceFqn: String, targetFqn: String, description: String, isTargetContagious: Boolean) -> String
+    dceDumpNameCache: DceDumpNameCache,
+    transformer: (sourceFqn: String, targetFqn: String, description: String, isTargetContagious: Boolean) -> String,
 ): String {
     return reachabilityInfos
         .map {
-            transformer(it.source.fqNameForDceDump(), it.target.fqNameForDceDump(), it.description, it.isTargetContagious)
+            transformer(
+                dceDumpNameCache.getOrPut(it.source),
+                dceDumpNameCache.getOrPut(it.target),
+                it.description,
+                it.isTargetContagious
+            )
         }
         .distinct()
         .joinToString(separator)
 }
 
-private fun transformToDotLikeString(reachabilityInfos: List<ReachabilityInfo>): String {
-    return transformToStringBy(reachabilityInfos, "\n") { sourceFqn, targetFqn, description, isTargetContagious ->
+private fun transformToDotLikeString(reachabilityInfos: List<ReachabilityInfo>, dceDumpNameCache: DceDumpNameCache): String {
+    return transformToStringBy(reachabilityInfos, "\n", dceDumpNameCache) { sourceFqn, targetFqn, description, isTargetContagious ->
         val comment = description + (if (isTargetContagious) "[CONTAGIOUS!]" else "")
         val info = "\"$sourceFqn\" -> \"$targetFqn\"" + (if (comment.isBlank()) "" else " // $comment")
 
@@ -320,18 +327,18 @@ private fun transformToDotLikeString(reachabilityInfos: List<ReachabilityInfo>):
     }
 }
 
-private fun transformToJsonString(reachabilityInfos: List<ReachabilityInfo>): String {
-    return "[\n" + transformToStringBy(reachabilityInfos, ",\n") { sourceFqn, targetFqn, description, isTargetContagious ->
+private fun transformToJsonString(reachabilityInfos: List<ReachabilityInfo>, dceDumpNameCache: DceDumpNameCache): String {
+    return "[\n" + transformToStringBy(reachabilityInfos, ",\n", dceDumpNameCache) { sourceFqn, targetFqn, description, isTargetContagious ->
         """
         |    {
-        |        "source" : "$sourceFqn",
-        |        "target" : "$targetFqn",
-        |        "description" : "$description",
+        |        "source" : "${sourceFqn.removeQuotes()}",
+        |        "target" : "${targetFqn.removeQuotes()}",
+        |        "description" : "${description.removeQuotes()}",
         |        "isTargetContagious" : $isTargetContagious
         |    }""".trimMargin()
     } + "\n]"
 }
 
-private fun transformToJsConstDeclaration(reachabilityInfos: List<ReachabilityInfo>): String {
-    return "const kotlinReachabilityInfos = " + transformToJsonString(reachabilityInfos) + ";"
+private fun transformToJsConstDeclaration(reachabilityInfos: List<ReachabilityInfo>, dceDumpNameCache: DceDumpNameCache): String {
+    return "export const kotlinReachabilityInfos = " + transformToJsonString(reachabilityInfos, dceDumpNameCache) + ";"
 }

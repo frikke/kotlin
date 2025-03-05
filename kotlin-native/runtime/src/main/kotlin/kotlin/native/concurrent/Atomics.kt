@@ -15,16 +15,9 @@ import kotlin.concurrent.*
 /**
  * An [Int] value that is always updated atomically.
  * For additional details about atomicity guarantees for reads and writes see [kotlin.concurrent.Volatile].
- *
- * Legacy MM: Atomic values and freezing: this type is unique with regard to freezing.
- * Namely, it provides mutating operations, while can participate in frozen subgraphs.
- * So shared frozen objects can have mutable fields of [AtomicInt] type.
  */
-@Frozen
-@OptIn(FreezingIsDeprecated::class, ExperimentalStdlibApi::class)
-@Deprecated("Use kotlin.concurrent.AtomicInt instead.", ReplaceWith("kotlin.concurrent.AtomicInt"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
-public class AtomicInt(public @Volatile var value: Int) {
+@Deprecated("Use kotlin.concurrent.atomics.AtomicInt instead.", ReplaceWith("kotlin.concurrent.atomics.AtomicInt"), DeprecationLevel.ERROR)
+public class AtomicInt(@Volatile public var value: Int) {
     /**
      * Atomically sets the value to the given [new value][newValue] and returns the old value.
      */
@@ -79,7 +72,7 @@ public class AtomicInt(public @Volatile var value: Int) {
     /**
      * Atomically increments the current value by one.
      */
-    @Deprecated("Use incrementAndGet() or getAndIncrement() instead.", ReplaceWith("this.incrementAndGet()"))
+    @Deprecated("Use incrementAndGet() or getAndIncrement() instead.", ReplaceWith("this.incrementAndGet()"), DeprecationLevel.ERROR)
     public fun increment(): Unit {
         addAndGet(1)
     }
@@ -87,7 +80,7 @@ public class AtomicInt(public @Volatile var value: Int) {
     /**
      * Atomically decrements the current value by one.
      */
-    @Deprecated("Use decrementAndGet() or getAndDecrement() instead.", ReplaceWith("this.decrementAndGet()"))
+    @Deprecated("Use decrementAndGet() or getAndDecrement() instead.", ReplaceWith("this.decrementAndGet()"), DeprecationLevel.ERROR)
     public fun decrement(): Unit {
         addAndGet(-1)
     }
@@ -101,16 +94,9 @@ public class AtomicInt(public @Volatile var value: Int) {
 /**
  * A [Long] value that is always updated atomically.
  * For additional details about atomicity guarantees for reads and writes see [kotlin.concurrent.Volatile].
- *
- * Legacy MM: Atomic values and freezing: this type is unique with regard to freezing.
- * Namely, it provides mutating operations, while can participate in frozen subgraphs.
- * So shared frozen objects can have mutable fields of [AtomicLong] type.
  */
-@Frozen
-@OptIn(FreezingIsDeprecated::class, ExperimentalStdlibApi::class)
-@Deprecated("Use kotlin.concurrent.AtomicLong instead.", ReplaceWith("kotlin.concurrent.AtomicLong"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
-public class AtomicLong(public @Volatile var value: Long = 0L)  {
+@Deprecated("Use kotlin.concurrent.atomics.AtomicLong instead.", ReplaceWith("kotlin.concurrent.atomics.AtomicLong"), DeprecationLevel.ERROR)
+public class AtomicLong(@Volatile public var value: Long = 0L)  {
     /**
      * Atomically sets the value to the given [new value][newValue] and returns the old value.
      */
@@ -165,13 +151,13 @@ public class AtomicLong(public @Volatile var value: Long = 0L)  {
     /**
      * Atomically adds the [given value][delta] to the current value and returns the new value.
      */
-    @Deprecated("Use addAndGet(delta: Long) instead.")
+    @Deprecated(message = "Use addAndGet(delta: Long) instead.", level = DeprecationLevel.ERROR)
     public fun addAndGet(delta: Int): Long = addAndGet(delta.toLong())
 
     /**
      * Atomically increments the current value by one.
      */
-    @Deprecated("Use incrementAndGet() or getAndIncrement() instead.", ReplaceWith("this.incrementAndGet()"))
+    @Deprecated("Use incrementAndGet() or getAndIncrement() instead.", ReplaceWith("this.incrementAndGet()"), DeprecationLevel.ERROR)
     public fun increment(): Unit {
         addAndGet(1L)
     }
@@ -179,8 +165,8 @@ public class AtomicLong(public @Volatile var value: Long = 0L)  {
     /**
      * Atomically decrements the current value by one.
      */
-    @Deprecated("Use decrementAndGet() or getAndDecrement() instead.", ReplaceWith("this.decrementAndGet()"))
-    fun decrement(): Unit {
+    @Deprecated("Use decrementAndGet() or getAndDecrement() instead.", ReplaceWith("this.decrementAndGet()"), DeprecationLevel.ERROR)
+    public fun decrement(): Unit {
         addAndGet(-1L)
     }
 
@@ -192,65 +178,13 @@ public class AtomicLong(public @Volatile var value: Long = 0L)  {
 
 /**
  * An object reference that is always updated atomically.
- *
- * Legacy MM: An atomic reference to a frozen Kotlin object. Can be used in concurrent scenarious
- * but frequently shall be of nullable type and be zeroed out once no longer needed.
- * Otherwise memory leak could happen. To detect such leaks [kotlin.native.runtime.GC.detectCycles]
- * in debug mode could be helpful.
  */
-@FrozenLegacyMM
-@LeakDetectorCandidate
-@NoReorderFields
-@OptIn(FreezingIsDeprecated::class)
-@Deprecated("Use kotlin.concurrent.AtomicReference instead.", ReplaceWith("kotlin.concurrent.AtomicReference"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
-public class AtomicReference<T> {
-    private var value_: T
-
-    // A spinlock to fix potential ARC race.
-    private var lock: Int = 0
-
-    // Optimization for speeding up access.
-    private var cookie: Int = 0
-
-    /**
-     * Creates a new atomic reference pointing to the [given value][value].
-     *
-     * @throws InvalidMutabilityException with legacy MM if reference is not frozen.
-     */
-    constructor(value: T) {
-        if (this.isFrozen) {
-            checkIfFrozen(value)
-        }
-        value_ = value
-    }
-
-    /**
-     * The current value.
-     * Gets the current value or sets to the given [new value][newValue].
-     *
-     * Legacy MM: if the [new value][newValue] value is not null, it must be frozen or permanent object.
-     *
-     * @throws InvalidMutabilityException with legacy MM if the value is not frozen or a permanent object
-     */
-    public var value: T
-        get() = @Suppress("UNCHECKED_CAST")(getImpl() as T)
-        set(newValue) = setImpl(newValue)
-
+@Deprecated("Use kotlin.concurrent.atomics.AtomicReference instead.", ReplaceWith("kotlin.concurrent.atomics.AtomicReference"), DeprecationLevel.ERROR)
+public class AtomicReference<T>(@Volatile public var value: T) {
     /**
      * Atomically sets the value to the given [new value][newValue] and returns the old value.
      */
-    public fun getAndSet(newValue: T): T {
-        while (true) {
-            val old = value
-            if (old === newValue) {
-                return old
-            }
-            if (compareAndSet(old, newValue)) {
-                return old
-            }
-        }
-    }
+    public fun getAndSet(newValue: T): T = this::value.getAndSetField(newValue)
 
     /**
      * Atomically sets the value to the given [new value][newValue] if the current value equals the [expected value][expected],
@@ -260,8 +194,7 @@ public class AtomicReference<T> {
      *
      * Comparison of values is done by reference.
      */
-    @GCUnsafeCall("Kotlin_AtomicReference_compareAndSet")
-    external public fun compareAndSet(expected: T, newValue: T): Boolean
+    public fun compareAndSet(expected: T, newValue: T): Boolean = this::value.compareAndSetField(expected, newValue)
 
     /**
      * Atomically sets the value to the given [new value][newValue] if the current value equals the [expected value][expected]
@@ -270,26 +203,14 @@ public class AtomicReference<T> {
      * Provides sequential consistent ordering guarantees and cannot fail spuriously.
      *
      * Comparison of values is done by reference.
-     *
-     * Legacy MM: if the [new value][newValue] value is not null, it must be frozen or permanent object.
-     *
-     * @throws InvalidMutabilityException with legacy MM if the value is not frozen or a permanent object
      */
-    @GCUnsafeCall("Kotlin_AtomicReference_compareAndSwap")
-    external public fun compareAndSwap(expected: T, newValue: T): T
+    public fun compareAndSwap(expected: T, newValue: T): T = this::value.compareAndExchangeField(expected, newValue)
 
     /**
      * Returns the string representation of this object.
      */
     public override fun toString(): String =
             "${debugString(this)} -> ${debugString(value)}"
-
-    // Implementation details.
-    @GCUnsafeCall("Kotlin_AtomicReference_set")
-    private external fun setImpl(newValue: Any?): Unit
-
-    @GCUnsafeCall("Kotlin_AtomicReference_get")
-    private external fun getImpl(): Any?
 }
 
 /**
@@ -298,16 +219,9 @@ public class AtomicReference<T> {
  *
  * [kotlinx.cinterop.NativePtr] is a value type, hence it is stored in [AtomicNativePtr] without boxing
  * and [compareAndSet], [compareAndSwap] operations perform comparison by value.
- *
- * Legacy MM: Atomic values and freezing: this type is unique with regard to freezing.
- * Namely, it provides mutating operations, while can participate in frozen subgraphs.
- * So shared frozen objects can have mutable fields of [AtomicNativePtr] type.
  */
-@Frozen
-@OptIn(FreezingIsDeprecated::class, ExperimentalStdlibApi::class)
-@Deprecated("Use kotlin.concurrent.AtomicNativePtr instead.", ReplaceWith("kotlin.concurrent.AtomicNativePtr"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
-public class AtomicNativePtr(public @Volatile var value: NativePtr) {
+@Deprecated("Use kotlin.concurrent.atomics.AtomicNativePtr instead.", ReplaceWith("kotlin.concurrent.atomics.AtomicNativePtr"), DeprecationLevel.ERROR)
+public class AtomicNativePtr(@Volatile public var value: NativePtr) {
     /**
      * Atomically sets the value to the given [new value][newValue] and returns the old value.
      */
@@ -360,62 +274,21 @@ private fun debugString(value: Any?): String {
 }
 
 /**
- * Note: this class is useful only with legacy memory manager. Please use [AtomicReference] instead.
- *
- * An atomic reference to a Kotlin object. Can be used in concurrent scenarious, but must be frozen first,
- * otherwise behaves as regular box for the value. If frozen, shall be zeroed out once no longer needed.
- * Otherwise memory leak could happen. To detect such leaks [kotlin.native.runtime.GC.detectCycles]
- * in debug mode could be helpful.
+ * This class was useful only with legacy memory manager. Please use [AtomicReference] instead.
  */
-@NoReorderFields
-@LeakDetectorCandidate
-@ExportTypeInfo("theFreezableAtomicReferenceTypeInfo")
-@FreezingIsDeprecated
-@Deprecated("Use kotlin.concurrent.AtomicReference instead.", ReplaceWith("kotlin.concurrent.AtomicReference"))
-@DeprecatedSinceKotlin(warningSince = "1.9")
-public class FreezableAtomicReference<T>(private var value_: T) {
-    // A spinlock to fix potential ARC race.
-    private var lock: Int = 0
-
-    // Optimization for speeding up access.
-    private var cookie: Int = 0
-
-    /**
-     * The referenced value.
-     * Gets the value or sets to the given [new value][newValue]. If the [new value][newValue] is not null,
-     * and `this` is frozen - it must be frozen or permanent object.
-     *
-     * @throws InvalidMutabilityException if the value is not frozen or a permanent object
-     */
-    public var value: T
-        get() = @Suppress("UNCHECKED_CAST")(getImpl() as T)
-        set(newValue) {
-            if (this.isShareable())
-                setImpl(newValue)
-            else
-                value_ = newValue
-        }
+@Deprecated("Use kotlin.concurrent.atomics.AtomicReference instead.", ReplaceWith("kotlin.concurrent.atomics.AtomicReference"), DeprecationLevel.ERROR)
+public class FreezableAtomicReference<T>(@Volatile public var value: T) {
 
     /**
      * Atomically sets the value to the given [new value][newValue] if the current value equals the [expected value][expected]
      * and returns the old value in any case.
      *
-     * Legacy MM: If the [new value][newValue] value is not null and object is frozen, it must be frozen or permanent object.
      *
      * @param expected the expected value
      * @param newValue the new value
-     * @throws InvalidMutabilityException with legacy MM if the value is not frozen or a permanent object
      * @return the old value
      */
-     public fun compareAndSwap(expected: T, newValue: T): T {
-        return if (this.isShareable()) {
-            @Suppress("UNCHECKED_CAST")(compareAndSwapImpl(expected, newValue) as T)
-        } else {
-            val old = value_
-            if (old === expected) value_ = newValue
-            old
-        }
-    }
+     public fun compareAndSwap(expected: T, newValue: T): T = this::value.compareAndExchangeField(expected, newValue)
 
     /**
      * Atomically sets the value to the given [new value][newValue] if the current value equals the [expected value][expected]
@@ -427,17 +300,7 @@ public class FreezableAtomicReference<T>(private var value_: T) {
      * @param newValue the new value
      * @return true if successful
      */
-    public fun compareAndSet(expected: T, newValue: T): Boolean {
-        if (this.isShareable())
-            return compareAndSetImpl(expected, newValue)
-        val old = value_
-        if (old === expected) {
-            value_ = newValue
-            return true
-        } else {
-            return false
-        }
-    }
+    public fun compareAndSet(expected: T, newValue: T): Boolean = this::value.compareAndSetField(expected, newValue)
 
     /**
      * Returns the string representation of this object.
@@ -447,29 +310,4 @@ public class FreezableAtomicReference<T>(private var value_: T) {
     public override fun toString(): String =
             "${debugString(this)} -> ${debugString(value)}"
 
-    // TODO: Consider making this public.
-    internal fun swap(newValue: T): T {
-        while (true) {
-            val old = value
-            if (old === newValue) {
-                return old
-            }
-            if (compareAndSet(old, newValue)) {
-                return old
-            }
-        }
-    }
-
-    // Implementation details.
-    @GCUnsafeCall("Kotlin_AtomicReference_set")
-    private external fun setImpl(newValue: Any?): Unit
-
-    @GCUnsafeCall("Kotlin_AtomicReference_get")
-    private external fun getImpl(): Any?
-
-    @GCUnsafeCall("Kotlin_AtomicReference_compareAndSwap")
-    private external fun compareAndSwapImpl(expected: Any?, newValue: Any?): Any?
-
-    @GCUnsafeCall("Kotlin_AtomicReference_compareAndSet")
-    private external fun compareAndSetImpl(expected: Any?, newValue: Any?): Boolean
 }

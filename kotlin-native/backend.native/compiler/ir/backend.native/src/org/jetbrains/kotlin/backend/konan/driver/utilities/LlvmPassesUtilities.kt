@@ -8,8 +8,8 @@ package org.jetbrains.kotlin.backend.konan.driver.utilities
 import kotlinx.cinterop.*
 import llvm.LLVMModuleRef
 import llvm.LLVMPrintModuleToFile
-import org.jetbrains.kotlin.backend.common.phaser.Action
-import org.jetbrains.kotlin.backend.common.phaser.ActionState
+import org.jetbrains.kotlin.config.phaser.Action
+import org.jetbrains.kotlin.config.phaser.ActionState
 import org.jetbrains.kotlin.backend.konan.KonanConfigKeys
 import org.jetbrains.kotlin.backend.konan.driver.PhaseContext
 import org.jetbrains.kotlin.backend.konan.llvm.getName
@@ -39,7 +39,14 @@ private fun <Data, Context : PhaseContext> createLlvmDumperAction(): Action<Data
                     return
                 }
                 val moduleName: String = llvmModule.getName()
-                val output = File(context.config.saveLlvmIrDirectory, "$moduleName.${state.phase.name}.ll")
+                val parentDirectory = context.config.saveLlvmIrDirectory
+                if (!parentDirectory.exists()) {
+                    context.messageCollector.report(
+                            CompilerMessageSeverity.WARNING,
+                            "Cannot dump LLVM IR to non-existent location: ${parentDirectory.absolutePath}")
+                    return
+                }
+                val output = File(parentDirectory, "$moduleName.${state.phase.name}.ll")
                 if (LLVMPrintModuleToFile(llvmModule, output.absolutePath, null) != 0) {
                     error("Can't dump LLVM IR to ${output.absolutePath}")
                 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -13,8 +13,8 @@ import org.jetbrains.kotlin.contracts.description.*
 import org.jetbrains.kotlin.psi.KtContractEffect
 import org.jetbrains.kotlin.psi.stubs.KotlinContractEffectStub
 import org.jetbrains.kotlin.psi.stubs.elements.KtContractEffectElementType
-import org.jetbrains.kotlin.psi.stubs.elements.KtUserTypeElementType.deserializeType
-import org.jetbrains.kotlin.psi.stubs.elements.KtUserTypeElementType.serializeType
+import org.jetbrains.kotlin.psi.stubs.elements.deserializeTypeBean
+import org.jetbrains.kotlin.psi.stubs.elements.serializeTypeBean
 
 class KotlinContractEffectStubImpl(
     parent: StubElement<out PsiElement>?,
@@ -25,7 +25,7 @@ enum class KotlinContractEffectType {
     CALLS {
         override fun deserialize(dataStream: StubInputStream): KtCallsEffectDeclaration<KotlinTypeBean, Nothing?> {
             val declaration = PARAMETER_REFERENCE.deserialize(dataStream)
-            val range = EventOccurrencesRange.values()[dataStream.readInt()]
+            val range = EventOccurrencesRange.entries[dataStream.readInt()]
             return KtCallsEffectDeclaration(declaration as KtValueParameterReference, range)
         }
     },
@@ -36,8 +36,8 @@ enum class KotlinContractEffectType {
     },
     CONDITIONAL {
         override fun deserialize(dataStream: StubInputStream): KtContractDescriptionElement<KotlinTypeBean, Nothing?> {
-            val descriptionElement = values()[dataStream.readInt()].deserialize(dataStream)
-            val condition = values()[dataStream.readInt()].deserialize(dataStream)
+            val descriptionElement = entries[dataStream.readInt()].deserialize(dataStream)
+            val condition = entries[dataStream.readInt()].deserialize(dataStream)
             return KtConditionalEffectDeclaration(
                 descriptionElement as KtEffectDeclaration,
                 condition as KtBooleanExpression
@@ -56,21 +56,21 @@ enum class KotlinContractEffectType {
         override fun deserialize(dataStream: StubInputStream): KtContractDescriptionElement<KotlinTypeBean, Nothing?> {
             return KtIsInstancePredicate(
                 PARAMETER_REFERENCE.deserialize(dataStream) as KtValueParameterReference,
-                deserializeType(dataStream)!!,
+                deserializeTypeBean(dataStream)!!,
                 dataStream.readBoolean()
             )
         }
     },
     NOT {
         override fun deserialize(dataStream: StubInputStream): KtContractDescriptionElement<KotlinTypeBean, Nothing?> {
-            return KtLogicalNot(values()[dataStream.readInt()].deserialize(dataStream) as KtBooleanExpression)
+            return KtLogicalNot(entries[dataStream.readInt()].deserialize(dataStream) as KtBooleanExpression)
         }
     },
     BOOLEAN_LOGIC {
         override fun deserialize(dataStream: StubInputStream): KtContractDescriptionElement<KotlinTypeBean, Nothing?> {
             val kind = if (dataStream.readBoolean()) LogicOperationKind.AND else LogicOperationKind.OR
-            val left = values()[dataStream.readInt()].deserialize(dataStream) as KtBooleanExpression
-            val right = values()[dataStream.readInt()].deserialize(dataStream) as KtBooleanExpression
+            val left = entries[dataStream.readInt()].deserialize(dataStream) as KtBooleanExpression
+            val right = entries[dataStream.readInt()].deserialize(dataStream) as KtBooleanExpression
             return KtBinaryLogicExpression(left, right, kind)
         }
     },
@@ -144,7 +144,7 @@ class KotlinContractSerializationVisitor(val dataStream: StubOutputStream) :
     override fun visitIsInstancePredicate(isInstancePredicate: KtIsInstancePredicate<KotlinTypeBean, Nothing?>, data: Nothing?) {
         dataStream.writeInt(KotlinContractEffectType.IS_INSTANCE.ordinal)
         dataStream.writeInt(isInstancePredicate.arg.parameterIndex)
-        serializeType(dataStream, isInstancePredicate.type)
+        serializeTypeBean(dataStream, isInstancePredicate.type)
         dataStream.writeBoolean(isInstancePredicate.isNegated)
     }
 

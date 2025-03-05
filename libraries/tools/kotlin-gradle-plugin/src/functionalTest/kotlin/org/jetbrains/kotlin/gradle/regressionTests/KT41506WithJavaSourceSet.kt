@@ -8,10 +8,10 @@
 package org.jetbrains.kotlin.gradle.regressionTests
 
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
-import org.jetbrains.kotlin.gradle.plugin.mpp.javaSourceSets
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.util.buildProjectWithMPP
 import org.jetbrains.kotlin.gradle.util.kotlin
+import org.jetbrains.kotlin.gradle.utils.javaSourceSets
 import kotlin.test.Test
 import kotlin.test.fail
 
@@ -22,6 +22,7 @@ class KT41506WithJavaSourceSet {
             kotlin {
                 jvm {
                     compilations.create("integrationTest")
+                    @Suppress("DEPRECATION")
                     withJava()
                 }
             }

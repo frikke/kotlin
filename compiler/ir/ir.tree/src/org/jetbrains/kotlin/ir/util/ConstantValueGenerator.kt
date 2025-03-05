@@ -133,7 +133,7 @@ abstract class ConstantValueGenerator(
                     else -> IrGetEnumValueImpl(
                         startOffset, endOffset,
                         constantType,
-                        symbolTable.referenceEnumEntry(enumEntryDescriptor)
+                        symbolTable.descriptorExtension.referenceEnumEntry(enumEntryDescriptor)
                     )
                 }
             }
@@ -178,15 +178,18 @@ abstract class ConstantValueGenerator(
         val primaryConstructorDescriptor = annotationClassDescriptor.unsubstitutedPrimaryConstructor
             ?: annotationClassDescriptor.constructors.singleOrNull()
             ?: throw AssertionError("No constructor for annotation class $annotationClassDescriptor")
-        val primaryConstructorSymbol = symbolTable.referenceConstructor(primaryConstructorDescriptor)
+        val primaryConstructorSymbol = symbolTable.descriptorExtension.referenceConstructor(primaryConstructorDescriptor)
 
         val (startOffset, endOffset) = extractAnnotationOffsets(annotationDescriptor)
 
-        val irCall = IrConstructorCallImpl(
+        val irCall = IrConstructorCallImplWithShape(
             startOffset, endOffset,
             annotationType.toIrType(),
             primaryConstructorSymbol,
             valueArgumentsCount = primaryConstructorDescriptor.valueParameters.size,
+            contextParameterCount = primaryConstructorDescriptor.contextReceiverParameters.size,
+            hasDispatchReceiver = primaryConstructorDescriptor.dispatchReceiverParameter != null,
+            hasExtensionReceiver = primaryConstructorDescriptor.extensionReceiverParameter != null,
             typeArgumentsCount = annotationClassDescriptor.declaredTypeParameters.size,
             constructorTypeArgumentsCount = 0,
             source = annotationDescriptor.source
@@ -200,16 +203,16 @@ abstract class ConstantValueGenerator(
 
         for (i in typeArguments.indices) {
             val typeArgument = typeArguments[i]
-            irCall.putTypeArgument(i, typeArgument.type.toIrType())
+            irCall.typeArguments[i] = typeArgument.type.toIrType()
         }
 
         for (valueParameter in substitutedConstructor.valueParameters) {
-            val argumentIndex = valueParameter.index
+            val argumentIndex = valueParameter.index + if (primaryConstructorDescriptor.dispatchReceiverParameter != null) 1 else 0
             val argumentValue = annotationDescriptor.allValueArguments[valueParameter.name] ?: continue
             val adjustedValue = adjustAnnotationArgumentValue(argumentValue, valueParameter)
             val (parameterStartOffset, parameterEndOffset) = extractAnnotationParameterOffsets(annotationDescriptor, valueParameter.name)
             val irArgument = generateAnnotationValueAsExpression(parameterStartOffset, parameterEndOffset, adjustedValue, valueParameter)
-            irCall.putValueArgument(argumentIndex, irArgument)
+            irCall.arguments[argumentIndex] = irArgument
         }
 
         return irCall

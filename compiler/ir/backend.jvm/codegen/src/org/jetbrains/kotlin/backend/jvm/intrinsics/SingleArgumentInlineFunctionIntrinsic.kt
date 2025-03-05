@@ -10,14 +10,14 @@ import org.jetbrains.kotlin.backend.jvm.ir.unwrapInlineLambda
 import org.jetbrains.kotlin.ir.expressions.IrFunctionAccessExpression
 
 object SingleArgumentInlineFunctionIntrinsic : IntrinsicMethod() {
-    override fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo): PromisedValue? {
-        val sourceCompiler = IrSourceCompilerForInline(codegen.state, expression, expression.symbol.owner, codegen, data)
+    override fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo): PromisedValue {
+        val sourceCompiler =
+            IrSourceCompilerForInline(codegen.state, expression, expression.symbol.owner, codegen, data, codegen.context.evaluatorData)
         val argumentExpression = expression.getValueArgument(0)!!
         val inlineLambda = argumentExpression.unwrapInlineLambda()
         if (inlineLambda != null) {
             val lambdaInfo = IrExpressionLambdaImpl(codegen, inlineLambda)
             lambdaInfo.generateLambdaBody(sourceCompiler)
-            codegen.context.typeToCachedSMAP[lambdaInfo.lambdaClassType] = lambdaInfo.node.classSMAP
         }
 
         return codegen.unitValue

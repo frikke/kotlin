@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -16,7 +16,6 @@ import org.jetbrains.kotlin.fir.declarations.FirDeclarationOrigin
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase
 import org.jetbrains.kotlin.fir.declarations.builder.buildRegularClass
 import org.jetbrains.kotlin.fir.declarations.builder.buildSimpleFunction
-import org.jetbrains.kotlin.fir.declarations.impl.FirDeclarationStatusImpl
 import org.jetbrains.kotlin.fir.resolve.providers.FirSymbolNamesProvider
 import org.jetbrains.kotlin.fir.resolve.providers.FirSymbolNamesProviderWithoutCallables
 import org.jetbrains.kotlin.fir.declarations.impl.FirResolvedDeclarationStatusImpl
@@ -36,7 +35,7 @@ import org.jetbrains.kotlin.name.StandardClassIds
 class FirCloneableSymbolProvider(
     session: FirSession,
     moduleData: FirModuleData,
-    scopeProvider: FirScopeProvider
+    scopeProvider: FirScopeProvider,
 ) : FirSymbolProvider(session) {
     private val klass = buildRegularClass {
         resolvePhase = FirResolvePhase.ANALYZED_DEPENDENCIES
@@ -47,33 +46,46 @@ class FirCloneableSymbolProvider(
             Modality.ABSTRACT,
             EffectiveVisibility.Public
         )
+
         classKind = ClassKind.INTERFACE
         val classSymbol = FirRegularClassSymbol(StandardClassIds.Cloneable)
         symbol = classSymbol
+        superTypeRefs += buildResolvedTypeRef {
+            coneType = session.builtinTypes.anyType.coneType
+        }
+
         declarations += buildSimpleFunction {
             this.moduleData = moduleData
             resolvePhase = FirResolvePhase.ANALYZED_DEPENDENCIES
             origin = FirDeclarationOrigin.Library
             returnTypeRef = buildResolvedTypeRef {
-                type = session.builtinTypes.anyType.type
+                coneType = session.builtinTypes.anyType.coneType
             }
+
             status = FirResolvedDeclarationStatusImpl(
                 Visibilities.Protected,
                 Modality.OPEN,
-                Visibilities.Protected.toEffectiveVisibility(classSymbol))
+                Visibilities.Protected.toEffectiveVisibility(classSymbol)
+            )
+
             name = StandardClassIds.Callables.clone.callableName
             symbol = FirNamedFunctionSymbol(StandardClassIds.Callables.clone)
-            dispatchReceiverType = this@buildRegularClass.symbol.constructType(emptyArray(), isNullable = false)
+            dispatchReceiverType = this@buildRegularClass.symbol.constructType()
         }
+
         this.scopeProvider = scopeProvider
         name = StandardClassIds.Cloneable.shortClassName
 
     }
 
     override val symbolNamesProvider: FirSymbolNamesProvider = object : FirSymbolNamesProviderWithoutCallables() {
-        override fun getTopLevelClassifierNamesInPackage(packageFqName: FqName): Set<String> =
+        override val hasSpecificClassifierPackageNamesComputation: Boolean get() = true
+
+        override fun getPackageNamesWithTopLevelClassifiers(): Set<String> = setOf(StandardClassIds.Cloneable.packageFqName.asString())
+
+        override fun getTopLevelClassifierNamesInPackage(packageFqName: FqName): Set<Name> =
             if (packageFqName == StandardClassIds.Cloneable.packageFqName) {
-                setOf(StandardClassIds.Cloneable.shortClassName.asString())
+                setOf(StandardClassIds.Cloneable.shortClassName)
             } else emptySet()
     }
 
@@ -93,7 +105,7 @@ class FirCloneableSymbolProvider(
     override fun getTopLevelPropertySymbolsTo(destination: MutableList<FirPropertySymbol>, packageFqName: FqName, name: Name) {
     }
 
-    override fun getPackage(fqName: FqName): FqName? {
-        return null
+    override fun hasPackage(fqName: FqName): Boolean {
+        return false
     }
 }

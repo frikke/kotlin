@@ -20,6 +20,7 @@ import org.jetbrains.kotlin.utils.memoryOptimizedPlus
 import org.jetbrains.kotlin.ir.util.copyTo
 import org.jetbrains.kotlin.ir.util.copyTypeParametersFrom
 import org.jetbrains.kotlin.ir.util.defaultType
+import org.jetbrains.kotlin.ir.util.nonDispatchParameters
 import org.jetbrains.kotlin.name.Name
 
 class JsInnerClassesSupport(mapping: JsMapping, private val irFactory: IrFactory) : InnerClassesSupport {
@@ -90,15 +91,15 @@ class JsInnerClassesSupport(mapping: JsMapping, private val irFactory: IrFactory
         val newValueParameters = mutableListOf(buildValueParameter(newConstructor) {
             origin = SYNTHESIZED_DECLARATION
             name = Name.identifier(Namer.OUTER_NAME)
-            index = 0
             type = outerThisType
+            kind = IrParameterKind.Regular
         })
 
-        for (p in oldConstructor.valueParameters) {
-            newValueParameters += p.copyTo(newConstructor, index = p.index + 1)
+        for (p in oldConstructor.nonDispatchParameters) {
+            newValueParameters += p.copyTo(newConstructor)
         }
 
-        newConstructor.valueParameters = newConstructor.valueParameters memoryOptimizedPlus newValueParameters
+        newConstructor.parameters = newConstructor.parameters memoryOptimizedPlus newValueParameters
 
         return newConstructor
     }

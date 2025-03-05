@@ -6,13 +6,13 @@
 package org.jetbrains.kotlin.backend.common.serialization
 
 import org.jetbrains.kotlin.backend.common.serialization.encodings.BinarySymbolData
-import org.jetbrains.kotlin.backend.common.serialization.proto.Actual
 import org.jetbrains.kotlin.ir.symbols.IrFileSymbol
 import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrAnonymousInitializerSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrLocalDelegatedPropertySymbolImpl
+import org.jetbrains.kotlin.ir.symbols.impl.IrReturnableBlockSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrValueParameterSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrVariableSymbolImpl
 import org.jetbrains.kotlin.ir.util.IdSignature
@@ -22,10 +22,8 @@ class IrSymbolDeserializer(
     val symbolTable: ReferenceSymbolTable,
     val libraryFile: IrLibraryFile,
     val fileSymbol: IrFileSymbol,
-    val actuals: List<Actual>,
     val enqueueLocalTopLevelDeclaration: (IdSignature) -> Unit,
-    val handleExpectActualMapping: (IdSignature, IrSymbol) -> IrSymbol,
-    internationService: IrInterningService,
+    irInterner: IrInterningService,
     val symbolProcessor: IrSymbolDeserializer.(IrSymbol, IdSignature) -> IrSymbol = { s, _ -> s },
     fileSignature: IdSignature.FileSignature = IdSignature.FileSignature(fileSymbol),
     val deserializePublicSymbol: (IdSignature, BinarySymbolData.SymbolKind) -> IrSymbol
@@ -34,9 +32,7 @@ class IrSymbolDeserializer(
 
     fun deserializeIrSymbol(idSig: IdSignature, symbolKind: BinarySymbolData.SymbolKind): IrSymbol {
         return deserializedSymbols.getOrPut(idSig) {
-            val symbol = referenceDeserializedSymbol(symbolKind, idSig)
-
-            handleExpectActualMapping(idSig, symbol)
+            referenceDeserializedSymbol(symbolKind, idSig)
         }
     }
 
@@ -85,7 +81,7 @@ class IrSymbolDeserializer(
         }
     }
 
-    val signatureDeserializer = IdSignatureDeserializer(libraryFile, fileSignature, internationService)
+    val signatureDeserializer = IdSignatureDeserializer(libraryFile, fileSignature, irInterner)
 
     fun deserializeIdSignature(index: Int): IdSignature {
         return signatureDeserializer.deserializeIdSignature(index)
@@ -113,7 +109,7 @@ internal fun referenceDeserializedSymbol(
         BinarySymbolData.SymbolKind.VALUE_PARAMETER_SYMBOL -> IrValueParameterSymbolImpl()
         BinarySymbolData.SymbolKind.RECEIVER_PARAMETER_SYMBOL -> IrValueParameterSymbolImpl()
         BinarySymbolData.SymbolKind.LOCAL_DELEGATED_PROPERTY_SYMBOL -> IrLocalDelegatedPropertySymbolImpl()
+        BinarySymbolData.SymbolKind.RETURNABLE_BLOCK_SYMBOL -> IrReturnableBlockSymbolImpl()
         BinarySymbolData.SymbolKind.FILE_SYMBOL -> fileSymbol ?: error("File symbol is not provided")
-        else -> error("Unexpected classifier symbol kind: $symbolKind for signature $idSig")
     }
 }

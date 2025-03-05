@@ -1,5 +1,4 @@
-// IGNORE_REVERSED_RESOLVE
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: FRONTEND
 @Retention(AnnotationRetention.SOURCE)
 @Repeatable
 annotation class Ann(val i: Int)

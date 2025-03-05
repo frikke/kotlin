@@ -5,10 +5,10 @@
 
 package org.jetbrains.kotlin.test.frontend.fir
 
-import org.jetbrains.kotlin.diagnostics.Severity
 import org.jetbrains.kotlin.fir.AbstractFirAnalyzerFacade
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.FirFile
+import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.test.model.FrontendKinds
 import org.jetbrains.kotlin.test.model.ResultingArtifact
 import org.jetbrains.kotlin.test.model.TestFile
@@ -18,7 +18,8 @@ import org.jetbrains.kotlin.test.model.TestModule
 data class FirOutputPartForDependsOnModule(
     val module: TestModule,
     val session: FirSession,
-    val firAnalyzerFacade: AbstractFirAnalyzerFacade,
+    val scopeSession: ScopeSession,
+    val firAnalyzerFacade: AbstractFirAnalyzerFacade?, // used only in AA tests
     val firFiles: Map<TestFile, FirFile>
 )
 
@@ -29,12 +30,6 @@ abstract class FirOutputArtifact(val partsForDependsOnModules: List<FirOutputPar
         get() = FrontendKinds.FIR
 
     val mainFirFiles: Map<TestFile, FirFile> by lazy { allFirFiles.filterKeys { !it.isAdditional } }
-
-    val hasErrors: Boolean by lazy {
-        partsForDependsOnModules.any { part ->
-            part.firAnalyzerFacade.runCheckers().values.any { diagnostics -> diagnostics.any { it.severity == Severity.ERROR } }
-        }
-    }
 }
 
 class FirOutputArtifactImpl(parts: List<FirOutputPartForDependsOnModule>) : FirOutputArtifact(parts)

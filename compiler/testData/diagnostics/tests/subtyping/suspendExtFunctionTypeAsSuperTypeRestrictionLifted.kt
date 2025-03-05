@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: BACKEND
 // FIR_IDENTICAL
-// !LANGUAGE: +FunctionalTypeWithExtensionAsSupertype
+// LANGUAGE: +FunctionalTypeWithExtensionAsSupertype
 class A : suspend Double.() -> Unit {
     override suspend fun invoke(p1: Double) {}
 }

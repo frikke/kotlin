@@ -8,10 +8,13 @@ package org.jetbrains.kotlin.gradle.plugin.sources
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtensionOrNull
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.PreparedKotlinToolingDiagnosticsCollector
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.kotlinToolingDiagnosticsCollector
 import org.jetbrains.kotlin.gradle.plugin.mpp.*
 import org.jetbrains.kotlin.gradle.targets.metadata.dependsOnClosureWithInterCompilationDependencies
-import org.jetbrains.kotlin.gradle.utils.isProjectComponentIdentifierInCurrentBuild
-import org.jetbrains.kotlin.tooling.core.extrasNullableLazyProperty
+import org.jetbrains.kotlin.gradle.utils.contains
+import org.jetbrains.kotlin.gradle.utils.currentBuild
+import org.jetbrains.kotlin.gradle.utils.extrasStoredProperty
 
 /**
  * Returns [GranularMetadataTransformation] for all requested compile dependencies
@@ -20,9 +23,9 @@ import org.jetbrains.kotlin.tooling.core.extrasNullableLazyProperty
  * Used only for IDE import (w/o KGP based dependency resolution).
  * Scheduled for removal after 1.9.20
  */
-internal val InternalKotlinSourceSet.metadataTransformation: GranularMetadataTransformation? by extrasNullableLazyProperty lazy@{
+internal val InternalKotlinSourceSet.metadataTransformation: GranularMetadataTransformation? by extrasStoredProperty property@{
     // Create only for source sets in multiplatform plugin
-    project.multiplatformExtensionOrNull ?: return@lazy null
+    project.multiplatformExtensionOrNull ?: return@property null
 
     val parentSourceSetVisibilityProvider = ParentSourceSetVisibilityProvider { componentIdentifier ->
         dependsOnClosureWithInterCompilationDependencies(this).filterIsInstance<DefaultKotlinSourceSet>()
@@ -32,11 +35,12 @@ internal val InternalKotlinSourceSet.metadataTransformation: GranularMetadataTra
     }
 
     val granularMetadataTransformation = GranularMetadataTransformation(
-        params = GranularMetadataTransformation.Params(project, this),
-        parentSourceSetVisibilityProvider = parentSourceSetVisibilityProvider
+        params = GranularMetadataTransformation.Params(project, this, transformProjectDependencies = false),
+        parentSourceSetVisibilityProvider = parentSourceSetVisibilityProvider,
+        kotlinToolingDiagnosticsCollector = PreparedKotlinToolingDiagnosticsCollector.create(project)
     )
 
-    @Suppress("DEPRECATION")
+    @Suppress("DEPRECATION_ERROR")
     /*
     Older IDEs still rely on resolving the metadata configurations explicitly.
     Dependencies will be coming from extending the newer 'resolvableMetadataConfiguration'.
@@ -84,7 +88,7 @@ private fun Project.applyTransformationToLegacyDependenciesMetadataConfiguration
             configuration.exclude(mapOf("group" to group, "module" to name))
         }
 
-        requested.filter { !it.dependency.id.isProjectComponentIdentifierInCurrentBuild }.forEach {
+        requested.filter { it.dependency !in currentBuild }.forEach {
             val (group, name) = ModuleIds.fromComponent(project, it.dependency)
             val notation = listOfNotNull(group.orEmpty(), name, it.dependency.moduleVersion?.version).joinToString(":")
             configuration.resolutionStrategy.force(notation)

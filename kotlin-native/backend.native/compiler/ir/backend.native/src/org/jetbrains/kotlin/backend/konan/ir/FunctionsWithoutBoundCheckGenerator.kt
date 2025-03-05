@@ -9,7 +9,7 @@ import org.jetbrains.kotlin.backend.konan.BinaryType
 import org.jetbrains.kotlin.backend.konan.KonanBackendContext
 import org.jetbrains.kotlin.backend.konan.KonanFqNames
 import org.jetbrains.kotlin.backend.konan.computeBinaryType
-import org.jetbrains.kotlin.backend.konan.descriptors.getAnnotationStringValue
+import org.jetbrains.kotlin.ir.util.getAnnotationStringValue
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
@@ -26,36 +26,37 @@ import org.jetbrains.kotlin.util.OperatorNameConventions
 
 // Generate additional functions for array set and get operators without bounds checking.
 internal class FunctionsWithoutBoundCheckGenerator(val context: KonanBackendContext) {
-    private val symbols = context.ir.symbols
+    private val symbols = context.symbols
 
     private fun generateFunction(baseFunction: IrSimpleFunction, delegatingToFunction: IrSimpleFunction?, functionName: Name) =
-            context.irFactory.createFunction(
-                    baseFunction.startOffset, baseFunction.endOffset,
-                    IrDeclarationOrigin.GENERATED_SETTER_GETTER,
-                    IrSimpleFunctionSymbolImpl(),
-                    functionName,
-                    DescriptorVisibilities.PUBLIC,
-                    Modality.FINAL,
-                    baseFunction.returnType,
+            context.irFactory.createSimpleFunction(
+                    startOffset = baseFunction.startOffset,
+                    endOffset = baseFunction.endOffset,
+                    origin = IrDeclarationOrigin.GENERATED_SETTER_GETTER,
+                    name = functionName,
+                    visibility = DescriptorVisibilities.PUBLIC,
                     isInline = false,
-                    isExternal = true,
+                    isExpect = false,
+                    returnType = baseFunction.returnType,
+                    modality = Modality.FINAL,
+                    symbol = IrSimpleFunctionSymbolImpl(),
                     isTailrec = false,
                     isSuspend = false,
-                    isExpect = false,
-                    isFakeOverride = false,
                     isOperator = false,
-                    isInfix = false
+                    isInfix = false,
+                    isExternal = true,
             ).also { function ->
                 function.parent = baseFunction.parent
-                function.createDispatchReceiverParameter()
-                function.valueParameters = baseFunction.valueParameters.map { it.copyTo(function) }
+                function.parameters += function.createDispatchReceiverParameterWithClassParent()
+                for (param in baseFunction.parameters.drop(1)) {
+                    function.parameters += param.copyTo(function)
+                }
                 // Copy annotations.
                 val setWithoutBEAnnotations = (delegatingToFunction ?: baseFunction).annotations.map { annotation ->
                     annotation.deepCopyWithSymbols().also { copy ->
                         if (copy.isAnnotationWithEqualFqName(KonanFqNames.gcUnsafeCall)) {
                             val value = "${annotation.getAnnotationStringValue("callee")}_without_BoundCheck"
-                            copy.putValueArgument(0,
-                                    IrConstImpl.string(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.stringType, value))
+                            copy.arguments[0] = IrConstImpl.string(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.stringType, value)
                         }
                     }
                 }

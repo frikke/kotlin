@@ -22,8 +22,8 @@ allprojects {
 
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile>().configureEach {
         compilerOptions.freeCompilerArgs.addAll(
-                "-XXLanguage:+ImplicitSignedToUnsignedIntegerConversion",
-                "-opt-in=kotlinx.cinterop.ExperimentalForeignApi"
+                "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
+                "-opt-in=kotlin.experimental.ExperimentalNativeApi"
         )
     }
 }
@@ -44,11 +44,11 @@ val buildSamplesWithPlatformLibs by tasks.creating {
     if (!isWindows) {
         dependsOn(":curl:assemble")
     }
-    dependsOn(":echoServer:assemble")
     dependsOn(":globalState:assemble")
     dependsOn(":workers:assemble")
 
     if (isMacos || isLinux) {
+        dependsOn(":echoServer:assemble") //https://youtrack.jetbrains.com/issue/KT-63721/
         dependsOn(":nonBlockingEchoServer:assemble")
         dependsOn(":tensorflow:assemble")
     }
@@ -57,7 +57,6 @@ val buildSamplesWithPlatformLibs by tasks.creating {
         dependsOn(":objc:assemble")
         dependsOn(":opengl:assemble")
         dependsOn(":uikit:assemble")
-        dependsOn(":coverage:assemble")
         dependsOn(":watchos:assemble")
     }
 

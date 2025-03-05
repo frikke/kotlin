@@ -20,15 +20,6 @@ import com.intellij.psi.tree.TokenSet;
 import org.jetbrains.kotlin.psi.*;
 
 public interface KtStubElementTypes {
-    /**
-     * @deprecated use {@link KtFileElementType#INSTANCE}.
-     * Field is provided for the sake of binary compatibility with external usages.
-     *
-     * It will be deleted in 1.9.0.
-     */
-    @Deprecated
-    KtFileElementType FILE = KtFileElementType.INSTANCE;
-
     KtClassElementType CLASS = new KtClassElementType("CLASS");
     KtFunctionElementType FUNCTION = new KtFunctionElementType("FUN");
     KtPropertyElementType PROPERTY = new KtPropertyElementType("PROPERTY");
@@ -97,8 +88,7 @@ public interface KtStubElementTypes {
     KtPlaceHolderStubElementType<KtDynamicType> DYNAMIC_TYPE =
             new KtPlaceHolderStubElementType<>("DYNAMIC_TYPE", KtDynamicType.class);
 
-    KtPlaceHolderStubElementType<KtFunctionType> FUNCTION_TYPE =
-            new KtPlaceHolderStubElementType<>("FUNCTION_TYPE", KtFunctionType.class);
+    KtFunctionTypeElementType FUNCTION_TYPE = new KtFunctionTypeElementType("FUNCTION_TYPE");
 
     KtTypeCodeFragmentType TYPE_CODE_FRAGMENT = new KtTypeCodeFragmentType();
     KtExpressionCodeFragmentType EXPRESSION_CODE_FRAGMENT = new KtExpressionCodeFragmentType();

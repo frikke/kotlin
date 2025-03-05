@@ -7,15 +7,25 @@ package org.jetbrains.kotlin.gradle.plugin.mpp
 
 import org.gradle.api.Project
 import org.gradle.api.artifacts.component.*
+import org.gradle.api.artifacts.result.ResolvedArtifactResult
 import org.gradle.api.artifacts.result.ResolvedComponentResult
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import org.gradle.api.attributes.AttributeContainer
+import org.gradle.api.attributes.Usage
 import org.gradle.api.file.FileCollection
 import org.gradle.api.logging.Logging
+import org.gradle.api.model.ObjectFactory
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.*
+import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.kotlinPropertiesProvider
+import org.jetbrains.kotlin.gradle.plugin.diagnostics.PreparedKotlinToolingDiagnosticsCollector
+import org.jetbrains.kotlin.gradle.plugin.internal.KotlinProjectSharedDataProvider
+import org.jetbrains.kotlin.gradle.plugin.internal.kotlinSecondaryVariantsDataSharing
 import org.jetbrains.kotlin.gradle.plugin.mpp.MetadataDependencyResolution.ChooseVisibleSourceSets.MetadataProvider.ArtifactMetadataProvider
+import org.jetbrains.kotlin.gradle.plugin.mpp.internal.projectStructureMetadataResolvedConfiguration
+import org.jetbrains.kotlin.gradle.plugin.mpp.publishing.KotlinProjectCoordinatesData
+import org.jetbrains.kotlin.gradle.plugin.mpp.publishing.consumeRootModuleCoordinates
 import org.jetbrains.kotlin.gradle.plugin.sources.internal
 import org.jetbrains.kotlin.gradle.utils.*
 import java.util.*
@@ -36,15 +46,15 @@ internal sealed class MetadataDependencyResolution(
     }
 
     class KeepOriginalDependency(
-        dependency: ResolvedComponentResult
+        dependency: ResolvedComponentResult,
     ) : MetadataDependencyResolution(dependency)
 
     sealed class Exclude(
-        dependency: ResolvedComponentResult
+        dependency: ResolvedComponentResult,
     ) : MetadataDependencyResolution(dependency) {
 
         class Unrequested(
-            dependency: ResolvedComponentResult
+            dependency: ResolvedComponentResult,
         ) : Exclude(dependency)
 
         /**
@@ -65,7 +75,7 @@ internal sealed class MetadataDependencyResolution(
         val allVisibleSourceSetNames: Set<String>,
         val visibleSourceSetNamesExcludingDependsOn: Set<String>,
         val visibleTransitiveDependencies: Set<ResolvedDependencyResult>,
-        internal val metadataProvider: MetadataProvider
+        internal val metadataProvider: MetadataProvider,
     ) : MetadataDependencyResolution(dependency) {
 
         internal sealed class MetadataProvider {
@@ -73,10 +83,7 @@ internal sealed class MetadataDependencyResolution(
                 MetadataProvider(), CompositeMetadataArtifact by compositeMetadataArtifact
 
             abstract class ProjectMetadataProvider : MetadataProvider() {
-                enum class MetadataConsumer { Ide, Cli }
-
                 abstract fun getSourceSetCompiledMetadata(sourceSetName: String): FileCollection?
-                abstract fun getSourceSetCInteropMetadata(sourceSetName: String, consumer: MetadataConsumer): FileCollection?
             }
         }
 
@@ -89,32 +96,54 @@ internal sealed class MetadataDependencyResolution(
 
 internal class GranularMetadataTransformation(
     val params: Params,
-    val parentSourceSetVisibilityProvider: ParentSourceSetVisibilityProvider
+    val parentSourceSetVisibilityProvider: ParentSourceSetVisibilityProvider,
+    val kotlinToolingDiagnosticsCollector: PreparedKotlinToolingDiagnosticsCollector,
 ) {
     private val logger = Logging.getLogger("GranularMetadataTransformation[${params.sourceSetName}]")
 
     class Params(
+        val build: CurrentBuildIdentifier,
         val sourceSetName: String,
         val resolvedMetadataConfiguration: LazyResolvedConfiguration,
         val sourceSetVisibilityProvider: SourceSetVisibilityProvider,
-        val projectStructureMetadataExtractorFactory: MppDependencyProjectStructureMetadataExtractorFactory,
+        val projectStructureMetadataExtractorFactory: IKotlinProjectStructureMetadataExtractorFactory,
         val projectData: Map<String, ProjectData>,
         val platformCompilationSourceSets: Set<String>,
+        val projectStructureMetadataResolvedConfiguration: LazyResolvedConfiguration,
+        val coordinatesOfProjectDependencies: KotlinProjectSharedDataProvider<KotlinProjectCoordinatesData>?,
+        val objects: ObjectFactory,
+        val kotlinKmpProjectIsolationEnabled: Boolean,
+        val sourceSetMetadataLocationsOfProjectDependencies: KotlinProjectSharedDataProvider<SourceSetMetadataLocations>,
+        val transformProjectDependencies: Boolean,
     ) {
-        constructor(project: Project, kotlinSourceSet: KotlinSourceSet) : this(
+        constructor(project: Project, kotlinSourceSet: KotlinSourceSet, transformProjectDependencies: Boolean = true) : this(
+            build = project.currentBuild,
             sourceSetName = kotlinSourceSet.name,
             resolvedMetadataConfiguration = LazyResolvedConfiguration(kotlinSourceSet.internal.resolvableMetadataConfiguration),
             sourceSetVisibilityProvider = SourceSetVisibilityProvider(project),
-            projectStructureMetadataExtractorFactory = project.kotlinMppDependencyProjectStructureMetadataExtractorFactory,
-            projectData = project.allProjectsData,
-            platformCompilationSourceSets = project.multiplatformExtension.platformCompilationSourceSets
+            projectStructureMetadataExtractorFactory =
+                if (project.kotlinPropertiesProvider.kotlinKmpProjectIsolationEnabled) project.kotlinProjectStructureMetadataExtractorFactory
+                else project.kotlinMppDependencyProjectStructureMetadataExtractorFactoryDeprecated,
+            projectData =
+                if (project.kotlinPropertiesProvider.kotlinKmpProjectIsolationEnabled) emptyMap<String, ProjectData>()
+                else project.allProjectsData,
+            platformCompilationSourceSets = project.multiplatformExtension.platformCompilationSourceSets,
+            projectStructureMetadataResolvedConfiguration = kotlinSourceSet.internal.projectStructureMetadataResolvedConfiguration(),
+            coordinatesOfProjectDependencies =
+                if (project.kotlinPropertiesProvider.kotlinKmpProjectIsolationEnabled) project.kotlinSecondaryVariantsDataSharing.consumeRootModuleCoordinates(kotlinSourceSet.internal)
+                else null,
+            objects = project.objects,
+            kotlinKmpProjectIsolationEnabled = project.kotlinPropertiesProvider.kotlinKmpProjectIsolationEnabled,
+            sourceSetMetadataLocationsOfProjectDependencies = project.kotlinSecondaryVariantsDataSharing
+                .consumeCommonSourceSetMetadataLocations(kotlinSourceSet.internal.resolvableMetadataConfiguration),
+            transformProjectDependencies = transformProjectDependencies,
         )
     }
 
     class ProjectData(
         val path: String,
         val sourceSetMetadataOutputs: LenientFuture<Map<String, SourceSetMetadataOutputs>>,
-        val moduleId: LenientFuture<ModuleDependencyIdentifier>
+        val moduleId: Future<ModuleDependencyIdentifier>,
     ) {
         override fun toString(): String = "ProjectData[path='$path']"
     }
@@ -211,35 +240,25 @@ internal class GranularMetadataTransformation(
         val module = dependency.selected
         val moduleId = module.id
 
-        val compositeMetadataArtifact = params
-            .resolvedMetadataConfiguration
-            .getArtifacts(dependency)
-            .singleOrNull()
-            // Make sure that resolved metadata artifact is actually Multiplatform one
-            ?.takeIf { it.variant.attributes.containsMultiplatformAttributes }
-        // expected only ony Composite Metadata Klib, but if dependency got resolved into platform variant
-        // when source set is a leaf then we might get multiple artifacts in such case we must return KeepOriginal
-            ?: return MetadataDependencyResolution.KeepOriginalDependency(module)
+        logger.debug("Process dependency: $moduleId")
 
-        logger.debug("Transform composite metadata artifact: '${compositeMetadataArtifact.file}'")
-
-        val mppDependencyMetadataExtractor = params.projectStructureMetadataExtractorFactory.create(compositeMetadataArtifact)
-        val projectStructureMetadata = mppDependencyMetadataExtractor.getProjectStructureMetadata()
-            ?: return MetadataDependencyResolution.KeepOriginalDependency(module)
-
-        if (!projectStructureMetadata.isPublishedAsRoot) {
-            error("Artifacts of dependency ${module.id.displayName} is built by old Kotlin Gradle Plugin and can't be consumed in this way")
+        /** Due to [KotlinUsages.KotlinMetadataCompatibility], non kotlin-metadata resolutions can happen */
+        if (!dependency.resolvedVariant.attributes.containsCompositeMetadataJarAttributes) {
+            logger.debug("Dependency $moduleId is not a Kotlin HMPP library")
+            return MetadataDependencyResolution.KeepOriginalDependency(module)
         }
 
-        val isResolvedToProject = moduleId is ProjectComponentIdentifier && moduleId.build.isCurrentBuild
+        val projectStructureMetadata = extractProjectStructureMetadata(dependency)
+            ?: return MetadataDependencyResolution.KeepOriginalDependency(module)
 
-        val sourceSetVisibility =
-            params.sourceSetVisibilityProvider.getVisibleSourceSets(
-                params.sourceSetName,
-                dependency,
-                projectStructureMetadata,
-                isResolvedToProject
-            )
+        val isResolvedToProject = moduleId in params.build
+
+        val sourceSetVisibility = params.sourceSetVisibilityProvider.getVisibleSourceSets(
+            params.sourceSetName,
+            dependency,
+            projectStructureMetadata,
+            isResolvedToProject
+        )
 
         val allVisibleSourceSets = sourceSetVisibility.visibleSourceSetNames
 
@@ -264,22 +283,8 @@ internal class GranularMetadataTransformation(
 
         val visibleSourceSetsExcludingDependsOn = allVisibleSourceSets.filterTo(mutableSetOf()) { it !in sourceSetsVisibleInParents }
 
-        val metadataProvider = when (mppDependencyMetadataExtractor) {
-            is ProjectMppDependencyProjectStructureMetadataExtractor -> ProjectMetadataProvider(
-                sourceSetMetadataOutputs = params.projectData[mppDependencyMetadataExtractor.projectPath]?.sourceSetMetadataOutputs
-                    ?.getOrThrow() ?: error("Unexpected project path '${mppDependencyMetadataExtractor.projectPath}'")
-            )
-
-            is JarMppDependencyProjectStructureMetadataExtractor -> ArtifactMetadataProvider(
-                CompositeMetadataArtifactImpl(
-                    moduleDependencyIdentifier = dependency.toModuleDependencyIdentifier(),
-                    moduleDependencyVersion = module.moduleVersion?.version ?: "unspecified",
-                    kotlinProjectStructureMetadata = projectStructureMetadata,
-                    primaryArtifactFile = mppDependencyMetadataExtractor.primaryArtifactFile,
-                    hostSpecificArtifactFilesBySourceSetName = sourceSetVisibility.hostSpecificMetadataArtifactBySourceSet
-                )
-            )
-        }
+        val metadataProvider = sourceSetVisibility.getMetadataProviderForVisibleSourceSets(dependency, projectStructureMetadata)
+            ?: return MetadataDependencyResolution.KeepOriginalDependency(module)
 
         return MetadataDependencyResolution.ChooseVisibleSourceSets(
             dependency = module,
@@ -291,6 +296,138 @@ internal class GranularMetadataTransformation(
         )
     }
 
+    private fun SourceSetVisibilityResult.getMetadataProviderForVisibleSourceSets(
+        dependency: ResolvedDependencyResult,
+        projectStructureMetadata: KotlinProjectStructureMetadata
+    ): MetadataDependencyResolution.ChooseVisibleSourceSets.MetadataProvider? {
+        val module = dependency.selected
+        val moduleId = module.id
+
+        return if (moduleId is ProjectComponentIdentifier && moduleId in params.build) {
+            if (!params.transformProjectDependencies) {
+                logger.debug("Skip $dependency because transformProjectDependencies is false")
+                return ProjectMetadataProvider(emptyMap())
+            }
+
+            val sourceSetMetadataOutputs = extractSourceSetMetadataOutputsForProjectDependency(
+                moduleId.projectPath,
+                dependency
+            )
+            ProjectMetadataProvider(sourceSetMetadataOutputs)
+        } else {
+            // Try to extract for Composite Build if it has a secondary variant
+            if (moduleId is ProjectComponentIdentifier && moduleId !in params.build) {
+                val sourceSetMetadataOutputs = extractSourceSetMetadataOutputsForProjectDependency(
+                    moduleId.projectPath,
+                    dependency
+                )
+                if (sourceSetMetadataOutputs.isNotEmpty()) {
+                    return ProjectMetadataProvider(sourceSetMetadataOutputs)
+                }
+            }
+
+            val compositeMetadataArtifact = getCompositeMetadataArtifact(dependency)
+            if (compositeMetadataArtifact == null) {
+                logger.warn("Composite Metadata Artifact were not found for module $moduleId")
+                return null
+            }
+
+            logger.debug("Transform composite metadata artifact: '${compositeMetadataArtifact.file}'")
+            ArtifactMetadataProvider(
+                CompositeMetadataArtifactImpl(
+                    moduleDependencyIdentifier = dependency.toModuleDependencyIdentifier(),
+                    moduleDependencyVersion = module.moduleVersion?.version ?: "unspecified",
+                    kotlinProjectStructureMetadata = projectStructureMetadata,
+                    primaryArtifactFile = compositeMetadataArtifact.file,
+                    hostSpecificArtifactFilesBySourceSetName = hostSpecificMetadataArtifactBySourceSet
+                )
+            )
+        }
+    }
+
+    private fun getCompositeMetadataArtifact(dependency: ResolvedDependencyResult): ResolvedArtifactResult? = params
+        .resolvedMetadataConfiguration
+        .getArtifacts(dependency)
+        .singleOrNull()
+        // Make sure that resolved metadata artifact is actually Multiplatform one
+        ?.takeIf { it.variant.attributes.containsCompositeMetadataJarAttributes }
+
+    private fun extractProjectStructureMetadata(
+        dependency: ResolvedDependencyResult,
+    ): KotlinProjectStructureMetadata? {
+        val module = dependency.selected
+        val moduleId = module.id
+
+        // FIXME: KT-73537 psmExtractorFactory -> psmExtractor -> psm while it could be just one "extractPsm" call
+        val psmExtractorFactory = params.projectStructureMetadataExtractorFactory
+        val psmExtractor = when (psmExtractorFactory) {
+            is KotlinProjectStructureMetadataExtractorFactory -> {
+                psmExtractorFactory.create(dependency, params.projectStructureMetadataResolvedConfiguration)
+            }
+            is @Suppress("DEPRECATION") KotlinProjectStructureMetadataExtractorFactoryDeprecated -> {
+                val compositeMetadataArtifact = getCompositeMetadataArtifact(dependency)
+                if (compositeMetadataArtifact == null) {
+                    logger.warn("Composite Metadata Artifact were not found for module $moduleId")
+                    null
+                } else {
+                    psmExtractorFactory.create(compositeMetadataArtifact)
+                }
+            }
+        }
+        if (psmExtractor == null) {
+            logger.warn("Project Structure Metadata is not found for module $moduleId")
+            return null
+        }
+
+        val psm = psmExtractor.getProjectStructureMetadata()
+        if (psm == null) {
+            logger.warn("Project Structure Metadata can't be extracted for $moduleId from $psmExtractor")
+            return null
+        }
+
+        if (!psm.isPublishedAsRoot) {
+            logger.error("Artifacts of dependency $moduleId is built by old Kotlin Gradle Plugin and can't be consumed in this way")
+            return null
+        }
+
+        return psm
+    }
+
+    private fun extractSourceSetMetadataOutputsForProjectDependency(
+        projectPath: String,
+        dependency: ResolvedDependencyResult,
+    ): Map<String, SourceSetMetadataOutputs> {
+        val resolvedToIncludedBuild = dependency.selected.id !in params.build
+
+        return if (params.kotlinKmpProjectIsolationEnabled) {
+            val sourceSetMetadataLocations = params
+                .sourceSetMetadataLocationsOfProjectDependencies
+                .getProjectDataFromDependencyOrNull(dependency)
+            if (sourceSetMetadataLocations == null) {
+                if (!resolvedToIncludedBuild) {
+                    logger.warn("No Source Set Metadata locations found for resolved dependency $dependency. Please report this: https://kotl.in/issue")
+                } else {
+                    logger.info("Dependency '$dependency' was resolved to included build that didn't enable KMP Isolated Projects support. Try enabling it to improve import performance.")
+                }
+                return emptyMap()
+            }
+
+            sourceSetMetadataLocations.locationBySourceSetName.mapValues { (_, classDir) ->
+                SourceSetMetadataOutputs(params.objects.fileCollection().from(classDir))
+            }
+        } else {
+            // Included builds doesn't store data in ProjectData
+            if (resolvedToIncludedBuild) return emptyMap()
+
+            val projectData = params.projectData[projectPath]
+            if (projectData == null) {
+                logger.error("Project data for '$projectPath' not found. Please report this: https://kotl.in/issue")
+                return emptyMap()
+            }
+            return projectData.sourceSetMetadataOutputs.getOrNull() ?: emptyMap()
+        }
+    }
+
     /**
      * Behaves as [ModuleIds.fromComponent]
      */
@@ -299,9 +436,14 @@ internal class GranularMetadataTransformation(
         return when (val componentId = component.id) {
             is ModuleComponentIdentifier -> ModuleDependencyIdentifier(componentId.group, componentId.module)
             is ProjectComponentIdentifier -> {
-                if (componentId.build.isCurrentBuild) {
-                    params.projectData[componentId.projectPath]?.moduleId?.getOrThrow()
-                        ?: error("Cant find project Module ID by ${componentId.projectPath}")
+                if (componentId in params.build) {
+                    if (params.coordinatesOfProjectDependencies != null) {
+                        val projectCoordinates = params.coordinatesOfProjectDependencies.getProjectDataFromDependencyOrNull(this)
+                        projectCoordinates?.moduleId ?: ModuleDependencyIdentifier(component.moduleVersion?.group, componentId.projectName)
+                    } else {
+                        params.projectData[componentId.projectPath]?.moduleId?.getOrThrow()
+                            ?: error("Cant find project Module ID by ${componentId.projectPath}")
+                    }
                 } else {
                     ModuleDependencyIdentifier(
                         component.moduleVersion?.group ?: "unspecified",
@@ -316,22 +458,18 @@ internal class GranularMetadataTransformation(
 
 }
 
-private val Project.allProjectsData: Map<String, GranularMetadataTransformation.ProjectData>
-    get() = rootProject
-        .extraProperties
-        .getOrPut("all${GranularMetadataTransformation.ProjectData::class.java.simpleName}") {
-            collectAllProjectsData()
-        }
+private val Project.allProjectsData: Map<String, GranularMetadataTransformation.ProjectData> by projectStoredProperty {
+    collectAllProjectsData()
+}
 
 private fun Project.collectAllProjectsData(): Map<String, GranularMetadataTransformation.ProjectData> {
     return rootProject.allprojects.associateBy { it.path }.mapValues { (path, currentProject) ->
+        val moduleId = currentProject.future { ModuleIds.idOfRootModuleSafe(currentProject) }
+
         GranularMetadataTransformation.ProjectData(
             path = path,
             sourceSetMetadataOutputs = currentProject.future { currentProject.collectSourceSetMetadataOutputs() }.lenient,
-            moduleId = currentProject.future {
-                KotlinPluginLifecycle.Stage.AfterFinaliseDsl.await()
-                ModuleIds.idOfRootModule(currentProject)
-            }.lenient
+            moduleId = moduleId,
         )
     }
 }
@@ -340,7 +478,8 @@ internal fun MetadataDependencyResolution.projectDependency(currentProject: Proj
     dependency.toProjectOrNull(currentProject)
 
 internal fun ResolvedComponentResult.toProjectOrNull(currentProject: Project): Project? {
-    val projectId = currentBuildProjectIdOrNull ?: return null
+    if (this !in currentProject.currentBuild) return null
+    val projectId = id as? ProjectComponentIdentifier ?: return null
     return currentProject.project(projectId.projectPath)
 }
 
@@ -355,3 +494,12 @@ internal val GranularMetadataTransformation?.metadataDependencyResolutionsOrEmpt
 
 internal val AttributeContainer.containsMultiplatformAttributes: Boolean
     get() = keySet().any { it.name == KotlinPlatformType.attribute.name }
+
+private val AttributeContainer.containsCompositeMetadataJarAttributes: Boolean
+    get() {
+        val usageAttribute = keySet().find { it.name == Usage.USAGE_ATTRIBUTE.name } ?: return false
+        if (getAttribute(usageAttribute).toString() != KotlinUsages.KOTLIN_METADATA) return false
+
+        val platformType = keySet().find { it.name == KotlinPlatformType.attribute.name } ?: return false
+        return getAttribute(platformType).toString() == KotlinPlatformType.common.name
+    }

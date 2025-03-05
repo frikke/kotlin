@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+
 plugins {
     kotlin("jvm")
     id("jps-compatible")
@@ -21,10 +23,18 @@ dependencies {
     api(project(":analysis:analysis-api-impl-base"))
     api(project(":analysis:light-classes-base"))
     api(project(":compiler:backend.common.jvm"))
+    implementation(project(":compiler:cli-base"))
+    implementation(project(":compiler:backend"))
+    implementation(project(":compiler:backend.jvm.entrypoint"))
+    implementation(project(":compiler:ir.backend.common"))
+    implementation(project(":compiler:ir.serialization.jvm"))
     api(intellijCore())
-    implementation(project(":analysis:analysis-api-providers"))
+    implementation(project(":analysis:analysis-api-platform-interface"))
     implementation(project(":analysis:analysis-internal-utils"))
     implementation(project(":analysis:kt-references"))
+    implementation(project(":analysis:symbol-light-classes"))
+    implementation(libs.caffeine)
+    implementation(libs.opentelemetry.api)
 
     testImplementation(projectTests(":analysis:low-level-api-fir"))
     testImplementation(project(":analysis:analysis-api-standalone:analysis-api-standalone-base"))
@@ -38,12 +48,14 @@ dependencies {
     testImplementation(project(":analysis:analysis-api-standalone:analysis-api-fir-standalone-base"))
     testImplementation(project(":analysis:decompiled:decompiler-to-file-stubs"))
     testImplementation(project(":analysis:decompiled:decompiler-to-psi"))
-    testImplementation(project(":kotlin-test:kotlin-test-junit"))
+    testImplementation(kotlinTest("junit"))
     testApi(projectTests(":analysis:analysis-test-framework"))
 
-    testImplementation(toolsJar())
-    testApiJUnit5()
-    testImplementation(project(":analysis:symbol-light-classes"))
+    testCompileOnly(toolsJarApi())
+    testRuntimeOnly(toolsJar())
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 }
 
 sourceSets {
@@ -54,6 +66,8 @@ sourceSets {
     }
 }
 
+optInToUnsafeDuringIrConstructionAPI()
+
 projectTest(jUnitMode = JUnitMode.JUnit5) {
     dependsOn(":dist")
     workingDir = rootDir
@@ -63,10 +77,18 @@ projectTest(jUnitMode = JUnitMode.JUnit5) {
 testsJar()
 
 allprojects {
-    tasks.withType<org.jetbrains.kotlin.gradle.dsl.KotlinCompile<*>> {
-        kotlinOptions {
-            freeCompilerArgs += "-opt-in=org.jetbrains.kotlin.fir.symbols.SymbolInternals"
-        }
+    tasks.withType<KotlinJvmCompile>().configureEach {
+        compilerOptions.optIn.addAll(
+            listOf(
+                "org.jetbrains.kotlin.fir.symbols.SymbolInternals",
+                "org.jetbrains.kotlin.analysis.api.KaImplementationDetail",
+                "org.jetbrains.kotlin.analysis.api.KaExperimentalApi",
+                "org.jetbrains.kotlin.analysis.api.KaNonPublicApi",
+                "org.jetbrains.kotlin.analysis.api.KaIdeApi",
+                "org.jetbrains.kotlin.analysis.api.KaPlatformInterface",
+                "org.jetbrains.kotlin.analysis.api.permissions.KaAllowProhibitedAnalyzeFromWriteAction"
+            )
+        )
     }
 }
 
@@ -95,7 +117,6 @@ val compileKotlin by tasks
 
 compileKotlin.dependsOn(generateCode)
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    kotlinOptions.freeCompilerArgs += "-Xcontext-receivers"
-    kotlinOptions.freeCompilerArgs += "-opt-in=org.jetbrains.kotlin.analysis.api.KtAnalysisApiInternals"
+tasks.withType<KotlinJvmCompile>().configureEach {
+    compilerOptions.freeCompilerArgs.add("-Xcontext-parameters")
 }

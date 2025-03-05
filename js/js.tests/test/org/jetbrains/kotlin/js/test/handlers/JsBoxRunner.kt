@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.js.test.handlers
 
 import org.jetbrains.kotlin.js.test.utils.*
+import org.jetbrains.kotlin.js.testOld.V8JsTestChecker
 import org.jetbrains.kotlin.test.directives.JsEnvironmentConfigurationDirectives
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.defaultsProvider
@@ -21,7 +22,7 @@ class JsBoxRunner(testServices: TestServices) : AbstractJsArtifactsCollector(tes
     private fun runJsCode() {
         val globalDirectives = testServices.moduleStructure.allDirectives
         val dontRunGeneratedCode = globalDirectives[JsEnvironmentConfigurationDirectives.DONT_RUN_GENERATED_CODE]
-            .contains(testServices.defaultsProvider.defaultTargetBackend?.name)
+            .contains(testServices.defaultsProvider.targetBackend?.name)
 
         if (dontRunGeneratedCode) return
 
@@ -47,7 +48,7 @@ class JsBoxRunner(testServices: TestServices) : AbstractJsArtifactsCollector(tes
         testPackage: String?,
         withModuleSystem: Boolean
     ) {
-        getTestChecker(testServices)
+        V8JsTestChecker
             .check(
                 jsFiles,
                 testModuleName,

@@ -1,8 +1,9 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
-// !SKIP_JAVAC
-// !LANGUAGE: +CustomEqualsInValueClasses, +ValueClasses
+// SKIP_JAVAC
+// LANGUAGE: +CustomEqualsInValueClasses, +ValueClasses
 // ALLOW_KOTLIN_PACKAGE
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 package kotlin.jvm
 

@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: BACKEND
+// IGNORE_DEXING
 // FIR_IDENTICAL
 // LANGUAGE: -RestrictionOfValReassignmentViaBackingField
 

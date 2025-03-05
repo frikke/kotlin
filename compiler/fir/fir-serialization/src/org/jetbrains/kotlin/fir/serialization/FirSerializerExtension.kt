@@ -8,10 +8,12 @@ package org.jetbrains.kotlin.fir.serialization
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.expressions.FirAnnotation
+import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.serialization.constant.ConstValueProvider
 import org.jetbrains.kotlin.fir.serialization.constant.ConstValueProviderInternals
 import org.jetbrains.kotlin.fir.types.ConeErrorType
 import org.jetbrains.kotlin.fir.types.ConeFlexibleType
+import org.jetbrains.kotlin.fir.types.FirTypeRef
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.deserialization.BinaryVersion
 import org.jetbrains.kotlin.metadata.serialization.MutableVersionRequirementTable
@@ -19,14 +21,20 @@ import org.jetbrains.kotlin.name.FqName
 
 abstract class FirSerializerExtension {
     abstract val session: FirSession
+    abstract val scopeSession: ScopeSession
 
     abstract val stringTable: FirElementAwareStringTable
 
     abstract val metadataVersion: BinaryVersion
 
-    val annotationSerializer by lazy { FirAnnotationSerializer(session, stringTable, constValueProvider) }
+    val annotationSerializer: FirAnnotationSerializer by lazy {
+        FirAnnotationSerializer(session, scopeSession, stringTable, constValueProvider, localClassIdOracle)
+    }
 
-    protected abstract val constValueProvider: ConstValueProvider?
+    abstract val constValueProvider: ConstValueProvider?
+    abstract val additionalMetadataProvider: FirAdditionalMetadataProvider?
+
+    protected open val localClassIdOracle: LocalClassIdOracle get() = LocalClassIdOracle.EMPTY
 
     @OptIn(ConstValueProviderInternals::class)
     internal inline fun <T> processFile(firFile: FirFile, crossinline action: () -> T): T {
@@ -42,11 +50,32 @@ abstract class FirSerializerExtension {
     open fun shouldUseTypeTable(): Boolean = false
     open fun shouldUseNormalizedVisibility(): Boolean = false
 
-    open fun serializePackage(packageFqName: FqName, proto: ProtoBuf.Package.Builder) {
+    open fun serializePackage(
+        packageFqName: FqName,
+        proto: ProtoBuf.Package.Builder,
+        versionRequirementTable: MutableVersionRequirementTable?,
+        childSerializer: FirElementSerializer
+    ) {
     }
 
     open fun serializeClass(
         klass: FirClass,
+        proto: ProtoBuf.Class.Builder,
+        versionRequirementTable: MutableVersionRequirementTable,
+        childSerializer: FirElementSerializer
+    ) {
+    }
+
+    open fun serializeScript(
+        script: FirScript,
+        proto: ProtoBuf.Class.Builder,
+        versionRequirementTable: MutableVersionRequirementTable,
+        childSerializer: FirElementSerializer
+    ) {
+    }
+
+    open fun serializeSnippet(
+        snippet: FirReplSnippet,
         proto: ProtoBuf.Class.Builder,
         versionRequirementTable: MutableVersionRequirementTable,
         childSerializer: FirElementSerializer
@@ -97,7 +126,20 @@ abstract class FirSerializerExtension {
         }
     }
 
+    open fun getClassSupertypes(klass: FirClass): List<FirTypeRef> {
+        return klass.superTypeRefs
+    }
+
+    fun hasAdditionalAnnotations(declaration: FirDeclaration): Boolean {
+        return additionalMetadataProvider?.hasGeneratedAnnotationsFor(declaration) ?: false
+    }
+
+    // TODO: add usages
+    fun getAnnotationsGeneratedByPlugins(declaration: FirDeclaration): List<FirAnnotation> {
+        return additionalMetadataProvider?.findGeneratedAnnotationsFor(declaration) ?: emptyList()
+    }
+
     open fun serializeErrorType(type: ConeErrorType, builder: ProtoBuf.Type.Builder) {
-        throw IllegalStateException("Cannot serialize error type: $type")
+        error("Cannot serialize error type: $type")
     }
 }

@@ -6,13 +6,8 @@
 package org.jetbrains.kotlin.test.runners.codegen
 
 import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
-
-open class AbstractBlackBoxInlineCodegenTest : AbstractBlackBoxCodegenTest() {
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.useInlineHandlers()
-    }
-}
+import org.jetbrains.kotlin.test.configuration.useInlineHandlers
+import org.jetbrains.kotlin.test.configuration.useIrInliner
 
 open class AbstractIrBlackBoxInlineCodegenWithBytecodeInlinerTest : AbstractIrBlackBoxCodegenTest() {
     override fun configure(builder: TestConfigurationBuilder) {
@@ -60,4 +55,3 @@ open class AbstractFirPsiBlackBoxInlineCodegenWithIrInlinerTest : AbstractFirPsi
         builder.useIrInliner()
     }
 }
-

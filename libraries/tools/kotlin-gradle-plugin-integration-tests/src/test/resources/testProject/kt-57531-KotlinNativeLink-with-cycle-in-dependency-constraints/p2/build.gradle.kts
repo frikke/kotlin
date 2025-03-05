@@ -10,7 +10,7 @@ version = "1.0.0"
 
 publishing {
     repositories {
-        maven(rootProject.buildDir.resolve("repo"))
+        maven("<localRepo>")
     }
 }
 
@@ -19,7 +19,7 @@ kotlin {
     jvm()
     linuxX64()
     linuxArm64()
-    targetHierarchy.default()
+    applyDefaultHierarchyTemplate()
 
     sourceSets.commonMain.get().dependencies {
         api(project(":p1"))

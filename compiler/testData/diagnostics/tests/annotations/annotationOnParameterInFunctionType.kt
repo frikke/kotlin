@@ -1,10 +1,13 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER -UNUSED_VARIABLE
+// RUN_PIPELINE_TILL: FRONTEND
+// LATEST_LV_DIFFERENCE
+// DIAGNOSTICS: -UNUSED_PARAMETER -UNUSED_VARIABLE
 
 annotation class Ann
+annotation class Ann2
 
 fun f(@Ann x: Int) {}
 
-val inVal: (<!UNSUPPORTED!>@Ann<!> x: Int)->Unit = {}
+val inVal: (<!UNSUPPORTED!>@Ann<!> <!UNSUPPORTED!>@Ann2<!> x: Int)->Unit = {}
 
 fun inParam(fn: (<!UNSUPPORTED!>@Ann<!> x: Int)->Unit) {}
 

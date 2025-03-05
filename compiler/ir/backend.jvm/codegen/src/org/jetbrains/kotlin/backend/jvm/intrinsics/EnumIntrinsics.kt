@@ -5,22 +5,19 @@
 
 package org.jetbrains.kotlin.backend.jvm.intrinsics
 
-import org.jetbrains.kotlin.backend.jvm.codegen.BlockInfo
-import org.jetbrains.kotlin.backend.jvm.codegen.ExpressionCodegen
-import org.jetbrains.kotlin.backend.jvm.codegen.MaterialValue
-import org.jetbrains.kotlin.backend.jvm.codegen.materializedAt
-import org.jetbrains.kotlin.backend.jvm.ir.isReifiedTypeParameter
+import org.jetbrains.kotlin.backend.jvm.codegen.*
 import org.jetbrains.kotlin.codegen.AsmUtil
 import org.jetbrains.kotlin.codegen.inline.ReifiedTypeInliner
 import org.jetbrains.kotlin.codegen.putReifiedOperationMarkerIfTypeIsReifiedParameter
 import org.jetbrains.kotlin.ir.expressions.IrFunctionAccessExpression
+import org.jetbrains.kotlin.ir.util.isReifiedTypeParameter
 import org.jetbrains.kotlin.resolve.jvm.AsmTypes
 import org.jetbrains.org.objectweb.asm.Type
 
 object EnumValueOf : IntrinsicMethod() {
     override fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo) = with(codegen) {
-        val type = expression.getTypeArgument(0)!!
-        val result = expression.getValueArgument(0)!!.accept(this, data)
+        val type = expression.typeArguments[0]!!
+        val result = expression.arguments[0]!!.accept(this, data)
             .materializedAt(AsmTypes.JAVA_STRING_TYPE, codegen.context.irBuiltIns.stringType)
         if (type.isReifiedTypeParameter) {
             // Note that the inliner expects exactly the following sequence of instructions.
@@ -48,7 +45,7 @@ object EnumValueOf : IntrinsicMethod() {
 
 object EnumValues : IntrinsicMethod() {
     override fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo) = with(codegen) {
-        val type = expression.getTypeArgument(0)!!
+        val type = expression.typeArguments[0]!!
         if (type.isReifiedTypeParameter) {
             // Note that the inliner expects exactly the following sequence of instructions.
             // <REIFIED-OPERATIONS-MARKER>
@@ -68,4 +65,28 @@ object EnumValues : IntrinsicMethod() {
     }
 
     private val ENUM_ARRAY_TYPE = AsmUtil.getArrayType(AsmTypes.ENUM_TYPE)
+}
+
+object EnumEntries : IntrinsicMethod() {
+    override fun invoke(expression: IrFunctionAccessExpression, codegen: ExpressionCodegen, data: BlockInfo) = with(codegen) {
+        val type = expression.typeArguments[0]!!
+        if (type.isReifiedTypeParameter) {
+            // Note that the inliner expects exactly the following sequence of instructions.
+            // <REIFIED-OPERATIONS-MARKER>
+            // ACONST_NULL
+            // CHECKCAST Lkotlin/enums/EnumEntries;
+            putReifiedOperationMarkerIfTypeIsReifiedParameter(type, ReifiedTypeInliner.OperationKind.ENUM_REIFIED)
+            mv.aconst(null)
+            mv.checkcast(AsmTypes.ENUM_ENTRIES)
+            MaterialValue(codegen, AsmTypes.ENUM_ENTRIES, expression.type)
+        } else {
+            val getField = generateExternalEntriesForEnumTypeIfNeeded(type, codegen.classCodegen)
+            if (getField != null) {
+                mv.visitFieldInsn(getField.opcode, getField.owner, getField.name, getField.desc)
+            } else {
+                mv.invokestatic(typeMapper.mapType(type).internalName, "getEntries", Type.getMethodDescriptor(AsmTypes.ENUM_ENTRIES), false)
+            }
+            MaterialValue(codegen, AsmTypes.ENUM_ENTRIES, expression.type)
+        }
+    }
 }

@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
-// !LANGUAGE: +ForbidUsingExtensionPropertyTypeParameterInDelegate
+// LANGUAGE: +ForbidUsingExtensionPropertyTypeParameterInDelegate
 // WITH_REFLECT
 
 import kotlin.reflect.KProperty

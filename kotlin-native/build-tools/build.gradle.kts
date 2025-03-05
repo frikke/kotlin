@@ -11,7 +11,7 @@ buildscript {
     apply(from = rootBuildDirectory.resolve("kotlin-native/gradle/loadRootProperties.gradle"))
 
     dependencies {
-        classpath("com.google.code.gson:gson:2.8.9")
+        classpath(libs.gson)
     }
 }
 
@@ -22,7 +22,6 @@ repositories {
 }
 
 plugins {
-    groovy
     kotlin("jvm")
     `kotlin-dsl`
 }
@@ -36,31 +35,11 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-native-utils:${project.bootstrapKotlinVersion}")
 
     // To build Konan Gradle plugin
-    implementation("org.jetbrains.kotlin:kotlin-build-common:${project.bootstrapKotlinVersion}")
     implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:${project.bootstrapKotlinVersion}")
 
-    val versionProperties = Properties()
-    project.rootProject.projectDir.resolve("../../gradle/versions.properties").inputStream().use { propInput ->
-        versionProperties.load(propInput)
-    }
-    implementation("com.google.code.gson:gson:2.8.9")
-    configurations.all {
-        resolutionStrategy.eachDependency {
-            if (requested.group == "com.google.code.gson" && requested.name == "gson") {
-                useVersion(versionProperties["versions.gson"] as String)
-                because("Force using same gson version because of https://github.com/google/gson/pull/1991")
-            }
-        }
-    }
-
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.0")
-    val metadataVersion = "0.0.1-dev-10"
-    implementation("org.jetbrains.kotlinx:kotlinx-metadata-klib:$metadataVersion")
+    implementation(libs.gson)
 
     implementation("org.jetbrains.kotlin:kotlin-util-klib:${project.bootstrapKotlinVersion}")
-
-    implementation(project(":kotlin-native-shared"))
-    implementation(project(":kotlin-native-executors"))
 }
 
 java {
@@ -70,30 +49,24 @@ java {
 }
 
 val compileKotlin: KotlinCompile by tasks
-val compileGroovy: GroovyCompile by tasks
 
 compileKotlin.apply {
-    kotlinOptions {
-        freeCompilerArgs += listOf(
+    compilerOptions {
+        optIn.add("kotlin.ExperimentalStdlibApi")
+        freeCompilerArgs.addAll(
+            listOf(
                 "-Xskip-prerelease-check",
                 "-Xsuppress-version-warnings",
-                "-opt-in=kotlin.ExperimentalStdlibApi",
-                "-opt-in=kotlin.RequiresOptIn"
+                "-Xallow-unstable-dependencies"
+            )
         )
     }
-}
-
-// Add Kotlin classes to a classpath for the Groovy compiler
-compileGroovy.apply {
-    classpath += project.files(compileKotlin.destinationDirectory)
-    dependsOn(compileKotlin)
 }
 
 kotlin {
     sourceSets {
         main {
             kotlin.srcDir("src/main/kotlin")
-            kotlin.srcDir("../../kotlin-native/tools/kotlin-native-gradle-plugin/src/main/kotlin")
         }
     }
 }
@@ -112,17 +85,25 @@ gradlePlugin {
             id = "compilation-database"
             implementationClass = "org.jetbrains.kotlin.cpp.CompilationDatabasePlugin"
         }
-        create("konanPlugin") {
-            id = "konan"
-            implementationClass = "org.jetbrains.kotlin.gradle.plugin.konan.KonanPlugin"
-        }
         create("native-interop-plugin") {
             id = "native-interop-plugin"
-            implementationClass = "org.jetbrains.kotlin.NativeInteropPlugin"
+            implementationClass = "org.jetbrains.kotlin.interop.NativeInteropPlugin"
         }
         create("native") {
             id = "native"
             implementationClass = "org.jetbrains.kotlin.tools.NativePlugin"
+        }
+        create("nativeDependenciesDownloader") {
+            id = "native-dependencies-downloader"
+            implementationClass = "org.jetbrains.kotlin.dependencies.NativeDependenciesDownloaderPlugin"
+        }
+        create("nativeDependencies") {
+            id = "native-dependencies"
+            implementationClass = "org.jetbrains.kotlin.dependencies.NativeDependenciesPlugin"
+        }
+        create("platformManager") {
+            id = "platform-manager"
+            implementationClass = "org.jetbrains.kotlin.PlatformManagerPlugin"
         }
     }
 }

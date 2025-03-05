@@ -8,11 +8,17 @@ package org.jetbrains.kotlin.gradle.tasks
 import org.gradle.util.GradleVersion
 import org.jetbrains.kotlin.gradle.testbase.*
 import org.junit.jupiter.api.DisplayName
+import kotlin.io.path.appendText
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteRecursively
 import kotlin.io.path.writeText
 
 @DisplayName("JVM API validation")
 class KotlinJvmApiTest : KGPBaseTest() {
+    override val defaultBuildOptions: BuildOptions = super.defaultBuildOptions.copy(
+        configurationCache = BuildOptions.ConfigurationCacheValue.ENABLED
+    )
+
     @DisplayName("Kotlin compilation can be set up using APIs")
     @JvmGradlePluginTests
     @GradleTest
@@ -39,9 +45,9 @@ class KotlinJvmApiTest : KGPBaseTest() {
                                                 
                         apiPlugin.registerKotlinJvmCompileTask("foo").configure {
                             it.source("src/main")
+                            it.libraries.from(configurations.compileClasspath)
                             it.multiPlatformEnabled.set(false)
                             it.moduleName.set("main")
-                            it.ownModuleName.set("main")
                             it.sourceSetName.set("main")
                             it.useModuleDetection.set(false)
                             it.destinationDirectory.fileValue(new File(project.buildDir, "fooOutput"))
@@ -57,9 +63,47 @@ class KotlinJvmApiTest : KGPBaseTest() {
         }
     }
 
+
+    @DisplayName("KT-60541: checks that configuring custom KotlinCompile does not require using internals")
+    @JvmGradlePluginTests
+    @GradleTest
+    internal fun kotlinCompileCustomTask(gradleVersion: GradleVersion) {
+        project(projectName = "jvm-with-common", gradleVersion = gradleVersion) {
+
+            val customModuleName = "customModuleName"
+            val customTaskName = "customTask"
+            val outputDirName = "customTaskOutput"
+            buildGradleKts.appendText(
+                """
+                val compileKotlin = tasks.getByName("compileKotlinJvm") as KotlinCompile
+
+                apply<KotlinBaseApiPlugin>()
+
+                val kotlinApiPlugin = plugins.getPlugin(KotlinBaseApiPlugin::class)
+                val kotlinJvmOptions = kotlinApiPlugin.createCompilerJvmOptions()
+                kotlinJvmOptions.moduleName.set("$customModuleName")
+                val myCustomTask = kotlinApiPlugin.registerKotlinJvmCompileTask("$customTaskName", kotlinJvmOptions)
+                    
+                myCustomTask {
+                    source("src/jvmMain", "src/commonMain")
+                    libraries.from(compileKotlin.libraries)
+                    useModuleDetection.set(false)
+                    multiPlatformEnabled.set(false)
+                    destinationDirectory.set(File(project.buildDir, "$outputDirName"))
+                }
+                """.trimIndent()
+            )
+
+            build(customTaskName) {
+                assertFileInProjectExists("build/$outputDirName/org/example/application/MainKt.class")
+                assertFileInProjectExists("build/$outputDirName/org/example/Lib.class")
+                assertFileInProjectExists("build/$outputDirName/META-INF/$customModuleName.kotlin_module")
+            }
+        }
+    }
+
     @DisplayName("KAPT can be set up using APIs")
     @OtherGradlePluginTests
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_0)
     @GradleTest
     internal fun kaptShouldRunIfSetUpWithApi(gradleVersion: GradleVersion) {
         project(
@@ -95,7 +139,6 @@ class KotlinJvmApiTest : KGPBaseTest() {
                             it.source("src/main")
                             it.multiPlatformEnabled.set(false)
                             it.moduleName.set("main")
-                            it.ownModuleName.set("main")
                             it.sourceSetName.set("main")
                             it.useModuleDetection.set(false)
                             it.destinationDirectory.fileValue(new File(project.buildDir, "fooOutput"))

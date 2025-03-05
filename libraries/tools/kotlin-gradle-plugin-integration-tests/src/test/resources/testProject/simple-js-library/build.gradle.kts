@@ -19,12 +19,8 @@ kotlin {
         main {
             dependencies {
                 implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.3.3")
-                implementation(npm("kotlin", "*"))
+                implementation(npm("decamelize", "6.0.0"))
             }
         }
     }
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile> {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
 }

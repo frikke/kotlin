@@ -1,71 +1,61 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
+
+// This file was generated automatically. See compiler/fir/tree/tree-generator/Readme.md.
+// DO NOT MODIFY IT MANUALLY.
 
 @file:Suppress("DuplicatedCode")
 
 package org.jetbrains.kotlin.fir.expressions.impl
 
 import org.jetbrains.kotlin.KtSourceElement
+import org.jetbrains.kotlin.fir.FirImplementationDetail
+import org.jetbrains.kotlin.fir.MutableOrEmptyList
+import org.jetbrains.kotlin.fir.builder.toMutableOrEmpty
+import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnostic
 import org.jetbrains.kotlin.fir.expressions.FirAnnotation
 import org.jetbrains.kotlin.fir.expressions.FirExpression
 import org.jetbrains.kotlin.fir.expressions.FirThisReceiverExpression
-import org.jetbrains.kotlin.fir.expressions.impl.FirNoReceiverExpression
+import org.jetbrains.kotlin.fir.expressions.UnresolvedExpressionTypeAccess
 import org.jetbrains.kotlin.fir.references.FirReference
 import org.jetbrains.kotlin.fir.references.FirThisReference
+import org.jetbrains.kotlin.fir.types.ConeKotlinType
 import org.jetbrains.kotlin.fir.types.FirTypeProjection
-import org.jetbrains.kotlin.fir.types.FirTypeRef
-import org.jetbrains.kotlin.fir.visitors.*
-import org.jetbrains.kotlin.fir.MutableOrEmptyList
-import org.jetbrains.kotlin.fir.builder.toMutableOrEmpty
-import org.jetbrains.kotlin.fir.FirImplementationDetail
+import org.jetbrains.kotlin.fir.visitors.FirTransformer
+import org.jetbrains.kotlin.fir.visitors.FirVisitor
+import org.jetbrains.kotlin.fir.visitors.transformInplace
 
-/*
- * This file was generated automatically
- * DO NOT MODIFY IT MANUALLY
- */
-
+@OptIn(UnresolvedExpressionTypeAccess::class)
 internal class FirThisReceiverExpressionImpl(
-    override var typeRef: FirTypeRef,
+    @property:UnresolvedExpressionTypeAccess
+    override var coneTypeOrNull: ConeKotlinType?,
     override var annotations: MutableOrEmptyList<FirAnnotation>,
-    override var contextReceiverArguments: MutableOrEmptyList<FirExpression>,
     override var typeArguments: MutableOrEmptyList<FirTypeProjection>,
     override var source: KtSourceElement?,
+    override var nonFatalDiagnostics: MutableOrEmptyList<ConeDiagnostic>,
     override var calleeReference: FirThisReference,
     override val isImplicit: Boolean,
 ) : FirThisReceiverExpression() {
-    override var explicitReceiver: FirExpression? = null
-    override var dispatchReceiver: FirExpression = FirNoReceiverExpression
-    override var extensionReceiver: FirExpression = FirNoReceiverExpression
+    override val contextArguments: List<FirExpression>
+        get() = emptyList()
+    override val explicitReceiver: FirExpression?
+        get() = null
+    override val dispatchReceiver: FirExpression?
+        get() = null
+    override val extensionReceiver: FirExpression?
+        get() = null
 
     override fun <R, D> acceptChildren(visitor: FirVisitor<R, D>, data: D) {
-        typeRef.accept(visitor, data)
         annotations.forEach { it.accept(visitor, data) }
-        contextReceiverArguments.forEach { it.accept(visitor, data) }
         typeArguments.forEach { it.accept(visitor, data) }
-        explicitReceiver?.accept(visitor, data)
-        if (dispatchReceiver !== explicitReceiver) {
-            dispatchReceiver.accept(visitor, data)
-        }
-        if (extensionReceiver !== explicitReceiver && extensionReceiver !== dispatchReceiver) {
-            extensionReceiver.accept(visitor, data)
-        }
         calleeReference.accept(visitor, data)
     }
 
     override fun <D> transformChildren(transformer: FirTransformer<D>, data: D): FirThisReceiverExpressionImpl {
-        typeRef = typeRef.transform(transformer, data)
         transformAnnotations(transformer, data)
-        contextReceiverArguments.transformInplace(transformer, data)
         transformTypeArguments(transformer, data)
-        explicitReceiver = explicitReceiver?.transform(transformer, data)
-        if (dispatchReceiver !== explicitReceiver) {
-            dispatchReceiver = dispatchReceiver.transform(transformer, data)
-        }
-        if (extensionReceiver !== explicitReceiver && extensionReceiver !== dispatchReceiver) {
-            extensionReceiver = extensionReceiver.transform(transformer, data)
-        }
         transformCalleeReference(transformer, data)
         return this
     }
@@ -81,7 +71,6 @@ internal class FirThisReceiverExpressionImpl(
     }
 
     override fun <D> transformExplicitReceiver(transformer: FirTransformer<D>, data: D): FirThisReceiverExpressionImpl {
-        explicitReceiver = explicitReceiver?.transform(transformer, data)
         return this
     }
 
@@ -90,37 +79,33 @@ internal class FirThisReceiverExpressionImpl(
         return this
     }
 
-    override fun replaceTypeRef(newTypeRef: FirTypeRef) {
-        typeRef = newTypeRef
+    override fun replaceConeTypeOrNull(newConeTypeOrNull: ConeKotlinType?) {
+        coneTypeOrNull = newConeTypeOrNull
     }
 
     override fun replaceAnnotations(newAnnotations: List<FirAnnotation>) {
         annotations = newAnnotations.toMutableOrEmpty()
     }
 
-    override fun replaceContextReceiverArguments(newContextReceiverArguments: List<FirExpression>) {
-        contextReceiverArguments = newContextReceiverArguments.toMutableOrEmpty()
-    }
+    override fun replaceContextArguments(newContextArguments: List<FirExpression>) {}
 
     override fun replaceTypeArguments(newTypeArguments: List<FirTypeProjection>) {
         typeArguments = newTypeArguments.toMutableOrEmpty()
     }
 
-    override fun replaceExplicitReceiver(newExplicitReceiver: FirExpression?) {
-        explicitReceiver = newExplicitReceiver
-    }
+    override fun replaceExplicitReceiver(newExplicitReceiver: FirExpression?) {}
 
-    override fun replaceDispatchReceiver(newDispatchReceiver: FirExpression) {
-        dispatchReceiver = newDispatchReceiver
-    }
+    override fun replaceDispatchReceiver(newDispatchReceiver: FirExpression?) {}
 
-    override fun replaceExtensionReceiver(newExtensionReceiver: FirExpression) {
-        extensionReceiver = newExtensionReceiver
-    }
+    override fun replaceExtensionReceiver(newExtensionReceiver: FirExpression?) {}
 
     @FirImplementationDetail
     override fun replaceSource(newSource: KtSourceElement?) {
         source = newSource
+    }
+
+    override fun replaceNonFatalDiagnostics(newNonFatalDiagnostics: List<ConeDiagnostic>) {
+        nonFatalDiagnostics = newNonFatalDiagnostics.toMutableOrEmpty()
     }
 
     override fun replaceCalleeReference(newCalleeReference: FirThisReference) {

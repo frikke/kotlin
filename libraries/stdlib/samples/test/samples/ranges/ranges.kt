@@ -52,4 +52,58 @@ class Ranges {
         assertTrue(3.14f in range)
         assertFalse(100.1f in range)
     }
+
+    @Sample
+    fun stepInt() {
+        val ascendingProgression = 1..6 step 2
+        val descendingProgression = 6 downTo 1 step 2
+        assertPrints(ascendingProgression.toList(), "[1, 3, 5]")
+        assertPrints(descendingProgression.toList(), "[6, 4, 2]")
+    }
+
+    @Sample
+    fun stepUInt() {
+        val ascendingProgression = 1u..6u step 2
+        val descendingProgression = 6u downTo 1u step 2
+        assertPrints(ascendingProgression.toList(), "[1, 3, 5]")
+        assertPrints(descendingProgression.toList(), "[6, 4, 2]")
+    }
+
+    @Sample
+    fun stepLong() {
+        val ascendingProgression = 1L..6L step 2L
+        val descendingProgression = 6L downTo 1L step 2L
+        assertPrints(ascendingProgression.toList(), "[1, 3, 5]")
+        assertPrints(descendingProgression.toList(), "[6, 4, 2]")
+    }
+
+    @Sample
+    fun stepULong() {
+        val ascendingProgression = 1UL..6UL step 2L
+        val descendingProgression = 6UL downTo 1UL step 2L
+        assertPrints(ascendingProgression.toList(), "[1, 3, 5]")
+        assertPrints(descendingProgression.toList(), "[6, 4, 2]")
+    }
+
+    @Sample
+    fun stepChar() {
+        val ascendingProgression = 'a'..'f' step 2
+        val descendingProgression = 'f' downTo 'a' step 2
+        assertPrints(ascendingProgression.toList(), "[a, c, e]")
+        assertPrints(descendingProgression.toList(), "[f, d, b]")
+    }
+
+    @Sample
+    fun downTo() {
+        val descendingProgression = 5 downTo 1
+        assertPrints(descendingProgression.toList(), "[5, 4, 3, 2, 1]")
+        val singleElementProgression = 5 downTo 5
+        assertPrints(singleElementProgression.toList(), "[5]")
+        val emptyProgression = 5 downTo 7
+        assertPrints(emptyProgression.toList(), "[]")
+
+        for (i in 3 downTo 0) {
+            if (i > 0) println("$i...") else println("Launch!")
+        }
+    }
 }

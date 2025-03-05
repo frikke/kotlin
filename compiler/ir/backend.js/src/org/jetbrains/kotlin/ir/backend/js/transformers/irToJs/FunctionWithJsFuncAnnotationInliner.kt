@@ -24,10 +24,7 @@ class FunctionWithJsFuncAnnotationInliner(private val jsFuncCall: IrCall, privat
             ?: compilationException("JS function not found", jsFuncCall)
 
     private fun collectReplacementsForCall(): Map<JsName, JsExpression> {
-        val translatedArguments = List(jsFuncCall.valueArgumentsCount) {
-            jsFuncCall.getValueArgument(it)!!
-                .accept(IrElementToJsExpressionTransformer(), context)
-        }
+        val translatedArguments = jsFuncCall.arguments.map { it!!.accept(IrElementToJsExpressionTransformer(), context) }
         return function.parameters
             .map { it.name }
             .zip(translatedArguments)
@@ -42,6 +39,9 @@ private class JsNameRemappingTransformer(private val replacements: Map<JsName, J
         super.visit(nameRef, ctx)
         if (nameRef.qualifier != null) return true
         val replacement = nameRef.name?.replacement ?: return true
+        if (replacement.source == null) {
+            replacement.source = nameRef.source
+        }
         ctx.replaceMe(replacement)
         return false
     }
