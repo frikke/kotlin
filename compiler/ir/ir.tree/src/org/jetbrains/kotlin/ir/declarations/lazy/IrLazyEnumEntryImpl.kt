@@ -17,6 +17,7 @@
 package org.jetbrains.kotlin.ir.declarations.lazy
 
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
+import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
@@ -31,8 +32,8 @@ import org.jetbrains.kotlin.name.Name
 
 @OptIn(ObsoleteDescriptorBasedAPI::class)
 class IrLazyEnumEntryImpl(
-    override val startOffset: Int,
-    override val endOffset: Int,
+    override var startOffset: Int,
+    override var endOffset: Int,
     override var origin: IrDeclarationOrigin,
     override val symbol: IrEnumEntrySymbol,
     override val descriptor: ClassDescriptor,
@@ -43,8 +44,6 @@ class IrLazyEnumEntryImpl(
         symbol.bind(this)
     }
 
-    override var parent: IrDeclarationParent by createLazyParent()
-
     override var annotations: List<IrConstructorCall> by createLazyAnnotations()
 
     override var name: Name = descriptor.name
@@ -52,4 +51,6 @@ class IrLazyEnumEntryImpl(
     override var correspondingClass: IrClass? = null
 
     override var initializerExpression: IrExpressionBody? = null
+
+    override var attributeOwnerId: IrElement = this
 }

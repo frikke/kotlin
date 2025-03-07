@@ -9,7 +9,10 @@ import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.declarations.IrField
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
-import org.jetbrains.kotlin.ir.expressions.*
+import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrConst
+import org.jetbrains.kotlin.ir.expressions.IrErrorExpression
+import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.interpreter.IrInterpreter
 import org.jetbrains.kotlin.ir.util.copyTypeAndValueArgumentsFrom
@@ -22,9 +25,11 @@ import org.jetbrains.kotlin.test.services.GlobalMetadataInfoHandler
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.globalMetadataInfoHandler
 
-fun matchIrFileWithTestFile(irModuleFragment: IrModuleFragment, module: TestModule): List<Pair<IrFile, TestFile>> {
+fun matchIrFileWithTestFile(irModuleFragment: IrModuleFragment, module: TestModule, testServices: TestServices): List<Pair<IrFile, TestFile>> {
     val irFileWithTestFile = irModuleFragment.files.map { irFile ->
-        irFile to module.files.firstOrNull { testFile -> testFile.relativePath == irFile.fileEntry.name.drop(1) }
+        irFile to module.files.firstOrNull { testFile ->
+            testFile.matchPath(testServices) { it == irFile.fileEntry.name }
+        }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -37,11 +42,9 @@ open class IrInterpreterBackendHandler(testServices: TestServices) : AbstractIrH
     override fun processAfterAllModules(someAssertionWasFailed: Boolean) {}
 
     override fun processModule(module: TestModule, info: IrBackendInput) {
-        info.processAllIrModuleFragments(module) { moduleFragment, _ ->
-            val evaluator = Evaluator(IrInterpreter(moduleFragment.irBuiltins), globalMetadataInfoHandler)
-            for ((irFile, testFile) in matchIrFileWithTestFile(moduleFragment, module)) {
-                evaluator.evaluate(irFile, testFile)
-            }
+        val evaluator = Evaluator(IrInterpreter(info.irPluginContext.irBuiltIns), globalMetadataInfoHandler)
+        for ((irFile, testFile) in matchIrFileWithTestFile(info.irModuleFragment, module, testServices)) {
+            evaluator.evaluate(irFile, testFile)
         }
     }
 }
@@ -53,7 +56,7 @@ private class Evaluator(private val interpreter: IrInterpreter, private val glob
                 if (this == original) return this
                 val isError = this is IrErrorExpression
                 val message = when (this) {
-                    is IrConst<*> -> this.value.toString()
+                    is IrConst -> this.value.toString()
                     is IrErrorExpression -> this.description
                     else -> TODO("unsupported type ${this::class.java}")
                 }
@@ -71,26 +74,28 @@ private class Evaluator(private val interpreter: IrInterpreter, private val glob
             override fun visitCall(expression: IrCall): IrExpression {
                 // try to calculate default args of inline function at call site
                 // used in `sourceLocation` test
-                expression.symbol.owner.valueParameters.forEachIndexed { index, parameter ->
-                    if (expression.getValueArgument(index) != null || !expression.symbol.owner.isInline) return@forEachIndexed
-                    val default = parameter.defaultValue?.expression as? IrCall ?: return@forEachIndexed
-                    val callWithNewOffsets = IrCallImpl(
-                        expression.startOffset, expression.endOffset, default.type, default.symbol,
-                        default.typeArgumentsCount, default.valueArgumentsCount, default.origin, default.superQualifierSymbol
-                    )
-                    callWithNewOffsets.copyTypeAndValueArgumentsFrom(default)
-                    interpreter.interpret(callWithNewOffsets, irFile)
-                        .report(callWithNewOffsets)
-                        .takeIf { it != callWithNewOffsets }
-                        ?.apply { expression.putArgument(parameter, this) }
-                }
+                expression.symbol.owner.parameters
+                    .zip(expression.arguments)
+                    .forEach { (parameter, argument) ->
+                        if (argument != null || !expression.symbol.owner.isInline) return@forEach
+                        val default = parameter.defaultValue?.expression as? IrCall ?: return@forEach
+                        val callWithNewOffsets = IrCallImpl(
+                            expression.startOffset, expression.endOffset, default.type, default.symbol,
+                            default.typeArguments.size, default.origin, default.superQualifierSymbol
+                        )
+                        callWithNewOffsets.copyTypeAndValueArgumentsFrom(default)
+                        interpreter.interpret(callWithNewOffsets, irFile)
+                            .report(callWithNewOffsets)
+                            .takeIf { it != callWithNewOffsets }
+                            ?.apply { expression.arguments[parameter] = this }
+                    }
                 return super.visitCall(expression)
             }
 
             override fun visitField(declaration: IrField): IrStatement {
                 val initializer = declaration.initializer
                 val expression = initializer?.expression ?: return declaration
-                if (expression is IrConst<*>) return declaration
+                if (expression is IrConst) return declaration
 
                 val isConst = declaration.correspondingPropertySymbol?.owner?.isConst == true
                 if (isConst) {

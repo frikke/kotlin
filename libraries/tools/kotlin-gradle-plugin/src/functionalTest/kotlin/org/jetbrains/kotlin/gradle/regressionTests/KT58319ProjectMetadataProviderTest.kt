@@ -7,6 +7,7 @@
 
 package org.jetbrains.kotlin.gradle.regressionTests
 
+import org.jetbrains.kotlin.gradle.util.mockGenerateProjectStructureMetadataTaskOutputs
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.mpp.MetadataDependencyResolution
 import org.jetbrains.kotlin.gradle.plugin.mpp.metadataDependencyResolutionsOrEmpty
@@ -24,8 +25,8 @@ class KT58319ProjectMetadataProvider {
     @Test
     fun `test - ProjectMetadataProviderImpl - supports single target projects`() {
         val rootProject = buildProject()
-        val producerProject = buildProjectWithMPP(projectBuilder = { withParent(rootProject) })
-        val consumerProject = buildProjectWithMPP(projectBuilder = { withParent(rootProject) })
+        val producerProject = buildProjectWithMPP(projectBuilder = { withName("producer").withParent(rootProject) })
+        val consumerProject = buildProjectWithMPP(projectBuilder = { withName("consumer").withParent(rootProject) })
 
         producerProject.multiplatformExtension.jvm()
         consumerProject.multiplatformExtension.jvm()
@@ -38,6 +39,8 @@ class KT58319ProjectMetadataProvider {
         rootProject.evaluate()
         producerProject.evaluate()
         consumerProject.evaluate()
+
+        producerProject.mockGenerateProjectStructureMetadataTaskOutputs()
 
         /*
        Regression failure reported:

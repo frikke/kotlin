@@ -12,7 +12,7 @@ import org.jetbrains.kotlin.test.model.DependencyKind
 import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.TestService
 import org.jetbrains.kotlin.test.services.TestServices
-import org.jetbrains.kotlin.test.services.dependencyProvider
+import org.jetbrains.kotlin.test.services.transitiveFriendDependencies
 
 class FirModuleInfoProvider(private val testServices: TestServices) : TestService {
     val firSessionProvider = FirProjectSessionProvider()
@@ -38,13 +38,17 @@ class FirModuleInfoProvider(private val testServices: TestServices) : TestServic
         return getDependentModulesImpl(module.friendDependencies)
     }
 
+    fun getDependentFriendSourceModulesRecursively(module: TestModule): List<FirModuleData> {
+        return module.transitiveFriendDependencies().map { getCorrespondingModuleData(it) }
+    }
+
     fun getDependentDependsOnSourceModules(module: TestModule): List<FirModuleData> {
         return getDependentModulesImpl(module.dependsOnDependencies)
     }
 
     private fun getDependentModulesImpl(dependencies: List<DependencyDescription>): List<FirModuleData> {
         return dependencies.filter { it.kind == DependencyKind.Source }.map {
-            getCorrespondingModuleData(testServices.dependencyProvider.getTestModule(it.moduleName))
+            getCorrespondingModuleData(it.dependencyModule)
         }
     }
 }

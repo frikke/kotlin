@@ -12,6 +12,9 @@ import org.jetbrains.kotlin.library.KotlinLibrary
 import org.jetbrains.kotlin.protobuf.ExtensionRegistryLite
 import java.io.File
 
+/**
+ * This interface represents the abstract klib and is mainly used for detecting modified files.
+ */
 internal interface KotlinLibraryHeader {
     val libraryFile: KotlinLibraryFile
 
@@ -23,9 +26,12 @@ internal interface KotlinLibraryHeader {
     val jsOutputName: String?
 }
 
+/**
+ * This implementation represents the existing klib that is present on the disk.
+ */
 internal class KotlinLoadedLibraryHeader(
     private val library: KotlinLibrary,
-    private val internationService: IrInterningService
+    private val irInterner: IrInterningService
 ) : KotlinLibraryHeader {
     private fun parseFingerprintsFromManifest(): Map<KotlinSourceFile, FingerprintHash>? {
         val manifestFingerprints = library.serializedIrFileFingerprints?.takeIf { it.size == sourceFiles.size } ?: return null
@@ -49,7 +55,8 @@ internal class KotlinLoadedLibraryHeader(
                 override fun string(index: Int): ByteArray = library.string(index, it)
                 override fun body(index: Int): ByteArray = err()
                 override fun debugInfo(index: Int): ByteArray? = null
-            }), null, internationService)
+                override fun fileEntry(index: Int): ByteArray? = library.fileEntry(index, it)
+            }), null, irInterner)
 
             put(sourceFiles[it], deserializer)
         }
@@ -66,13 +73,18 @@ internal class KotlinLoadedLibraryHeader(
 
     private val sourceFiles by lazy(LazyThreadSafetyMode.NONE) {
         val extReg = ExtensionRegistryLite.newInstance()
-        Array(library.fileCount()) {
+        val sources = (0 until library.fileCount()).map {
             val fileProto = IrFile.parseFrom(library.file(it).codedInputStream, extReg)
-            KotlinSourceFile(fileProto.fileEntry.name)
+            library.fileEntry(fileProto, it).name
         }
+        KotlinSourceFile.fromSources(sources)
     }
 }
 
+/**
+ * This implementation represents the removed klib, which no longer exists.
+ * Its main aim is to correctly handle the removed files; for example, we must invalidate all reverse dependencies.
+ */
 internal class KotlinRemovedLibraryHeader(private val libCacheDir: File) : KotlinLibraryHeader {
     override val libraryFile: KotlinLibraryFile
         get() = icError("removed library name is unavailable; cache dir: ${libCacheDir.absolutePath}")

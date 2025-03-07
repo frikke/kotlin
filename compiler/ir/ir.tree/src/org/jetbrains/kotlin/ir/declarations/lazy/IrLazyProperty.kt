@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.ir.declarations.lazy
 import org.jetbrains.kotlin.descriptors.DescriptorVisibility
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.PropertyDescriptor
+import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
@@ -19,8 +20,8 @@ import org.jetbrains.kotlin.serialization.deserialization.descriptors.Deserializ
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedPropertyDescriptor
 
 class IrLazyProperty(
-    override val startOffset: Int,
-    override val endOffset: Int,
+    override var startOffset: Int,
+    override var endOffset: Int,
     override var origin: IrDeclarationOrigin,
     override val symbol: IrPropertySymbol,
     @OptIn(ObsoleteDescriptorBasedAPI::class)
@@ -41,8 +42,6 @@ class IrLazyProperty(
     init {
         symbol.bind(this)
     }
-
-    override var parent: IrDeclarationParent by createLazyParent()
 
     override var annotations: List<IrConstructorCall> by createLazyAnnotations()
 
@@ -85,11 +84,5 @@ class IrLazyProperty(
         get() = null
         set(_) = error("We should never need to store metadata of external declarations.")
 
-    override var attributeOwnerId: IrAttributeContainer
-        get() = this
-        set(_) = error("We should never need to change attributeOwnerId of external declarations.")
-
-    override var originalBeforeInline: IrAttributeContainer?
-        get() = this
-        set(_) = error("We should never need to change originalBeforeInline of external declarations.")
+    override var attributeOwnerId: IrElement = this
 }

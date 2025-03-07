@@ -7,10 +7,12 @@ package org.jetbrains.kotlin.ir.declarations.lazy
 
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities.isPrivate
+import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
 import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.util.*
@@ -20,8 +22,8 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedClassDescriptor
 
 class IrLazyClass(
-    override val startOffset: Int,
-    override val endOffset: Int,
+    override var startOffset: Int,
+    override var endOffset: Int,
     override var origin: IrDeclarationOrigin,
     override val symbol: IrClassSymbol,
     @OptIn(ObsoleteDescriptorBasedAPI::class)
@@ -37,14 +39,17 @@ class IrLazyClass(
     override var isValue: Boolean,
     override var isExpect: Boolean,
     override var isFun: Boolean,
+    override var hasEnumEntries: Boolean,
     override val stubGenerator: DeclarationStubGenerator,
-    override val typeTranslator: TypeTranslator
-) : IrClass(), IrLazyDeclarationBase, DeserializableClass {
+    override val typeTranslator: TypeTranslator,
+) : IrClass(), IrLazyDeclarationBase {
     init {
         symbol.bind(this)
+        this.deserializedIr = lazy {
+            assert(parent is IrPackageFragment)
+            stubGenerator.extensions.deserializeClass(this, stubGenerator, parent)
+        }
     }
-
-    override var parent: IrDeclarationParent by createLazyParent()
 
     override var annotations: List<IrConstructorCall> by createLazyAnnotations()
 
@@ -54,7 +59,7 @@ class IrLazyClass(
         }
     }
 
-
+    @UnsafeDuringIrConstructionAPI
     override val declarations: MutableList<IrDeclaration> by lazyVar(stubGenerator.lock) {
         ArrayList<IrDeclaration>().also {
             typeTranslator.buildWithScope(this) {
@@ -107,8 +112,7 @@ class IrLazyClass(
         }
     }
 
-    override var attributeOwnerId: IrAttributeContainer = this
-    override var originalBeforeInline: IrAttributeContainer? = null
+    override var attributeOwnerId: IrElement = this
 
     val classProto: ProtoBuf.Class? get() = (descriptor as? DeserializedClassDescriptor)?.classProto
     val nameResolver: NameResolver? get() = (descriptor as? DeserializedClassDescriptor)?.c?.nameResolver
@@ -117,12 +121,4 @@ class IrLazyClass(
     override var metadata: MetadataSource?
         get() = null
         set(_) = error("We should never need to store metadata of external declarations.")
-
-    private var irLoaded: Boolean? = null
-
-    override fun loadIr(): Boolean {
-        assert(parent is IrPackageFragment)
-        return irLoaded
-            ?: stubGenerator.extensions.deserializeClass(this, stubGenerator, parent).also { irLoaded = it }
-    }
 }

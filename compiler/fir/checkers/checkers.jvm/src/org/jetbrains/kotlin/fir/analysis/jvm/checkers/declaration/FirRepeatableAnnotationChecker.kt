@@ -12,11 +12,10 @@ import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.analysis.checkers.containsRepeatableAnnotation
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.declaration.FirBasicDeclarationChecker
 import org.jetbrains.kotlin.fir.analysis.checkers.getAllowedAnnotationTargets
-import org.jetbrains.kotlin.fir.analysis.checkers.getAnnotationRetention
 import org.jetbrains.kotlin.fir.analysis.checkers.unsubstitutedScope
 import org.jetbrains.kotlin.fir.analysis.diagnostics.jvm.FirJvmErrors
 import org.jetbrains.kotlin.fir.declarations.*
@@ -33,10 +32,11 @@ import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.fir.types.*
 import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.name.ClassId
+import org.jetbrains.kotlin.name.JvmStandardClassIds
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.StandardClassIds
 
-object FirRepeatableAnnotationChecker : FirBasicDeclarationChecker() {
+object FirRepeatableAnnotationChecker : FirBasicDeclarationChecker(MppCheckerKind.Common) {
     private val REPEATABLE_ANNOTATION_CONTAINER_NAME = Name.identifier(JvmAbi.REPEATABLE_ANNOTATION_CONTAINER_NAME)
 
     override fun check(declaration: FirDeclaration, context: CheckerContext, reporter: DiagnosticReporter) {
@@ -58,7 +58,7 @@ object FirRepeatableAnnotationChecker : FirBasicDeclarationChecker() {
                     existingTargetsForAnnotation.any { (it == null) != (useSiteTarget == null) }
 
             if (duplicateAnnotation &&
-                annotationClass.containsRepeatableAnnotation(session) &&
+                session.annotationPlatformSupport.symbolContainsRepeatableAnnotation(annotationClass, session) &&
                 annotationClass.getAnnotationRetention(session) != AnnotationRetention.SOURCE
             ) {
                 if (session.languageVersionSettings.supportsFeature(LanguageFeature.RepeatableAnnotations)) {
@@ -83,7 +83,7 @@ object FirRepeatableAnnotationChecker : FirBasicDeclarationChecker() {
         }
 
         if (declaration is FirRegularClass) {
-            val javaRepeatable = annotations.getAnnotationByClassId(StandardClassIds.Annotations.Java.Repeatable, session)
+            val javaRepeatable = annotations.getAnnotationByClassId(JvmStandardClassIds.Annotations.Java.Repeatable, session)
             if (javaRepeatable != null) {
                 checkJavaRepeatableAnnotationDeclaration(javaRepeatable, declaration, context, reporter)
             } else {
@@ -97,7 +97,7 @@ object FirRepeatableAnnotationChecker : FirBasicDeclarationChecker() {
 
     private fun FirClassLikeSymbol<*>.resolveContainerAnnotation(session: FirSession): ClassId? {
         val repeatableAnnotation = getAnnotationByClassId(StandardClassIds.Annotations.Repeatable, session)
-            ?: getAnnotationByClassId(StandardClassIds.Annotations.Java.Repeatable, session)
+            ?: getAnnotationByClassId(JvmStandardClassIds.Annotations.Java.Repeatable, session)
             ?: return null
         return repeatableAnnotation.resolveContainerAnnotation()
     }
@@ -165,8 +165,10 @@ object FirRepeatableAnnotationChecker : FirBasicDeclarationChecker() {
         val valueParameterSymbols = containerCtor.valueParameterSymbols
         val parameterName = StandardClassIds.Annotations.ParameterNames.value
         val value = valueParameterSymbols.find { it.name == parameterName }
-        if (value == null || !value.resolvedReturnTypeRef.isArrayType ||
-            value.resolvedReturnTypeRef.type.typeArguments.single().type != annotationClass.defaultType()
+        val fullyExpandedType = value?.resolvedReturnTypeRef?.coneType?.fullyExpandedType(context.session)
+        if (fullyExpandedType == null ||
+            !fullyExpandedType.isArrayType ||
+            fullyExpandedType.typeArguments.single().type != annotationClass.defaultType()
         ) {
             reporter.reportOn(
                 annotationSource,

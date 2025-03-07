@@ -32,10 +32,7 @@ abstract class AbstractBuiltInsWithJDKMembersTest : KotlinTestWithEnvironment() 
     private val configuration = createComparatorConfiguration()
 
     override fun createEnvironment(): KotlinCoreEnvironment =
-        createEnvironmentWithJdk(ConfigurationKind.JDK_ONLY, testJdkKind)
-
-    protected open val testJdkKind: TestJdkKind
-        get() = TestJdkKind.FULL_JDK
+        createEnvironmentWithJdk(ConfigurationKind.JDK_ONLY, TestJdkKind.FULL_JDK)
 
     protected fun doTest(builtinVersionName: String) {
         val module = JvmResolveUtil.analyze(environment).moduleDescriptor as ModuleDescriptorImpl
@@ -60,7 +57,7 @@ abstract class AbstractBuiltInsWithJDKMembersTest : KotlinTestWithEnvironment() 
                     overrideRenderingPolicy = OverrideRenderingPolicy.RENDER_OPEN_OVERRIDE
                     verbose = true
                     annotationArgumentsRenderingPolicy = AnnotationArgumentsRenderingPolicy.UNLESS_EMPTY
-                    modifiers = DescriptorRendererModifier.ALL
+                    modifiers = DescriptorRendererModifier.ALL - DescriptorRendererModifier.ACTUAL
                     excludedTypeAnnotationClasses = setOf(StandardNames.FqNames.unsafeVariance)
                     annotationFilter = ::isSignificantAnnotation
                 }

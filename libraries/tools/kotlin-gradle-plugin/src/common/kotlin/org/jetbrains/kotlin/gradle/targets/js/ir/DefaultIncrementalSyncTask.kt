@@ -10,6 +10,7 @@ import org.gradle.work.DisableCachingByDefault
 import org.gradle.work.InputChanges
 import org.jetbrains.kotlin.gradle.targets.js.internal.RewriteSourceMapFilterReader
 import org.jetbrains.kotlin.gradle.tasks.IncrementalSyncTask
+import org.jetbrains.kotlin.gradle.utils.getFile
 import java.io.File
 import javax.inject.Inject
 
@@ -27,6 +28,7 @@ abstract class DefaultIncrementalSyncTask : DefaultTask(), IncrementalSyncTask {
         val destinationDir = destinationDirectory.get()
         val commonAction: CopySpec.() -> Unit = {
             into(destinationDir)
+            duplicatesStrategy = this@DefaultIncrementalSyncTask.duplicatesStrategy
             // Rewrite relative paths in sourcemaps in the target directory
             eachFile {
                 if (it.name.endsWith(".js.map")) {

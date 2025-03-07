@@ -12,9 +12,9 @@ import org.jetbrains.kotlin.assignment.plugin.k2.diagnostics.FirErrorsAssignment
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
 import org.jetbrains.kotlin.fir.FirSession
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.expression.FirFunctionCallChecker
-import org.jetbrains.kotlin.fir.analysis.checkers.toRegularClassSymbol
 import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnostic
 import org.jetbrains.kotlin.fir.expressions.FirFunctionCall
 import org.jetbrains.kotlin.fir.expressions.arguments
@@ -24,9 +24,11 @@ import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeAmbiguityError
 import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeDiagnosticWithSingleCandidate
 import org.jetbrains.kotlin.fir.resolve.diagnostics.ConeUnresolvedNameError
 import org.jetbrains.kotlin.fir.types.isUnit
+import org.jetbrains.kotlin.fir.types.resolvedType
+import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 import org.jetbrains.kotlin.types.expressions.OperatorConventions.ASSIGN_METHOD
 
-object FirAssignmentPluginFunctionCallChecker : FirFunctionCallChecker() {
+object FirAssignmentPluginFunctionCallChecker : FirFunctionCallChecker(MppCheckerKind.Common) {
 
     override fun check(expression: FirFunctionCall, context: CheckerContext, reporter: DiagnosticReporter) {
         if (!expression.isOverloadAssignCallCandidate()) return
@@ -42,7 +44,7 @@ object FirAssignmentPluginFunctionCallChecker : FirFunctionCallChecker() {
     }
 
     private fun FirFunctionCall.isOverloadAssignCallCandidate() =
-        arguments.size == 1 && source?.kind == KtFakeSourceElementKind.DesugaredCompoundAssignment
+        arguments.size == 1 && source?.kind == KtFakeSourceElementKind.AssignmentPluginAltered
 
     private fun FirFunctionCall.isOverloadedAssignCallError(session: FirSession, diagnostic: ConeDiagnostic): Boolean {
         val functionName = when (diagnostic) {
@@ -58,7 +60,7 @@ object FirAssignmentPluginFunctionCallChecker : FirFunctionCallChecker() {
         calleeReference.name == ASSIGN_METHOD && isAnnotated(session)
 
     private fun FirFunctionCall.isAnnotated(session: FirSession): Boolean =
-        session.annotationMatchingService.isAnnotated(explicitReceiver?.typeRef?.toRegularClassSymbol(session))
+        session.annotationMatchingService.isAnnotated(explicitReceiver?.resolvedType?.toRegularClassSymbol(session))
 
     private fun FirFunctionCall.isReturnTypeUnit() = toResolvedCallableSymbol()?.resolvedReturnType?.isUnit ?: false
 }

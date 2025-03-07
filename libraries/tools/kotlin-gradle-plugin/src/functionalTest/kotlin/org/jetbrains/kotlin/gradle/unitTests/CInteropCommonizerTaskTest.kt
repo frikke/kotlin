@@ -15,23 +15,47 @@ import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
 import org.jetbrains.kotlin.gradle.targets.native.internal.CInteropCommonizerTask
 import org.jetbrains.kotlin.gradle.targets.native.internal.CInteropCommonizerGroup
 import org.jetbrains.kotlin.gradle.targets.native.internal.commonizeCInteropTask
+import org.jetbrains.kotlin.gradle.targets.native.internal.findCInteropCommonizerGroup
+import org.jetbrains.kotlin.gradle.util.enableCInteropCommonization
+import org.jetbrains.kotlin.gradle.util.main
 import org.jetbrains.kotlin.gradle.util.runLifecycleAwareTest
+import org.jetbrains.kotlin.gradle.utils.Future
+import org.jetbrains.kotlin.gradle.utils.future
 import org.jetbrains.kotlin.konan.target.KonanTarget.*
 import kotlin.test.*
 
 class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
 
-    private val task: CInteropCommonizerTask get() = project.commonizeCInteropTask?.get() ?: fail("Missing commonizeCInteropTask")
+    private val task: Future<CInteropCommonizerTask>
+        get() = project.future {
+            project.commonizeCInteropTask()?.get() ?: fail("Missing commonizeCInteropTask")
+        }
 
     @BeforeTest
     override fun setup() {
-        enableGranularSourceSetsMetadata()
         enableCInteropCommonization()
         super.setup()
     }
 
     @Test
+    fun `commonizeCInteropTask configuration - avoids cinterop task configuration`() = project.runLifecycleAwareTest {
+        project.enableCInteropCommonization(true)
+
+        listOf(
+            kotlin.linuxX64().compilations.main.cinterops.create("anyInteropName"),
+            kotlin.macosX64().compilations.main.cinterops.create("anyInteropName"),
+        ).forEach {
+            project.tasks.named(it.interopProcessingTaskName).configure {
+                fail("Interop task configuration should not avoided by commonizeCInteropTask configuration")
+            }
+        }
+
+        project.commonizeCInteropTask()?.get() ?: fail("Expected commonizeCInteropTask to be present")
+    }
+
+    @Test
     fun `nativeMain linux macos`() = project.runLifecycleAwareTest {
+        val task = this@CInteropCommonizerTaskTest.task.await()
         val linuxInterop = kotlin.linuxX64("linux").compilations.getByName("main").cinterops.create("anyInteropName")
         val macosInterop = kotlin.macosX64("macos").compilations.getByName("main").cinterops.create("anyInteropName")
 
@@ -55,7 +79,7 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
                 setOf(CommonizerTarget(LINUX_X64, MACOS_X64)),
                 setOf(linuxInterop.identifier, macosInterop.identifier)
             ),
-            task.findInteropsGroup(expectCInteropCommonizerDependent(nativeMain))
+            project.findCInteropCommonizerGroup(expectCInteropCommonizerDependent(nativeMain))
         )
     }
 
@@ -86,6 +110,7 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
 
     @Test
     fun `nativeMain iosMain linux macos iosX64 iosArm64`() = project.runLifecycleAwareTest {
+        val task = this@CInteropCommonizerTaskTest.task.await()
         val linuxInterop = kotlin.linuxX64("linux").compilations.getByName("main").cinterops.create("anyInteropName").identifier
         val macosInterop = kotlin.macosX64("macos").compilations.getByName("main").cinterops.create("anyInteropName").identifier
         val iosX64Interop = kotlin.iosX64("iosX64").compilations.getByName("main").cinterops.create("anyInteropName").identifier
@@ -124,8 +149,8 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
         assertCInteropDependentEqualsForSourceSetAndCompilation(nativeMain)
         assertCInteropDependentEqualsForSourceSetAndCompilation(iosMain)
 
-        assertEquals(group, task.findInteropsGroup(expectCInteropCommonizerDependent(nativeMain)))
-        assertEquals(group, task.findInteropsGroup(expectCInteropCommonizerDependent(iosMain)))
+        assertEquals(group, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(nativeMain)))
+        assertEquals(group, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(iosMain)))
     }
 
     @Test
@@ -139,8 +164,9 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
     }
 
     private fun `nativeTest nativeMain linux macos`(
-        nativeTestDependsOnNativeMain: Boolean
+        nativeTestDependsOnNativeMain: Boolean,
     ) = project.runLifecycleAwareTest {
+        val task = this@CInteropCommonizerTaskTest.task.await()
         val linuxInterop = kotlin.linuxX64("linux").compilations.getByName("main").cinterops.create("anyInteropName").identifier
         val macosInterop = kotlin.macosX64("macos").compilations.getByName("main").cinterops.create("anyInteropName").identifier
 
@@ -182,7 +208,7 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
         )
 
         assertEquals(
-            group, task.findInteropsGroup(expectCInteropCommonizerDependent(nativeMain))
+            group, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(nativeMain))
         )
 
         assertNull(
@@ -202,8 +228,9 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
     }
 
     private fun `nativeTest nativeMain linux macos - test compilation defines custom cinterop`(
-        nativeTestDependsOnNativeMain: Boolean
+        nativeTestDependsOnNativeMain: Boolean,
     ) = project.runLifecycleAwareTest {
+        val task = this@CInteropCommonizerTaskTest.task.await()
         val linuxInterop = kotlin.linuxX64("linux").compilations.getByName("main").cinterops.create("anyInteropName").identifier
         val macosInterop = kotlin.macosX64("macos").compilations.getByName("main").cinterops.create("anyInteropName").identifier
         kotlin.linuxX64("linux").compilations.getByName("test").cinterops.create("anyOtherName").identifier
@@ -241,11 +268,11 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
         )
 
         assertEquals(
-            group, task.findInteropsGroup(expectCInteropCommonizerDependent(nativeMain))
+            group, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(nativeMain))
         )
 
         assertEquals(
-            group, task.findInteropsGroup(expectCInteropCommonizerDependent(expectSharedNativeCompilation(nativeMain)))
+            group, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(expectSharedNativeCompilation(nativeMain)))
         )
 
         assertNull(
@@ -265,6 +292,7 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
     }
 
     private fun `hierarchical project`(testSourceSetsDependOnMainSourceSets: Boolean) = project.runLifecycleAwareTest {
+        val task = this@CInteropCommonizerTaskTest.task.await()
         /* Define targets */
         val linux = kotlin.linuxX64("linux")
         val macos = kotlin.macosX64("macos")
@@ -409,37 +437,37 @@ class CInteropCommonizerTaskTest : MultiplatformExtensionTest() {
         )
 
         assertEquals(
-            mainGroup, task.findInteropsGroup(expectCInteropCommonizerDependent(nativeMain)),
+            mainGroup, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(nativeMain)),
             "Expected nativeMain being part of the mainGroup"
         )
 
         assertEquals(
-            mainGroup, task.findInteropsGroup(expectCInteropCommonizerDependent(unixMain)),
+            mainGroup, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(unixMain)),
             "Expected unixMain being part of the mainGroup"
         )
 
         assertEquals(
-            mainGroup, task.findInteropsGroup(expectCInteropCommonizerDependent(appleMain)),
+            mainGroup, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(appleMain)),
             "Expected appleMain being part of the mainGroup"
         )
 
         assertEquals(
-            mainGroup, task.findInteropsGroup(expectCInteropCommonizerDependent(iosMain)),
+            mainGroup, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(iosMain)),
             "Expected iosMain being part of the mainGroup"
         )
 
         assertEquals(
-            testGroup, task.findInteropsGroup(expectCInteropCommonizerDependent(nativeTest)),
+            testGroup, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(nativeTest)),
             "Expected nativeTest being part of the testGroup"
         )
 
         assertEquals(
-            testGroup, task.findInteropsGroup(expectCInteropCommonizerDependent(appleTest)),
+            testGroup, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(appleTest)),
             "Expected appleTest being part of the testGroup"
         )
 
         assertEquals(
-            testGroup, task.findInteropsGroup(expectCInteropCommonizerDependent(iosTest)),
+            testGroup, findCInteropCommonizerGroup(expectCInteropCommonizerDependent(iosTest)),
             "Expected iosTest being part of the testGroup"
         )
 

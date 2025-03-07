@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.fir.declarations.FirContractDescriptionOwner
 import org.jetbrains.kotlin.fir.declarations.FirSimpleFunction
 import org.jetbrains.kotlin.fir.diagnostics.ConeDiagnostic
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
+import org.jetbrains.kotlin.fir.types.UnexpandedTypeCheck
 import org.jetbrains.kotlin.fir.types.isBoolean
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.deserialization.isInstanceType
@@ -37,18 +38,28 @@ class FirContractDeserializer(private val c: FirDeserializationContext) :
     override fun extractVariable(
         valueParameterIndex: Int,
         owner: FirContractDescriptionOwner
-    ): KtValueParameterReference<ConeKotlinType, ConeDiagnostic>?  {
+    ): KtValueParameterReference<ConeKotlinType, ConeDiagnostic>? {
         val name: String
         val ownerFunction = owner as FirSimpleFunction
-        val typeRef = if (valueParameterIndex < 0) {
-            name = "this"
-            ownerFunction.receiverParameter?.typeRef
-        } else {
-            val parameter = ownerFunction.valueParameters.getOrNull(valueParameterIndex) ?: return null
-            name = parameter.name.asString()
-            parameter.returnTypeRef
+        val typeRef = when (valueParameterIndex) {
+            -1 -> {
+                name = "this"
+                ownerFunction.receiverParameter?.typeRef
+            }
+            in ownerFunction.valueParameters.indices -> {
+                val parameter = ownerFunction.valueParameters.getOrNull(valueParameterIndex) ?: return null
+                name = parameter.name.asString()
+                parameter.returnTypeRef
+            }
+            else -> {
+                val parameter =
+                    ownerFunction.contextParameters.getOrNull(valueParameterIndex - ownerFunction.valueParameters.size) ?: return null
+                name = parameter.name.asString()
+                parameter.returnTypeRef
+            }
         } ?: return null
 
+        @OptIn(UnexpandedTypeCheck::class)
         return if (!typeRef.isBoolean)
             KtValueParameterReference(valueParameterIndex, name)
         else

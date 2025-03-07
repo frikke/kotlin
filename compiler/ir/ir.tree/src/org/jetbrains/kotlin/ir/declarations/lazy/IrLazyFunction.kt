@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.ir.declarations.lazy
 import org.jetbrains.kotlin.descriptors.DescriptorVisibility
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.descriptors.Modality
+import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrBody
@@ -25,8 +26,8 @@ import org.jetbrains.kotlin.serialization.deserialization.descriptors.Deserializ
 
 @OptIn(ObsoleteDescriptorBasedAPI::class)
 class IrLazyFunction(
-    override val startOffset: Int,
-    override val endOffset: Int,
+    override var startOffset: Int,
+    override var endOffset: Int,
     override var origin: IrDeclarationOrigin,
     override val symbol: IrSimpleFunctionSymbol,
     override val descriptor: FunctionDescriptor,
@@ -44,7 +45,9 @@ class IrLazyFunction(
     override val stubGenerator: DeclarationStubGenerator,
     override val typeTranslator: TypeTranslator,
 ) : AbstractIrLazyFunction(), IrLazyFunctionBase {
-    override var parent: IrDeclarationParent by createLazyParent()
+    init {
+        this.contextReceiverParametersCount = descriptor.contextReceiverParameters.size
+    }
 
     override var annotations: List<IrConstructorCall> by createLazyAnnotations()
 
@@ -53,31 +56,16 @@ class IrLazyFunction(
     }
 
     override var returnType: IrType by lazyVar(stubGenerator.lock) {
-        if (tryLoadIr()) returnType else createReturnType()
+        createReturnType()
     }
 
     override val initialSignatureFunction: IrFunction? by createInitialSignatureFunction()
-
-    override var dispatchReceiverParameter: IrValueParameter? by lazyVar(stubGenerator.lock) {
-        if (tryLoadIr()) dispatchReceiverParameter else createReceiverParameter(descriptor.dispatchReceiverParameter, true)
-    }
-
-    override var extensionReceiverParameter: IrValueParameter? by lazyVar(stubGenerator.lock) {
-        if (tryLoadIr()) extensionReceiverParameter else createReceiverParameter(descriptor.extensionReceiverParameter)
-    }
-
-    override var valueParameters: List<IrValueParameter> by lazyVar(stubGenerator.lock) {
-        if (tryLoadIr()) valueParameters else createValueParameters()
-    }
-
-    override var contextReceiverParametersCount: Int = descriptor.contextReceiverParameters.size
 
     override var metadata: MetadataSource?
         get() = null
         set(_) = error("We should never need to store metadata of external declarations.")
 
     override var typeParameters: List<IrTypeParameter> by lazyVar(stubGenerator.lock) {
-        if (tryLoadIr()) return@lazyVar typeParameters
         typeTranslator.buildWithScope(this) {
             stubGenerator.symbolTable.withScope(this) {
                 val propertyIfAccessor = descriptor.propertyIfAccessor
@@ -100,13 +88,7 @@ class IrLazyFunction(
         }
     }
 
-    override var attributeOwnerId: IrAttributeContainer
-        get() = this
-        set(_) = error("We should never need to change attributeOwnerId of external declarations.")
-
-    override var originalBeforeInline: IrAttributeContainer?
-        get() = null
-        set(_) = error("We should never need to change originalBeforeInline of external declarations.")
+    override var attributeOwnerId: IrElement = this
 
     override var correspondingPropertySymbol: IrPropertySymbol? = null
 

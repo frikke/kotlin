@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -NOTHING_TO_INLINE
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -NOTHING_TO_INLINE
 
 @PublishedApi
 internal class InternalClassPrivateConstructor private constructor() {

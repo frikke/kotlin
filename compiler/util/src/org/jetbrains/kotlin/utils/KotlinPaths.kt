@@ -47,16 +47,16 @@ interface KotlinPaths {
         get() = sourcesJar(Jar.StdLib)!!
 
 //    @Deprecated("Obsolete API", ReplaceWith("jar(KotlinPaths.Jars.jsStdLib)"))
-    val jsStdLibJarPath: File
-        get() = jar(Jar.JsStdLib)
+    val jsStdLibKlibPath: File
+        get() = klib(Jar.JsStdLib)
 
 //    @Deprecated("Obsolete API", ReplaceWith("sourcesJar(KotlinPaths.Jars.JsStdLib)!!"))
     val jsStdLibSrcJarPath: File
         get() = sourcesJar(Jar.JsStdLib)!!
 
 //    @Deprecated("Obsolete API", ReplaceWith("jar(KotlinPaths.Jars.jsKotlinTest)"))
-    val jsKotlinTestJarPath: File
-        get() = jar(Jar.JsKotlinTest)
+    val jsKotlinTestKlibPath: File
+        get() = klib(Jar.JsKotlinTest)
 
 //    @Deprecated("Obsolete API", ReplaceWith("jar(KotlinPaths.Jars.allOpenPlugin)"))
     val allOpenPluginJarPath: File
@@ -72,10 +72,6 @@ interface KotlinPaths {
 //    @Deprecated("Obsolete API", ReplaceWith("jar(KotlinPaths.Jars.samWithReceiver)"))
     val samWithReceiverJarPath: File
         get() = jar(Jar.SamWithReceiver)
-
-//    @Deprecated("Obsolete API", ReplaceWith("jar(KotlinPaths.Jars.trove4j)"))
-    val trove4jJarPath: File
-        get() = jar(Jar.Trove4j)
 
 //    @Deprecated("Obsolete API", ReplaceWith("classPath(KotlinPaths.ClassPaths.Compiler)"))
     val compilerClasspath: List<File>
@@ -99,7 +95,6 @@ interface KotlinPaths {
         LombokPlugin(PathUtil.LOMBOK_PLUGIN_NAME),
         SamWithReceiver(PathUtil.SAM_WITH_RECEIVER_PLUGIN_NAME),
         SerializationPlugin(PathUtil.SERIALIZATION_PLUGIN_NAME),
-        Trove4j(PathUtil.TROVE4J_NAME),
         Compiler(PathUtil.KOTLIN_COMPILER_NAME),
         ScriptingPlugin(PathUtil.KOTLIN_SCRIPTING_COMPILER_PLUGIN_NAME),
         ScriptingImpl(PathUtil.KOTLIN_SCRIPTING_COMPILER_IMPL_NAME),
@@ -120,7 +115,7 @@ interface KotlinPaths {
                 else -> emptyList()
             }
         }),
-        Compiler(StdLib, Jar.Compiler, Jar.Reflect, Jar.ScriptRuntime, Jar.Trove4j, Jar.KotlinDaemon),
+        Compiler(StdLib, Jar.Compiler, Jar.Reflect, Jar.ScriptRuntime, Jar.KotlinDaemon, Jar.CoroutinesCore),
         CompilerWithScripting(Compiler, Jar.ScriptingPlugin, Jar.ScriptingImpl, Jar.ScriptingLib, Jar.ScriptingJvmLib),
         MainKts(StdLib, Jar.MainKts, Jar.ScriptRuntime, Jar.Reflect)
         ;
@@ -131,6 +126,8 @@ interface KotlinPaths {
     }
 
     fun jar(jar: Jar): File
+
+    fun klib(jar: Jar): File
 
     fun sourcesJar(jar: Jar): File?
 
@@ -152,6 +149,8 @@ open class KotlinPathsFromBaseDirectory(val basePath: File) : KotlinPaths {
         get() = basePath
 
     override fun jar(jar: KotlinPaths.Jar): File = basePath.resolve(jar.baseName + ".jar")
+
+    override fun klib(jar: KotlinPaths.Jar): File = basePath.resolve(jar.baseName + ".klib")
 
     override fun sourcesJar(jar: KotlinPaths.Jar): File? = basePath.resolve(jar.baseName + "-sources.jar")
 }

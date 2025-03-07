@@ -16,7 +16,7 @@ object JvmAnalysisFlags {
     val javaTypeEnhancementState by Delegates.JavaTypeEnhancementStateWarnByDefault
 
     @JvmStatic
-    val jvmDefaultMode by Delegates.JvmDefaultModeDisabledByDefault
+    val jvmDefaultMode by Delegates.JvmDefaultModeNullByDefault
 
     @JvmStatic
     val inheritMultifileParts by AnalysisFlag.Delegates.Boolean
@@ -28,16 +28,13 @@ object JvmAnalysisFlags {
     val suppressMissingBuiltinsError by AnalysisFlag.Delegates.Boolean
 
     @JvmStatic
-    val disableUltraLightClasses by AnalysisFlag.Delegates.Boolean
-
-    @JvmStatic
     val enableJvmPreview by AnalysisFlag.Delegates.Boolean
 
     @JvmStatic
-    val useIR by AnalysisFlag.Delegates.Boolean
+    val outputBuiltinsMetadata by AnalysisFlag.Delegates.Boolean
 
     @JvmStatic
-    val generatePropertyAnnotationsMethods by AnalysisFlag.Delegates.Boolean
+    val expectBuiltinsAsPartOfStdlib by AnalysisFlag.Delegates.Boolean
 
     private object Delegates {
         object JavaTypeEnhancementStateWarnByDefault {
@@ -45,9 +42,9 @@ object JvmAnalysisFlags {
                 AnalysisFlag.Delegate(property.name, JavaTypeEnhancementState.DEFAULT)
         }
 
-        object JvmDefaultModeDisabledByDefault {
-            operator fun provideDelegate(instance: Any?, property: KProperty<*>): AnalysisFlag.Delegate<JvmDefaultMode> =
-                AnalysisFlag.Delegate(property.name, JvmDefaultMode.DISABLE)
+        object JvmDefaultModeNullByDefault {
+            operator fun provideDelegate(instance: Any?, property: KProperty<*>): AnalysisFlag.Delegate<JvmDefaultMode?> =
+                AnalysisFlag.Delegate(property.name, null)
         }
     }
 }

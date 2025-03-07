@@ -35,12 +35,8 @@ class DifferentClassloadersIT : KGPBaseTest() {
         project("differentClassloaders", gradleVersion) {
             setupDifferentClassloadersProject()
 
-            buildAndFail("publish", "-PmppProjectDependency=true") {
-                assertOutputContains(MULTIPLE_KOTLIN_PLUGINS_LOADED_WARNING)
-            }
-
-            // check that the message is also printed on subsequent builds
-            buildAndFail("publish", "-PmppProjectDependency=true") {
+            // after enabling isolated projects support by default we should not fail the build
+            build("publish", "-PmppProjectDependency=true") {
                 assertOutputContains(MULTIPLE_KOTLIN_PLUGINS_LOADED_WARNING)
             }
         }
@@ -48,6 +44,7 @@ class DifferentClassloadersIT : KGPBaseTest() {
 
     @DisplayName("KT-50598: Different classloaders message can be disabled")
     @GradleTest
+    @BrokenOnMacosTest
     fun differentClassloadersWarningCanBeDisabled(gradleVersion: GradleVersion) {
         project("differentClassloaders", gradleVersion) {
             setupDifferentClassloadersProject()

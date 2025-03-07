@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -8,30 +8,39 @@ package org.jetbrains.kotlin.analysis.low.level.api.fir.lazy.resolve
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.FirElementWithResolveState
 import org.jetbrains.kotlin.fir.declarations.*
-import org.jetbrains.kotlin.fir.declarations.impl.FirDefaultPropertyAccessor
-import org.jetbrains.kotlin.fir.visitors.FirVisitor
+import org.jetbrains.kotlin.fir.visitors.FirVisitorVoid
 
 internal object LLFirPhaseUpdater {
-    fun updateDeclarationInternalsPhase(
-        target: FirElementWithResolveState,
-        newPhase: FirResolvePhase,
-        updateForLocalDeclarations: Boolean,
-    ) {
+    fun updateDeclarationInternalsPhase(target: FirElementWithResolveState, newPhase: FirResolvePhase) {
         updatePhaseForNonLocals(target, newPhase, isTargetDeclaration = true)
 
-        if (updateForLocalDeclarations && target is FirCallableDeclaration) {
+        if (newPhase == FirResolvePhase.BODY_RESOLVE) {
             when (target) {
-                is FirFunction -> target.body?.accept(PhaseUpdatingTransformer, newPhase)
-                is FirVariable -> {
-                    target.initializer?.accept(PhaseUpdatingTransformer, newPhase)
-                    target.getter?.body?.accept(PhaseUpdatingTransformer, newPhase)
-                    target.setter?.body?.accept(PhaseUpdatingTransformer, newPhase)
-                    target.backingField?.accept(PhaseUpdatingTransformer, newPhase)
+                is FirConstructor -> {
+                    target.delegatedConstructor?.accept(LocalElementPhaseUpdatingTransformer)
+                    updateFunctionLocalElements(target)
                 }
+
+                is FirFunction -> updateFunctionLocalElements(target)
+                is FirVariable -> {
+                    target.initializer?.accept(LocalElementPhaseUpdatingTransformer)
+                    target.delegate?.accept(LocalElementPhaseUpdatingTransformer)
+                    target.getter?.let(::updateFunctionLocalElements)
+                    target.setter?.let(::updateFunctionLocalElements)
+                    target.backingField?.initializer?.accept(LocalElementPhaseUpdatingTransformer)
+                }
+
+                is FirAnonymousInitializer -> target.body?.accept(LocalElementPhaseUpdatingTransformer)
+                is FirCodeFragment -> target.block.accept(LocalElementPhaseUpdatingTransformer)
+                is FirDanglingModifierList -> target.acceptChildren(LocalElementPhaseUpdatingTransformer)
             }
         }
     }
 
+    private fun updateFunctionLocalElements(target: FirFunction) {
+        target.body?.accept(LocalElementPhaseUpdatingTransformer)
+        target.valueParameters.forEach { it.defaultValue?.accept(LocalElementPhaseUpdatingTransformer) }
+    }
 
     private fun updatePhaseForNonLocals(element: FirElementWithResolveState, newPhase: FirResolvePhase, isTargetDeclaration: Boolean) {
         if (element.resolvePhase >= newPhase) return
@@ -51,28 +60,36 @@ internal object LLFirPhaseUpdater {
         }
 
         when (element) {
+            is FirRegularClass -> {
+                element.contextParameters.forEach { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
+            }
+            is FirScript -> {
+                element.receivers.forEach { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
+            }
             is FirFunction -> {
                 element.valueParameters.forEach { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
+                element.receiverParameter?.let { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
+                element.contextParameters.forEach { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
             }
             is FirProperty -> {
                 element.getter?.let { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
                 element.setter?.let { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
                 element.backingField?.let { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
+                element.receiverParameter?.let { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
+                element.contextParameters.forEach { updatePhaseForNonLocals(it, newPhase, isTargetDeclaration = false) }
             }
             else -> {}
         }
     }
 }
 
-private object PhaseUpdatingTransformer : FirVisitor<Unit, FirResolvePhase>() {
-    override fun visitElement(element: FirElement, data: FirResolvePhase) {
+private object LocalElementPhaseUpdatingTransformer : FirVisitorVoid() {
+    override fun visitElement(element: FirElement) {
         if (element is FirElementWithResolveState) {
-            if (element.resolvePhase >= data && element !is FirDefaultPropertyAccessor) return
-
             @OptIn(ResolveStateAccess::class)
-            element.resolveState = data.asResolveState()
+            element.resolveState = FirResolvePhase.BODY_RESOLVE.asResolveState()
         }
 
-        element.acceptChildren(this, data)
+        element.acceptChildren(this)
     }
 }

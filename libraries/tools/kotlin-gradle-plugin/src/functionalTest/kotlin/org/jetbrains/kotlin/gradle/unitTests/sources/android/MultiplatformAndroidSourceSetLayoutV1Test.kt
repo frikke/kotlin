@@ -15,9 +15,9 @@ import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.testfixtures.ProjectBuilder
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
-import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
 import org.jetbrains.kotlin.gradle.plugin.sources.android.findKotlinSourceSet
-import org.jetbrains.kotlin.gradle.util.addBuildEventsListenerRegistryMock
+import org.jetbrains.kotlin.gradle.util.checkDiagnostics
+import org.jetbrains.kotlin.gradle.util.configureDefaults
 import org.jetbrains.kotlin.gradle.util.setMultiplatformAndroidSourceSetLayoutVersion
 import kotlin.test.*
 
@@ -30,7 +30,6 @@ class MultiplatformAndroidSourceSetLayoutV1Test {
     @BeforeTest
     fun setup() {
         project = ProjectBuilder.builder().build() as ProjectInternal
-        addBuildEventsListenerRegistryMock(project)
         project.setMultiplatformAndroidSourceSetLayoutVersion(1)
 
         project.plugins.apply("kotlin-multiplatform")
@@ -38,12 +37,18 @@ class MultiplatformAndroidSourceSetLayoutV1Test {
 
         /* Arbitrary minimal Android setup */
         android = project.extensions.getByName("android") as LibraryExtension
-        android.compileSdkVersion(30)
+        android.configureDefaults()
 
         /* Kotlin Setup */
         kotlin = project.multiplatformExtension
     }
 
+    @Test
+    fun `version 1 layout usage - emits a deprecation error`() {
+        kotlin.androidTarget()
+        project.evaluate()
+        project.checkDiagnostics("AndroidSourceSetV1Deprecation")
+    }
 
     @Test
     fun `main source set with default settings`() {
@@ -178,23 +183,6 @@ class MultiplatformAndroidSourceSetLayoutV1Test {
             kotlinAndroidMain.kotlin.srcDirs.containsAll(setOf(project.file("fromKotlin"), project.file("fromAndroid"))),
             "Expected custom configured source directories being present on kotlin source set after evaluation"
         )
-    }
-
-    @Test
-    fun `AndroidSourceSet#kotlinSourceSet convention`() {
-        kotlin.androidTarget()
-
-        fun AndroidSourceSet.kotlinSourceSetByConvention(): KotlinSourceSet =
-            (this as HasConvention).convention.plugins["kotlin"] as KotlinSourceSet
-
-        val main = android.sourceSets.getByName("main")
-        assertSame(kotlin.sourceSets.getByName("androidMain"), main.kotlinSourceSetByConvention())
-
-        val test = android.sourceSets.getByName("test")
-        assertSame(kotlin.sourceSets.getByName("androidTest"), test.kotlinSourceSetByConvention())
-
-        val androidTest = android.sourceSets.getByName("androidTest")
-        assertSame(kotlin.sourceSets.getByName("androidAndroidTest"), androidTest.kotlinSourceSetByConvention())
     }
 
     @Test

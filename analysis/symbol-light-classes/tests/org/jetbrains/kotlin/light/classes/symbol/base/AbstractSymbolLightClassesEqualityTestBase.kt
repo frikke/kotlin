@@ -1,53 +1,63 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.light.classes.symbol.base
 
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.SimpleModificationTracker
 import com.intellij.psi.JavaElementVisitor
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiEnumConstant
-import org.jetbrains.kotlin.analysis.providers.createAllLibrariesModificationTracker
-import org.jetbrains.kotlin.analysis.providers.createProjectWideOutOfBlockModificationTracker
+import org.jetbrains.kotlin.analysis.api.platform.modification.publishGlobalModuleStateModificationEvent
+import org.jetbrains.kotlin.analysis.api.platform.modification.publishGlobalSourceOutOfBlockModificationEvent
+import org.jetbrains.kotlin.analysis.test.framework.projectStructure.KtTestModule
 import org.jetbrains.kotlin.analysis.test.framework.test.configurators.AnalysisApiTestConfigurator
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.AssertionsService
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.assertions
+import org.jetbrains.kotlin.test.testFramework.runWriteAction
 import java.nio.file.Path
 
 abstract class AbstractSymbolLightClassesEqualityTestBase(
     configurator: AnalysisApiTestConfigurator,
     override val currentExtension: String,
-    override val isTestAgainstCompiledCode: Boolean
+    override val isTestAgainstCompiledCode: Boolean,
 ) : AbstractSymbolLightClassesTestBase(configurator) {
-    override fun getRenderResult(ktFile: KtFile, ktFiles: List<KtFile>, testDataFile: Path, module: TestModule, project: Project): String {
+    override fun getRenderResult(
+        ktFile: KtFile,
+        ktFiles: List<KtFile>,
+        testDataFile: Path,
+        module: KtTestModule,
+        project: Project,
+    ): String {
         throw IllegalStateException("This test is not rendering light elements")
     }
 
-    final override fun doTestByFileStructure(ktFiles: List<KtFile>, module: TestModule, testServices: TestServices) {
+    final override fun doLightClassTest(ktFiles: List<KtFile>, module: KtTestModule, testServices: TestServices) {
         val lightClasses = lightClassesToCheck(ktFiles, module, testServices)
         if (lightClasses.isEmpty()) return
-        val project = lightClasses.first().project
-        val modificationTracker = if (isTestAgainstCompiledCode) {
-            project.createAllLibrariesModificationTracker()
-        } else {
-            project.createProjectWideOutOfBlockModificationTracker()
-        } as SimpleModificationTracker
 
-        val testVisitor = createTestVisitor(modificationTracker, testServices.assertions)
+        val testVisitor = createTestVisitor(lightClasses.first().project, testServices.assertions)
         for (lightClass in lightClasses) {
             lightClass.accept(testVisitor)
         }
     }
 
+    private fun invalidateCaches(project: Project) {
+        runWriteAction {
+            if (isTestAgainstCompiledCode) {
+                project.publishGlobalModuleStateModificationEvent()
+            } else {
+                project.publishGlobalSourceOutOfBlockModificationEvent()
+            }
+        }
+    }
+
     private fun createTestVisitor(
-        modificationTracker: SimpleModificationTracker,
+        project: Project,
         assertions: AssertionsService,
     ): PsiElementVisitor = object : JavaElementVisitor() {
         override fun visitClass(aClass: PsiClass) {
@@ -70,7 +80,7 @@ abstract class AbstractSymbolLightClassesEqualityTestBase(
             comparator: (before: R, after: R) -> Unit = ::assertElementEquals,
         ) {
             val before = element.accessor()
-            modificationTracker.incModificationCount()
+            invalidateCaches(project)
 
             val after = element.accessor()
             comparator(before, after)
@@ -106,5 +116,5 @@ abstract class AbstractSymbolLightClassesEqualityTestBase(
         }
     }
 
-    abstract fun lightClassesToCheck(ktFiles: List<KtFile>, module: TestModule, testServices: TestServices): Collection<PsiClass>
+    abstract fun lightClassesToCheck(ktFiles: List<KtFile>, module: KtTestModule, testServices: TestServices): Collection<PsiClass>
 }

@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.parseCommandLineArguments
 import org.jetbrains.kotlin.incremental.testingUtils.*
 import org.jetbrains.kotlin.incremental.utils.TestCompilationResult
+import org.jetbrains.kotlin.test.InTextDirectivesUtils
 import org.jetbrains.kotlin.test.testFramework.KtUsefulTestCase
 import org.junit.Assert
 import java.io.File
@@ -56,9 +57,11 @@ abstract class AbstractIncrementalCompilerRunnerTestBase<Args : CommonCompilerAr
             parseCommandLineArguments(parseAdditionalArgs(testDir), this)
         }
 
+    open fun failFile(testDir: File): File = testDir.resolve(FAIL_FILE_NAME)
+
     fun doTest(path: String) {
         val testDir = File(path)
-        val failFile = testDir.resolve(FAIL_FILE_NAME)
+        val failFile = failFile(testDir)
         var testPassed = false
         try {
             doTestImpl(testDir)
@@ -69,13 +72,18 @@ abstract class AbstractIncrementalCompilerRunnerTestBase<Args : CommonCompilerAr
             }
         }
         if (testPassed && failFile.exists()) {
-            fail("Test is successful and $FAIL_FILE_NAME can be removed")
+            fail("Test is successful and ${failFile.name} can be removed")
         }
     }
 
     private fun doTestImpl(testDir: File) {
         fun Iterable<File>.relativePaths() =
             map { it.relativeTo(workingDir).path.replace('\\', '/') }
+
+        val reportInternalCompilerErrors =
+            File(testDir, InTextDirectivesUtils.DIRECTIVES_FILE_NAME).takeIf { it.exists() && it.isFile }?.let {
+                InTextDirectivesUtils.isDirectiveDefined(it.readText(), "// HIDE_INTERNAL_COMPILER_ERRORS")
+            } != true
 
         val srcDir = File(workingDir, "src").apply { mkdirs() }
         val cacheDir = File(workingDir, "incremental-data").apply { mkdirs() }
@@ -138,7 +146,12 @@ abstract class AbstractIncrementalCompilerRunnerTestBase<Args : CommonCompilerAr
                 )
             )
             actualSB.appendLine(stepLogAsString(step, compiledSources.relativePaths(), compileErrors))
-            actualSBWithoutErrors.appendLine(stepLogAsString(step, compiledSources.relativePaths(), compileErrors, includeErrors = false))
+            actualSBWithoutErrors.appendLine(
+                stepLogAsString(
+                    step, compiledSources.relativePaths(), compileErrors,
+                    includeErrors = reportInternalCompilerErrors && (lastExitCode == ExitCode.INTERNAL_ERROR)
+                )
+            )
             step++
         }
 
@@ -147,7 +160,7 @@ abstract class AbstractIncrementalCompilerRunnerTestBase<Args : CommonCompilerAr
                 // JPS logs should be updated carefully, because standalone logs are a bit different (no removed classes, iterations, etc)
                 Assert.assertEquals(expectedSB.toString(), actualSB.toString())
             } else {
-                KtUsefulTestCase.assertSameLinesWithFile(buildLogFile.canonicalPath, actualSB.toString(), false)
+                KtUsefulTestCase.assertSameLinesWithFile(buildLogFile.absolutePath, actualSB.toString(), false)
             }
         }
 

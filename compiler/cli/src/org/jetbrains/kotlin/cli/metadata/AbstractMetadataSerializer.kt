@@ -11,6 +11,8 @@ import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.metadata.builtins.BuiltInsBinaryVersion
+import org.jetbrains.kotlin.util.PhaseType
+import org.jetbrains.kotlin.util.tryMeasurePhaseTime
 import java.io.File
 
 abstract class AbstractMetadataSerializer<T>(
@@ -18,28 +20,34 @@ abstract class AbstractMetadataSerializer<T>(
     val environment: KotlinCoreEnvironment,
     definedMetadataVersion: BuiltInsBinaryVersion? = null
 ) {
-    protected val metadataVersion =
+    protected val metadataVersion: BuiltInsBinaryVersion =
         definedMetadataVersion ?: configuration.get(CommonConfigurationKeys.METADATA_VERSION) as? BuiltInsBinaryVersion
         ?: BuiltInsBinaryVersion.INSTANCE
 
-    fun analyzeAndSerialize() {
+    fun analyzeAndSerialize(): OutputInfo? {
         val destDir = environment.destDir
         if (destDir == null) {
             val configuration = environment.configuration
-            val messageCollector = configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY)
+            val messageCollector = configuration.getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY)
             messageCollector.report(CompilerMessageSeverity.ERROR, "Specify destination via -d")
-            return
+            return null
         }
 
-        val analysisResult = analyze() ?: return
+        val analysisResult = analyze() ?: return null
 
         val performanceManager = environment.configuration.getNotNull(CLIConfigurationKeys.PERF_MANAGER)
-        performanceManager.notifyGenerationStarted()
-        serialize(analysisResult, destDir)
-        performanceManager.notifyGenerationFinished()
+        return performanceManager.tryMeasurePhaseTime(PhaseType.Backend) {
+            serialize(analysisResult, destDir)
+        }
     }
 
     protected abstract fun analyze(): T?
 
-    protected abstract fun serialize(analysisResult: T, destDir: File)
+    /**
+     * @return number of written bytes and files
+     * The return value is optional and might be omitted in implementations
+     */
+    protected abstract fun serialize(analysisResult: T, destDir: File): OutputInfo?
+
+    data class OutputInfo(val totalSize: Int, val totalFiles: Int)
 }

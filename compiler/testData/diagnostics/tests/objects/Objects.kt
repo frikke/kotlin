@@ -1,4 +1,4 @@
-// COMPARE_WITH_LIGHT_TREE
+// RUN_PIPELINE_TILL: FRONTEND
 package toplevelObjectDeclarations
 
 open class Foo(y: Int) {

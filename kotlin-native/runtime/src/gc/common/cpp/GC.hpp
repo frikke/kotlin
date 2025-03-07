@@ -5,13 +5,23 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
+#include <memory>
+
+#include "ExtraObjectData.hpp"
 #include "GCScheduler.hpp"
-#include "Memory.h"
-#include "Types.h"
+#include "concurrent/Mutex.hpp"
+#include "ReferenceOps.hpp"
+#include "RunLoopFinalizerProcessor.hpp"
+#include "TypeLayout.hpp"
 #include "Utils.hpp"
-#include "std_support/Memory.hpp"
 
 namespace kotlin {
+
+namespace alloc {
+class Allocator;
+}
 
 namespace mm {
 class ThreadData;
@@ -32,52 +42,92 @@ public:
 
         Impl& impl() noexcept { return *impl_; }
 
-        void SafePointFunctionPrologue() noexcept;
-        void SafePointLoopBody() noexcept;
-
-        void Schedule() noexcept;
-        void ScheduleAndWaitFullGC() noexcept;
-        void ScheduleAndWaitFullGCWithFinalizers() noexcept;
-
-        void Publish() noexcept;
-        void ClearForTests() noexcept;
-
-        ObjHeader* CreateObject(const TypeInfo* typeInfo) noexcept;
-        ArrayHeader* CreateArray(const TypeInfo* typeInfo, uint32_t elements) noexcept;
-
-        void OnStoppedForGC() noexcept;
         void OnSuspendForGC() noexcept;
 
+        void safePoint() noexcept;
+
+        void onThreadRegistration() noexcept;
+
+        void onAllocation(ObjHeader* object) noexcept;
+
     private:
-        std_support::unique_ptr<Impl> impl_;
+        std::unique_ptr<Impl> impl_;
     };
 
-    GC() noexcept;
+    // Header to be placed before each heap object. GC will use this to keep its data if needed.
+    // This is used via `type_layout::descriptor_t`, which is specialized below.
+    // If GC doesn't need any data, it can make `size()` return 0 and `alignment()`
+    // return 1.
+    // Note: GC does not deinitialize `ObjectData`, so the implementations must ensure that
+    //       the destructor is a trivial one.
+    class ObjectData;
+
+    GC(alloc::Allocator& allocator, gcScheduler::GCScheduler& gcScheduler) noexcept;
     ~GC();
 
     Impl& impl() noexcept { return *impl_; }
 
-    static size_t GetAllocatedHeapSize(ObjHeader* object) noexcept;
-
-    size_t GetTotalHeapObjectsSizeBytes() const noexcept;
-
-    gc::GCSchedulerConfig& gcSchedulerConfig() noexcept;
-
     void ClearForTests() noexcept;
-
-    void StartFinalizerThreadIfNeeded() noexcept;
-    void StopFinalizerThreadIfRunning() noexcept;
-    bool FinalizersThreadIsRunning() noexcept;
 
     static void processObjectInMark(void* state, ObjHeader* object) noexcept;
     static void processArrayInMark(void* state, ArrayHeader* array) noexcept;
-    static void processFieldInMark(void* state, ObjHeader* field) noexcept;
+
+    // TODO: These should exist only in the scheduler.
+    int64_t Schedule() noexcept;
+    void WaitFinished(int64_t epoch) noexcept;
+    void WaitFinalizers(int64_t epoch) noexcept;
+
+    auto gcLock() noexcept {
+        return std::unique_lock{gcLock_};
+    }
+
+    void onEpochFinalized(int64_t epoch) noexcept;
 
 private:
-    std_support::unique_ptr<Impl> impl_;
+    std::unique_ptr<Impl> impl_;
+    ThreadStateAware<std::mutex> gcLock_{};
 };
 
-inline constexpr bool kSupportsMultipleMutators = true;
+void beforeHeapRefUpdate(mm::DirectRefAccessor ref, ObjHeader* value, bool loadAtomic) noexcept;
+OBJ_GETTER(weakRefReadBarrier, std_support::atomic_ref<ObjHeader*> weakReferee) noexcept;
+
+bool isMarked(ObjHeader* object) noexcept;
+
+// This will drop the mark bit if it was set and return `true`.
+// If the mark bit was unset, this will return `false`.
+bool tryResetMark(GC::ObjectData& objectData) noexcept;
+
+namespace barriers {
+
+class ExternalRCRefReleaseGuard : MoveOnly {
+    class Impl;
+public:
+    static bool isNoop();
+
+    ExternalRCRefReleaseGuard(mm::DirectRefAccessor ref) noexcept;
+    ExternalRCRefReleaseGuard(ExternalRCRefReleaseGuard&& other) noexcept;
+    ~ExternalRCRefReleaseGuard() noexcept;
+
+    ExternalRCRefReleaseGuard& operator=(ExternalRCRefReleaseGuard&& other) noexcept;
+
+private:
+    FlatPImpl<Impl, 32> impl_;
+};
+
+} // namespace barriers
 
 } // namespace gc
+
+template <>
+struct type_layout::descriptor<gc::GC::ObjectData> {
+    struct type {
+        using value_type = gc::GC::ObjectData;
+
+        static uint64_t size() noexcept;
+        static size_t alignment() noexcept;
+
+        static value_type* construct(uint8_t* ptr) noexcept;
+    };
+};
+
 } // namespace kotlin

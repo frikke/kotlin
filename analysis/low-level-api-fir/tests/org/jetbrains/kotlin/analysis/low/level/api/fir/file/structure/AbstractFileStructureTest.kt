@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -14,24 +14,26 @@ import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.getFirResolveSession
 import org.jetbrains.kotlin.analysis.low.level.api.fir.isSourceSession
 import org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirResolvableModuleSession
-import org.jetbrains.kotlin.analysis.low.level.api.fir.test.base.AbstractLowLevelApiSingleFileTest
 import org.jetbrains.kotlin.analysis.low.level.api.fir.test.configurators.AnalysisApiFirOutOfContentRootTestConfigurator
+import org.jetbrains.kotlin.analysis.low.level.api.fir.test.configurators.AnalysisApiFirScriptTestConfigurator
 import org.jetbrains.kotlin.analysis.low.level.api.fir.test.configurators.AnalysisApiFirSourceTestConfigurator
-import org.jetbrains.kotlin.analysis.project.structure.ProjectStructureProvider
+import org.jetbrains.kotlin.analysis.api.platform.projectStructure.KotlinProjectStructureProvider
+import org.jetbrains.kotlin.analysis.test.framework.base.AbstractAnalysisApiBasedTest
+import org.jetbrains.kotlin.analysis.test.framework.projectStructure.KtTestModule
+import org.jetbrains.kotlin.fir.psi
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.forEachDescendantOfType
+import org.jetbrains.kotlin.psi.psiUtil.getNextSiblingIgnoringWhitespaceAndComments
 import org.jetbrains.kotlin.test.KotlinTestUtils
-import org.jetbrains.kotlin.test.services.TestModuleStructure
 import org.jetbrains.kotlin.test.services.TestServices
 
-abstract class AbstractFileStructureTest : AbstractLowLevelApiSingleFileTest() {
-    override fun doTestByFileStructure(ktFile: KtFile, moduleStructure: TestModuleStructure, testServices: TestServices) {
-        val fileStructure = ktFile.getFileStructure()
-        val allStructureElements = fileStructure.getAllStructureElements(ktFile)
-        val declarationToStructureElement = allStructureElements.associateBy { it.psi }
-
+abstract class AbstractFileStructureTest : AbstractAnalysisApiBasedTest() {
+    override fun doTestByMainFile(mainFile: KtFile, mainModule: KtTestModule, testServices: TestServices) {
+        val fileStructure = mainFile.getFileStructure()
+        val allStructureElements = fileStructure.getAllStructureElements(mainFile)
+        val declarationToStructureElement = allStructureElements.associateBy { it.declaration.psi }
         val elementToComment = mutableMapOf<PsiElement, String>()
-        ktFile.forEachDescendantOfType<KtDeclaration> { ktDeclaration ->
+        mainFile.forEachDescendantOfType<KtDeclaration> { ktDeclaration ->
             val structureElement = declarationToStructureElement[ktDeclaration] ?: return@forEachDescendantOfType
             val comment = structureElement.createComment()
             when (ktDeclaration) {
@@ -66,20 +68,29 @@ abstract class AbstractFileStructureTest : AbstractLowLevelApiSingleFileTest() {
                 is KtClassInitializer -> {
                     elementToComment[ktDeclaration.openBraceNode!!] = comment
                 }
+                is KtScript -> {
+                    elementToComment[mainFile.importList!!] = comment
+                }
+                is KtScriptInitializer -> {
+                    elementToComment[ktDeclaration.body!!]
+                }
+                is KtDestructuringDeclaration, is KtDestructuringDeclarationEntry -> {
+                    elementToComment[ktDeclaration] = comment
+                }
                 else -> error("Unsupported declaration $ktDeclaration")
             }
         }
 
-        PsiTreeUtil.getChildrenOfTypeAsList(ktFile, KtModifierList::class.java).forEach {
-            if (it.nextSibling is PsiErrorElement) {
-                val structureElement = declarationToStructureElement[ktFile] ?: return@forEach
+        PsiTreeUtil.getChildrenOfTypeAsList(mainFile, KtModifierList::class.java).forEach {
+            if (it.getNextSiblingIgnoringWhitespaceAndComments() is PsiErrorElement) {
+                val structureElement = declarationToStructureElement[it] ?: return@forEach
                 val comment = structureElement.createComment()
                 elementToComment[it] = comment
             }
         }
 
         val text = buildString {
-            ktFile.accept(object : PsiElementVisitor() {
+            mainFile.accept(object : PsiElementVisitor() {
                 override fun visitElement(element: PsiElement) {
                     if (element is LeafPsiElement) {
                         append(element.text)
@@ -102,7 +113,7 @@ abstract class AbstractFileStructureTest : AbstractLowLevelApiSingleFileTest() {
     }
 
     private fun KtFile.getFileStructure(): FileStructure {
-        val module = ProjectStructureProvider.getModule(project, this, contextualModule = null)
+        val module = KotlinProjectStructureProvider.getModule(project, this, useSiteModule = null)
         val moduleFirResolveSession = module.getFirResolveSession(project)
         check(moduleFirResolveSession.isSourceSession)
         val session = moduleFirResolveSession.getSessionFor(module) as LLFirResolvableModuleSession
@@ -121,5 +132,9 @@ abstract class AbstractSourceFileStructureTest : AbstractFileStructureTest() {
 }
 
 abstract class AbstractOutOfContentRootFileStructureTest : AbstractFileStructureTest() {
-    override val configurator = AnalysisApiFirOutOfContentRootTestConfigurator
+    override val configurator get() = AnalysisApiFirOutOfContentRootTestConfigurator
+}
+
+abstract class AbstractScriptFileStructureTest : AbstractFileStructureTest() {
+    override val configurator = AnalysisApiFirScriptTestConfigurator(analyseInDependentSession = false)
 }

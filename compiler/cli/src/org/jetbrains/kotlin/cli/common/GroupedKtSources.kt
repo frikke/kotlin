@@ -14,8 +14,10 @@ import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.cli.jvm.compiler.VfsBasedProjectEnvironment
 import org.jetbrains.kotlin.cli.jvm.compiler.forAllFiles
+import org.jetbrains.kotlin.cli.jvm.compiler.getSourceRootsCheckingForDuplicates
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
+import org.jetbrains.kotlin.config.dontSortSourceFiles
 import org.jetbrains.kotlin.idea.KotlinFileType
 import java.util.TreeSet
 
@@ -26,7 +28,12 @@ data class GroupedKtSources(
     val platformSources: Collection<KtSourceFile>,
     val commonSources: Collection<KtSourceFile>,
     val sourcesByModuleName: Map<String, Set<KtSourceFile>>,
-)
+) {
+    fun isEmpty(): Boolean = platformSources.isEmpty() && commonSources.isEmpty()
+}
+
+val GroupedKtSources.allFiles: List<KtSourceFile>
+    get() = platformSources + commonSources
 
 fun collectSources(
     compilerConfiguration: CompilerConfiguration,
@@ -47,8 +54,14 @@ fun collectSources(
     project: Project,
     messageCollector: MessageCollector
 ): GroupedKtSources {
-    val platformSources = TreeSet(ktSourceFileComparator)
-    val commonSources = TreeSet(ktSourceFileComparator)
+    fun createSet(): MutableSet<KtSourceFile> = if (compilerConfiguration.dontSortSourceFiles) {
+        mutableSetOf()
+    } else {
+        TreeSet(ktSourceFileComparator)
+    }
+
+    val platformSources = createSet()
+    val commonSources = createSet()
     val sourcesByModuleName = mutableMapOf<String, MutableSet<KtSourceFile>>()
 
     // TODO: the scripts checking should be part of the scripting plugin functionality, as it is implemented now in ScriptingProcessSourcesBeforeCompilingExtension
@@ -57,7 +70,7 @@ fun collectSources(
             compilerConfiguration.getBoolean(CommonConfigurationKeys.USE_LIGHT_TREE)
     var skipScriptsInLtModeWarning = false
 
-    compilerConfiguration.kotlinSourceRoots.forAllFiles(
+    getSourceRootsCheckingForDuplicates(compilerConfiguration, messageCollector).forAllFiles(
         compilerConfiguration,
         project
     ) { virtualFile, isCommon, moduleName ->

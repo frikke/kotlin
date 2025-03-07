@@ -12,11 +12,14 @@ import org.jetbrains.kotlin.fir.caches.createCache
 import org.jetbrains.kotlin.fir.caches.firCachesFactory
 import org.jetbrains.kotlin.fir.caches.getValue
 import org.jetbrains.kotlin.fir.declarations.FirDeclarationOrigin
+import org.jetbrains.kotlin.fir.declarations.FirFunction
+import org.jetbrains.kotlin.fir.declarations.FirProperty
+import org.jetbrains.kotlin.fir.declarations.utils.isExpect
 import org.jetbrains.kotlin.fir.isNewPlaceForBodyGeneration
+import org.jetbrains.kotlin.fir.resolve.providers.FirCachedSymbolNamesProvider
 import org.jetbrains.kotlin.fir.resolve.providers.FirSymbolNamesProvider
 import org.jetbrains.kotlin.fir.resolve.providers.FirSymbolProvider
 import org.jetbrains.kotlin.fir.resolve.providers.FirSymbolProviderInternals
-import org.jetbrains.kotlin.fir.resolve.providers.FirCachedSymbolNamesProvider
 import org.jetbrains.kotlin.fir.scopes.FirKotlinScopeProvider
 import org.jetbrains.kotlin.fir.symbols.impl.*
 import org.jetbrains.kotlin.metadata.ProtoBuf
@@ -25,21 +28,33 @@ import org.jetbrains.kotlin.name.*
 import org.jetbrains.kotlin.serialization.SerializerExtensionProtocol
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
 import org.jetbrains.kotlin.serialization.deserialization.getName
+import org.jetbrains.kotlin.utils.mapToSetOrEmpty
 import java.nio.file.Path
+import kotlin.io.path.exists
 
 class PackagePartsCacheData(
     val proto: ProtoBuf.Package,
     val context: FirDeserializationContext,
+    val extra: Extra? = null,
 ) {
-    val topLevelFunctionNameIndex by lazy {
+    /**
+     * Marker interface for 'extra' data that can be attached to a given [PackagePartsCacheData].
+     * Example: This can be used by a [FirSymbolProvider] to attach data (like the library that this package part came from) to
+     * this particular package
+     *
+     * @see PackagePartsCacheData.extra
+     */
+    interface Extra
+
+    val topLevelFunctionNameIndex: Map<Name, List<Int>> by lazy {
         proto.functionList.withIndex()
             .groupBy({ context.nameResolver.getName(it.value.name) }) { (index) -> index }
     }
-    val topLevelPropertyNameIndex by lazy {
+    val topLevelPropertyNameIndex: Map<Name, List<Int>> by lazy {
         proto.propertyList.withIndex()
             .groupBy({ context.nameResolver.getName(it.value.name) }) { (index) -> index }
     }
-    val typeAliasNameIndex by lazy {
+    val typeAliasNameIndex: Map<Name, List<Int>> by lazy {
         proto.typeAliasList.withIndex()
             .groupBy({ context.nameResolver.getName(it.value.name) }) { (index) -> index }
     }
@@ -60,11 +75,11 @@ abstract class LibraryPathFilter {
         override fun accepts(path: Path?): Boolean {
             if (path == null) return false
             val isPathAbsolute = path.isAbsolute
-            val absolutePath by lazy(LazyThreadSafetyMode.NONE) { path.toAbsolutePath() }
+            val realPath by lazy(LazyThreadSafetyMode.NONE) { path.toRealPath() }
             return libs.any {
                 when {
-                    it.isAbsolute && !isPathAbsolute -> absolutePath.startsWith(it)
-                    !it.isAbsolute && isPathAbsolute -> path.startsWith(it.toAbsolutePath())
+                    it.isAbsolute && !isPathAbsolute -> realPath.startsWith(it)
+                    !it.isAbsolute && isPathAbsolute && it.exists() -> path.startsWith(it.toRealPath())
                     else -> path.startsWith(it)
                 }
             }
@@ -89,28 +104,36 @@ abstract class AbstractFirDeserializedSymbolProvider(
      * [packageNamesForNonClassDeclarations] might contain names of packages containing type aliases, on top of packages containing
      * callables, so it's not the same as `symbolNamesProvider.getPackageNamesWithTopLevelCallables` and cannot be replaced by it.
      */
-    private val packageNamesForNonClassDeclarations: Set<String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+    private val packageNamesForNonClassDeclarations: Set<String>? by lazy(LazyThreadSafetyMode.PUBLICATION) {
         computePackageSetWithNonClassDeclarations()
     }
 
     override val symbolNamesProvider: FirSymbolNamesProvider = object : FirCachedSymbolNamesProvider(session) {
-        override fun computeTopLevelClassifierNames(packageFqName: FqName): Set<String>? {
-            val classesInPackage = knownTopLevelClassesInPackage(packageFqName) ?: return null
+        override fun computePackageNames(): Set<String>? = null
 
-            if (packageFqName.asString() !in packageNamesForNonClassDeclarations) return classesInPackage
+        override val hasSpecificClassifierPackageNamesComputation: Boolean get() = false
+
+        override fun computePackageNamesWithTopLevelClassifiers(): Set<String>? = null
+
+        override fun computeTopLevelClassifierNames(packageFqName: FqName): Set<Name>? {
+            val classesInPackage = knownTopLevelClassesInPackage(packageFqName)?.mapToSetOrEmpty { Name.identifier(it) } ?: return null
+
+            packageNamesForNonClassDeclarations?.let { if (packageFqName.asString() !in it) return classesInPackage }
 
             val typeAliasNames = typeAliasesNamesByPackage.getValue(packageFqName)
             if (typeAliasNames.isEmpty()) return classesInPackage
 
             return buildSet {
                 addAll(classesInPackage)
-                typeAliasNames.mapTo(this) { it.asString() }
+                addAll(typeAliasNames)
             }
         }
 
-        override fun getPackageNamesWithTopLevelCallables(): Set<String> = packageNamesForNonClassDeclarations
+        override val hasSpecificCallablePackageNamesComputation: Boolean get() = true
 
-        override fun computePackageNamesWithTopLevelCallables(): Set<String> = packageNamesForNonClassDeclarations
+        override fun getPackageNamesWithTopLevelCallables(): Set<String>? = packageNamesForNonClassDeclarations
+
+        override fun computePackageNamesWithTopLevelCallables(): Set<String>? = packageNamesForNonClassDeclarations
 
         override fun computeTopLevelCallableNames(packageFqName: FqName): Set<Name> =
             getPackageParts(packageFqName).flatMapTo(mutableSetOf()) {
@@ -155,8 +178,9 @@ abstract class AbstractFirDeserializedSymbolProvider(
     // Return full package names that might be not empty (have some non-class declarations) in this provider
     // In JVM, it's expensive to compute all the packages that might contain a Java class among dependencies
     // But, as we have all the metadata, we may be sure about top-level callables and type aliases
-    // This method should only be used for sake of optimization to avoid having too many empty-list/null values in our caches
-    protected abstract fun computePackageSetWithNonClassDeclarations(): Set<String>
+    // This method should only be used for sake of optimization to avoid having too many empty-list/null values in our caches;
+    // it can return null if computing the set is too expensive.
+    protected abstract fun computePackageSetWithNonClassDeclarations(): Set<String>?
 
     protected abstract fun knownTopLevelClassesInPackage(packageFqName: FqName): Set<String>?
 
@@ -180,7 +204,8 @@ abstract class AbstractFirDeserializedSymbolProvider(
             val annotationDeserializer: AbstractAnnotationDeserializer?,
             val moduleData: FirModuleData?,
             val sourceElement: DeserializedContainerSource?,
-            val classPostProcessor: DeserializedClassPostProcessor?
+            val classPostProcessor: DeserializedClassPostProcessor?,
+            val flexibleTypeFactory: FirTypeDeserializer.FlexibleTypeFactory,
         ) : ClassMetadataFindResult()
     }
 
@@ -193,7 +218,7 @@ abstract class AbstractFirDeserializedSymbolProvider(
             val ids = part.typeAliasNameIndex[classId.shortClassName]
             if (ids == null || ids.isEmpty()) return@firstNotNullOfOrNull null
             val aliasProto = part.proto.getTypeAlias(ids.single())
-            val postProcessor: DeserializedTypeAliasPostProcessor = { part.context.memberDeserializer.loadTypeAlias(aliasProto, it) }
+            val postProcessor: DeserializedTypeAliasPostProcessor = { part.context.memberDeserializer.loadTypeAlias(aliasProto, kotlinScopeProvider, it) }
             FirTypeAliasSymbol(classId) to postProcessor
         } ?: (null to null)
     }
@@ -216,6 +241,7 @@ abstract class AbstractFirDeserializedSymbolProvider(
                     session,
                     moduleData,
                     annotationDeserializer,
+                    result.flexibleTypeFactory,
                     kotlinScopeProvider,
                     serializerExtensionProtocol,
                     parentContext,
@@ -234,10 +260,13 @@ abstract class AbstractFirDeserializedSymbolProvider(
         return getPackageParts(callableId.packageName).flatMap { part ->
             val functionIds = part.topLevelFunctionNameIndex[callableId.callableName] ?: return@flatMap emptyList()
             functionIds.map {
-                part.context.memberDeserializer.loadFunction(
+                val proto = part.proto.getFunction(it)
+                val fir = part.context.memberDeserializer.loadFunction(
                     part.proto.getFunction(it),
                     deserializationOrigin = defaultDeserializationOrigin
-                ).symbol
+                )
+                loadFunctionExtensions(part, proto, fir)
+                fir.symbol
             }
         }
     }
@@ -246,9 +275,22 @@ abstract class AbstractFirDeserializedSymbolProvider(
         return getPackageParts(callableId.packageName).flatMap { part ->
             val propertyIds = part.topLevelPropertyNameIndex[callableId.callableName] ?: return@flatMap emptyList()
             propertyIds.map {
-                part.context.memberDeserializer.loadProperty(part.proto.getProperty(it)).symbol
+                val proto = part.proto.getProperty(it)
+                val fir = part.context.memberDeserializer.loadProperty(proto)
+                loadPropertyExtensions(part, proto, fir)
+                fir.symbol
             }
         }
+    }
+
+    open fun loadFunctionExtensions(
+        packagePart: PackagePartsCacheData, proto: ProtoBuf.Function, fir: FirFunction,
+    ) {
+    }
+
+    open fun loadPropertyExtensions(
+        packagePart: PackagePartsCacheData, proto: ProtoBuf.Property, fir: FirProperty,
+    ) {
     }
 
     private fun getPackageParts(packageFqName: FqName): Collection<PackagePartsCacheData> =
@@ -280,7 +322,7 @@ abstract class AbstractFirDeserializedSymbolProvider(
         // Don't actually query FirCache when we're sure there are no relevant value
         // It helps to decrease the size of a cache thus leading to better query time
         val packageFqName = classId.packageFqName
-        if (packageFqName.asString() !in packageNamesForNonClassDeclarations) return null
+        packageNamesForNonClassDeclarations?.let { if (packageFqName.asString() !in it) return null }
         if (classId.shortClassName !in typeAliasesNamesByPackage.getValue(packageFqName)) return null
 
         return typeAliasCache.getValue(classId)
@@ -313,6 +355,25 @@ abstract class AbstractFirDeserializedSymbolProvider(
     }
 
     override fun getClassLikeSymbolByClassId(classId: ClassId): FirClassLikeSymbol<*>? {
-        return getClass(classId) ?: getTypeAlias(classId)
+        /**
+         * FIR has a contract that providers should return the first classifier with required classId they found.
+         *
+         * But on the other hand, there is a contract (from pre 1.0 times), that classes have more priority than typealiases,
+         *   when search is performed in binary dependencies.
+         *
+         * And the second contract breaks the first in case, when there are two parts of a MPP library:
+         * - one is platform one and contains `actual typealias`
+         * - second is common one and contains `expect class`
+         *
+         * In this case, by the first contract, provider will return `expect class`, but FIR expects that `actual typealias` will be found
+         * So, to avoid this problem, we need to search for typealias in case, when `expect class` was found
+         *
+         * For details see KT-65840
+         */
+        val clazz = getClass(classId)
+        if (clazz != null && !clazz.isExpect) {
+            return clazz
+        }
+        return getTypeAlias(classId) ?: clazz
     }
 }

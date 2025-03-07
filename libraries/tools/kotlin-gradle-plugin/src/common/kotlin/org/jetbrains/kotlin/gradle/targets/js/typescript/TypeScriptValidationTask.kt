@@ -7,36 +7,42 @@ package org.jetbrains.kotlin.gradle.targets.js.typescript
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.*
+import org.gradle.process.ExecOperations
+import org.gradle.work.DisableCachingByDefault
 import org.gradle.work.NormalizeLineEndings
+import org.jetbrains.kotlin.gradle.InternalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.internal.execWithProgress
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinJsCompilation
+import org.jetbrains.kotlin.gradle.internal.newBuildOpLogger
+import org.jetbrains.kotlin.gradle.targets.js.NpmVersions
 import org.jetbrains.kotlin.gradle.targets.js.RequiredKotlinJsDependency
 import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinIrJsGeneratedTSValidationStrategy
-import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNodeJsExtension
+import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrCompilation
 import org.jetbrains.kotlin.gradle.targets.js.npm.RequiresNpmDependencies
 import org.jetbrains.kotlin.gradle.targets.js.npm.npmProject
 import javax.inject.Inject
 
+@DisableCachingByDefault
 abstract class TypeScriptValidationTask
+@InternalKotlinGradlePluginApi
 @Inject
 constructor(
     @Internal
     @Transient
-    override val compilation: KotlinJsCompilation
+    final override val compilation: KotlinJsIrCompilation,
+    private val execOps: ExecOperations,
+    private val objects: ObjectFactory,
 ) : DefaultTask(), RequiresNpmDependencies {
     private val npmProject = compilation.npmProject
 
     @get:Internal
-    @Transient
-    protected val nodeJs = project.rootProject.kotlinNodeJsExtension
-
-    private val versions = nodeJs.versions
+    internal abstract val versions: Property<NpmVersions>
 
     @get:Internal
     override val requiredNpmDependencies: Set<RequiredKotlinJsDependency>
-        get() = setOf(versions.typescript)
+        get() = setOf(versions.get().typescript)
 
     @get:SkipWhenEmpty
     @get:NormalizeLineEndings
@@ -60,7 +66,8 @@ constructor(
 
         if (files.isEmpty()) return
 
-        val result = services.execWithProgress("typescript") {
+        val progressLogger = objects.newBuildOpLogger()
+        val result = execWithProgress(progressLogger, "typescript", execOps) {
             npmProject.useTool(it, "typescript/bin/tsc", listOf(), listOf("--noEmit"))
         }
 

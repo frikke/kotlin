@@ -5,8 +5,10 @@
 
 package org.jetbrains.kotlin.fir.analysis.jvm.checkers.expression
 
+import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.context.findClosest
 import org.jetbrains.kotlin.fir.analysis.checkers.explicitReceiverIsNotSuperReference
@@ -19,11 +21,13 @@ import org.jetbrains.kotlin.fir.expressions.FirQualifiedAccessExpression
 import org.jetbrains.kotlin.fir.java.jvmDefaultModeState
 import org.jetbrains.kotlin.fir.references.toResolvedCallableSymbol
 import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
-import org.jetbrains.kotlin.fir.symbols.impl.ANONYMOUS_CLASS_ID
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
+import org.jetbrains.kotlin.name.SpecialNames.ANONYMOUS_FQ_NAME
 
-object FirInterfaceDefaultMethodCallChecker : FirQualifiedAccessExpressionChecker() {
+object FirInterfaceDefaultMethodCallChecker : FirQualifiedAccessExpressionChecker(MppCheckerKind.Common) {
     override fun check(expression: FirQualifiedAccessExpression, context: CheckerContext, reporter: DiagnosticReporter) {
+        if (context.languageVersionSettings.supportsFeature(LanguageFeature.AllowSuperCallToJavaInterface)) return
+
         val symbol = expression.calleeReference.toResolvedCallableSymbol()
         val classId = symbol?.callableId?.classId ?: return
         if (classId.isLocal) return
@@ -51,7 +55,7 @@ object FirInterfaceDefaultMethodCallChecker : FirQualifiedAccessExpressionChecke
 
     private fun CheckerContext.findContainingMember(): FirCallableDeclaration? {
         return findClosest {
-            (it is FirSimpleFunction && it.symbol.callableId.classId != ANONYMOUS_CLASS_ID) || it is FirProperty
+            (it is FirSimpleFunction && it.symbol.callableId.classId?.relativeClassName != ANONYMOUS_FQ_NAME) || it is FirProperty
         }
     }
 }

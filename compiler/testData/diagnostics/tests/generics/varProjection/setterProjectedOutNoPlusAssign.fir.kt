@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -UNREACHABLE_CODE
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNREACHABLE_CODE
 interface Tr<T> {
     var v: T
 }
@@ -6,5 +7,5 @@ interface Tr<T> {
 fun test(t: Tr<out String>) {
     // resolved as t.v = t.v + null!!, where type of right operand is String,
     // so TYPE_MISMATCH: String is not <: of Captured(out String)
-    <!ASSIGNMENT_TYPE_MISMATCH!>t.v += null!!<!>
+    t.<!SETTER_PROJECTED_OUT!>v<!> += null!!
 }

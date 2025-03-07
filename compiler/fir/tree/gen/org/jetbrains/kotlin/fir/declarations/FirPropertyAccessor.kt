@@ -1,7 +1,10 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
+
+// This file was generated automatically. See compiler/fir/tree/tree-generator/Readme.md.
+// DO NOT MODIFY IT MANUALLY.
 
 package org.jetbrains.kotlin.fir.declarations
 
@@ -16,15 +19,13 @@ import org.jetbrains.kotlin.fir.symbols.impl.FirPropertyAccessorSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
 import org.jetbrains.kotlin.fir.types.ConeSimpleKotlinType
 import org.jetbrains.kotlin.fir.types.FirTypeRef
+import org.jetbrains.kotlin.fir.visitors.FirTransformer
+import org.jetbrains.kotlin.fir.visitors.FirVisitor
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
-import org.jetbrains.kotlin.fir.visitors.*
-import org.jetbrains.kotlin.fir.declarations.ResolveStateAccess
 
-/*
- * This file was generated automatically
- * DO NOT MODIFY IT MANUALLY
+/**
+ * Generated from: [org.jetbrains.kotlin.fir.tree.generator.FirTree.propertyAccessor]
  */
-
 abstract class FirPropertyAccessor : FirFunction(), FirContractDescriptionOwner, FirTypeParametersOwner {
     abstract override val source: KtSourceElement?
     abstract override val moduleData: FirModuleData
@@ -36,11 +37,11 @@ abstract class FirPropertyAccessor : FirFunction(), FirContractDescriptionOwner,
     abstract override val deprecationsProvider: DeprecationsProvider
     abstract override val containerSource: DeserializedContainerSource?
     abstract override val dispatchReceiverType: ConeSimpleKotlinType?
-    abstract override val contextReceivers: List<FirContextReceiver>
+    abstract override val contextParameters: List<FirValueParameter>
     abstract override val controlFlowGraphReference: FirControlFlowGraphReference?
     abstract override val valueParameters: List<FirValueParameter>
     abstract override val body: FirBlock?
-    abstract override val contractDescription: FirContractDescription
+    abstract override val contractDescription: FirContractDescription?
     abstract override val symbol: FirPropertyAccessorSymbol
     abstract val propertySymbol: FirPropertySymbol
     abstract val isGetter: Boolean
@@ -48,7 +49,8 @@ abstract class FirPropertyAccessor : FirFunction(), FirContractDescriptionOwner,
     abstract override val annotations: List<FirAnnotation>
     abstract override val typeParameters: List<FirTypeParameter>
 
-    override fun <R, D> accept(visitor: FirVisitor<R, D>, data: D): R = visitor.visitPropertyAccessor(this, data)
+    override fun <R, D> accept(visitor: FirVisitor<R, D>, data: D): R =
+        visitor.visitPropertyAccessor(this, data)
 
     @Suppress("UNCHECKED_CAST")
     override fun <E : FirElement, D> transform(transformer: FirTransformer<D>, data: D): E =
@@ -62,7 +64,7 @@ abstract class FirPropertyAccessor : FirFunction(), FirContractDescriptionOwner,
 
     abstract override fun replaceDeprecationsProvider(newDeprecationsProvider: DeprecationsProvider)
 
-    abstract override fun replaceContextReceivers(newContextReceivers: List<FirContextReceiver>)
+    abstract override fun replaceContextParameters(newContextParameters: List<FirValueParameter>)
 
     abstract override fun replaceControlFlowGraphReference(newControlFlowGraphReference: FirControlFlowGraphReference?)
 
@@ -70,7 +72,7 @@ abstract class FirPropertyAccessor : FirFunction(), FirContractDescriptionOwner,
 
     abstract override fun replaceBody(newBody: FirBlock?)
 
-    abstract override fun replaceContractDescription(newContractDescription: FirContractDescription)
+    abstract override fun replaceContractDescription(newContractDescription: FirContractDescription?)
 
     abstract override fun replaceAnnotations(newAnnotations: List<FirAnnotation>)
 
@@ -79,6 +81,8 @@ abstract class FirPropertyAccessor : FirFunction(), FirContractDescriptionOwner,
     abstract override fun <D> transformReturnTypeRef(transformer: FirTransformer<D>, data: D): FirPropertyAccessor
 
     abstract override fun <D> transformReceiverParameter(transformer: FirTransformer<D>, data: D): FirPropertyAccessor
+
+    abstract override fun <D> transformContextParameters(transformer: FirTransformer<D>, data: D): FirPropertyAccessor
 
     abstract override fun <D> transformValueParameters(transformer: FirTransformer<D>, data: D): FirPropertyAccessor
 

@@ -1,10 +1,13 @@
-data class A {
-  constructor(x: Int, y: Int) /* primary */ {
-    super/*Any*/()
-    /* <init>() */
-
+var fn: Function1<A, Int>
+  field = local fun <anonymous>(<destruct>: A): Int {
+    val y: Int = <destruct>.component2()
+    return 42.plus(other = y)
   }
 
+  get
+  set
+
+data class A {
   val x: Int
     field = x
     get
@@ -12,6 +15,12 @@ data class A {
   val y: Int
     field = y
     get
+
+  constructor(x: Int, y: Int) /* primary */ {
+    super/*Any*/()
+    /* <init>() */
+
+  }
 
   operator fun component1(): Int {
     return <this>.#x
@@ -32,12 +41,12 @@ data class A {
     when {
       other !is A -> return false
     }
-    val tmp0_other_with_cast: A = other as A
+    val tmp_0: A = other as A
     when {
-      EQEQ(arg0 = <this>.#x, arg1 = tmp0_other_with_cast.#x).not() -> return false
+      EQEQ(arg0 = <this>.#x, arg1 = tmp_0.#x).not() -> return false
     }
     when {
-      EQEQ(arg0 = <this>.#y, arg1 = tmp0_other_with_cast.#y).not() -> return false
+      EQEQ(arg0 = <this>.#y, arg1 = tmp_0.#y).not() -> return false
     }
     return true
   }
@@ -49,16 +58,8 @@ data class A {
   }
 
   override fun toString(): String {
-    return "A(x=" + <this>.#x + ", y=" + <this>.#y + ")"
+    return "A(" + "x=" + <this>.#x + ", " + "y=" + <this>.#y + ")"
   }
 
 }
 
-var fn: Function1<A, Int>
-  field = local fun <anonymous>(<destruct>: A): Int {
-    val y: Int = <destruct>.component2()
-    return 42.plus(other = y)
-  }
-
-  get
-  set

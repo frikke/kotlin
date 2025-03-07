@@ -5,10 +5,13 @@
 
 package org.jetbrains.kotlin.fir.scopes.impl
 
+import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.Visibilities
+import org.jetbrains.kotlin.fakeElement
 import org.jetbrains.kotlin.fir.DelegatedWrapperData
 import org.jetbrains.kotlin.fir.FirSession
+import org.jetbrains.kotlin.fir.FirSessionComponent
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.utils.classId
 import org.jetbrains.kotlin.fir.declarations.utils.modality
@@ -23,11 +26,11 @@ import org.jetbrains.kotlin.fir.symbols.impl.*
 import org.jetbrains.kotlin.fir.types.ConeClassLikeType
 import org.jetbrains.kotlin.fir.types.ConeFlexibleType
 import org.jetbrains.kotlin.fir.types.coneType
-import org.jetbrains.kotlin.fir.types.isMarkedNullable
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.StandardClassIds
+import org.jetbrains.kotlin.utils.exceptions.errorWithAttachment
 
 class FirDelegatedMemberScope(
     private val session: FirSession,
@@ -38,6 +41,7 @@ class FirDelegatedMemberScope(
 ) : FirContainingNamesAwareScope() {
     private val dispatchReceiverType = containingClass.defaultType()
     private val overrideChecker = session.firOverrideChecker
+    private val delegatedMembersFilter = session.delegatedMembersFilter
 
     override fun processFunctionsByName(name: Name, processor: (FirNamedFunctionSymbol) -> Unit) {
         declaredMemberScope.processFunctionsByName(name, processor)
@@ -53,7 +57,7 @@ class FirDelegatedMemberScope(
     private fun buildScope(delegateField: FirField): FirTypeScope? = delegateField.symbol.resolvedReturnType.scope(
         session,
         scopeSession,
-        FakeOverrideTypeCalculator.DoNothing,
+        CallableCopyTypeCalculator.Forced,
         requiredMembersPhase = null,
     )
 
@@ -79,6 +83,10 @@ class FirDelegatedMemberScope(
                 return@processor
             }
 
+            if (delegatedMembersFilter.shouldNotGenerateDelegatedMember(original.symbol)) {
+                return@processor
+            }
+
             if (declaredMemberScope.getFunctions(name).any { overrideChecker.isOverriddenFunction(it.fir, original) }) {
                 return@processor
             }
@@ -99,6 +107,8 @@ class FirDelegatedMemberScope(
                     FirDeclarationOrigin.Delegated,
                     newDispatchReceiverType = dispatchReceiverType,
                     newModality = Modality.OPEN,
+                    newSource = containingClass.source?.fakeElement(KtFakeSourceElementKind.MembersImplementedByDelegation),
+                    markAsOverride = true
                 ).apply {
                     delegatedWrapperData = DelegatedWrapperData(functionSymbol.fir, containingClass.symbol.toLookupTag(), delegateField)
                 }.symbol
@@ -139,6 +149,10 @@ class FirDelegatedMemberScope(
             }
 
             if (propertySymbol.modality == Modality.FINAL || propertySymbol.visibility == Visibilities.Private) {
+                return@processor
+            }
+
+            if (delegatedMembersFilter.shouldNotGenerateDelegatedMember(propertySymbol)) {
                 return@processor
             }
 
@@ -199,6 +213,17 @@ class FirDelegatedMemberScope(
 
     override fun getCallableNames(): Set<Name> = callableNamesLazy
     override fun getClassifierNames(): Set<Name> = classifierNamesLazy
+
+    @DelicateScopeAPI
+    override fun withReplacedSessionOrNull(newSession: FirSession, newScopeSession: ScopeSession): FirDelegatedMemberScope {
+        return FirDelegatedMemberScope(
+            newSession,
+            newScopeSession,
+            containingClass,
+            declaredMemberScope.withReplacedSessionOrNull(newSession, newScopeSession) ?: declaredMemberScope,
+            delegateFields
+        )
+    }
 }
 
 private object MultipleDelegatesWithTheSameSignatureKey : FirDeclarationDataKey()
@@ -221,7 +246,9 @@ fun FirSimpleFunction.isPublicInAny(): Boolean {
     return when (name.asString()) {
         "hashCode", "toString" -> valueParameters.isEmpty()
         "equals" -> valueParameters.singleOrNull()?.hasTypeOf(StandardClassIds.Any, allowNullable = true) == true
-        else -> error("Unexpected method name: $name")
+        else -> errorWithAttachment("Unexpected method name") {
+            withEntry("methodName", name) { name.asString() }
+        }
     }
 }
 
@@ -237,3 +264,15 @@ fun FirValueParameter.hasTypeOf(classId: ClassId, allowNullable: Boolean): Boole
 }
 
 private val PUBLIC_METHOD_NAMES_IN_ANY = setOf("equals", "hashCode", "toString")
+
+abstract class FirDelegatedMembersFilter : FirSessionComponent {
+    abstract fun shouldNotGenerateDelegatedMember(memberSymbolFromSuperInterface: FirCallableSymbol<*>): Boolean
+
+    object Default : FirDelegatedMembersFilter() {
+        override fun shouldNotGenerateDelegatedMember(memberSymbolFromSuperInterface: FirCallableSymbol<*>): Boolean {
+            return false
+        }
+    }
+}
+
+private val FirSession.delegatedMembersFilter: FirDelegatedMembersFilter by FirSession.sessionComponentAccessor()

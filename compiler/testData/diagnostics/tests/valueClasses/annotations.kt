@@ -1,8 +1,8 @@
-// !LANGUAGE: +ValueClasses
+// RUN_PIPELINE_TILL: FRONTEND
+// LANGUAGE: +ValueClasses
 // WITH_STDLIB
 // SKIP_TXT
 // WORKS_WHEN_VALUE_CLASS
-// FIR_IDENTICAL
 
 import kotlin.reflect.KProperty
 
@@ -50,6 +50,8 @@ value class B @Ann constructor(
     fun f() = Unit
 }
 
+typealias NullableA = A?
+
 @[Ann Ann]
 class C @Ann constructor(
     @[<!ANNOTATION_ON_ILLEGAL_MULTI_FIELD_VALUE_CLASS_TYPED_TARGET!>Ann<!> <!ANNOTATION_ON_ILLEGAL_MULTI_FIELD_VALUE_CLASS_TYPED_TARGET!>Ann<!>]
@@ -68,6 +70,14 @@ class C @Ann constructor(
     @set:[Ann Ann]
     @setparam:[Ann Ann]
     var y: A?,
+    @[Ann Ann]
+    @param:[Ann Ann]
+    @property:[Ann Ann]
+    @field:[Ann Ann]
+    @get:[Ann Ann]
+    @set:[Ann Ann]
+    @setparam:[Ann Ann]
+    var yTa: NullableA,
 ) {
     @delegate:[Ann Ann]
     @property:[Ann Ann]

@@ -5,19 +5,25 @@
 
 package org.jetbrains.kotlin.resolve
 
-import org.jetbrains.kotlin.config.*
+import org.jetbrains.kotlin.config.AnalysisFlags
+import org.jetbrains.kotlin.config.KotlinCompilerVersion
+import org.jetbrains.kotlin.config.LanguageFeature
+import org.jetbrains.kotlin.config.LanguageVersionSettings
+import org.jetbrains.kotlin.metadata.deserialization.MetadataVersion
 import org.jetbrains.kotlin.serialization.deserialization.DeserializationConfiguration
+import org.jetbrains.kotlin.util.toMetadataVersion
 
 open class CompilerDeserializationConfiguration(
     protected val languageVersionSettings: LanguageVersionSettings
 ) : DeserializationConfiguration {
+    override val metadataVersion: MetadataVersion = languageVersionSettings.languageVersion.toMetadataVersion()
 
     final override val skipMetadataVersionCheck = languageVersionSettings.getFlag(AnalysisFlags.skipMetadataVersionCheck)
 
     final override val skipPrereleaseCheck = languageVersionSettings.getFlag(AnalysisFlags.skipPrereleaseCheck)
 
     final override val reportErrorsOnPreReleaseDependencies =
-        !skipPrereleaseCheck && !languageVersionSettings.isPreRelease()
+        !skipPrereleaseCheck && !languageVersionSettings.isPreRelease() && !KotlinCompilerVersion.isPreRelease()
 
     final override val allowUnstableDependencies = languageVersionSettings.getFlag(AnalysisFlags.allowUnstableDependencies)
 

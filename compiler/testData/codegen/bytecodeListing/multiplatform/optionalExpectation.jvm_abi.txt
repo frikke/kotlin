@@ -1,0 +1,15 @@
+MODULE main
+	CLASS Foo.class
+		CLASS METADATA
+			CONSTRUCTOR <init>(I)V
+				Property: class.metadata.constructor.valueParameters
+					K1
+						(x: kotlin/Int)
+					K2
+						(@Anno(s = "x") x: kotlin/Int)
+			PROPERTY getX()I
+				Property: class.metadata.property.setterValueParameter
+					K1
+						<set-?>: kotlin/Int
+					K2
+						value: kotlin/Int

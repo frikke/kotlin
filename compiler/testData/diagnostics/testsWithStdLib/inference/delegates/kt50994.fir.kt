@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_DUMP
 // WITH_REFLECT
 
@@ -9,7 +10,7 @@ class ProcessorWithParent : Entity {
 }
 
 class ProcessorWithChildren : Entity {
-    var processors by <!INAPPLICABLE_CANDIDATE!>children<!>(ProcessorWithParent::class.java, ProcessorWithParent::<!UNRESOLVED_REFERENCE!>processor<!>)
+    var processors by children(ProcessorWithParent::class.java, ProcessorWithParent::<!INAPPLICABLE_CANDIDATE!>processor<!>)
 }
 
 class Processor2WithParent : Entity {

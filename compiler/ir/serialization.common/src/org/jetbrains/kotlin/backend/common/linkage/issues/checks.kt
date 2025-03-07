@@ -6,26 +6,25 @@
 package org.jetbrains.kotlin.backend.common.linkage.issues
 
 import org.jetbrains.kotlin.backend.common.serialization.KotlinIrLinker
+import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.config.CompilerConfiguration
-import org.jetbrains.kotlin.ir.util.IrMessageLogger
+import org.jetbrains.kotlin.config.messageCollector
 import org.jetbrains.kotlin.ir.util.SymbolTable
-import org.jetbrains.kotlin.ir.util.allUnbound
-import org.jetbrains.kotlin.ir.util.irMessageLogger
 
 // N.B. Checks for absence of unbound symbols only when unbound symbols are not allowed.
 fun KotlinIrLinker.checkNoUnboundSymbols(symbolTable: SymbolTable, whenDetected: String): Unit =
-    messageLogger.checkNoUnboundSymbols(symbolTable, whenDetected)
+    messageCollector.checkNoUnboundSymbols(symbolTable, whenDetected)
 
 // N.B. Always checks for absence of unbound symbols. The condition whether this check should be applied is controlled outside.
-fun IrMessageLogger.checkNoUnboundSymbols(symbolTable: SymbolTable, whenDetected: String) {
-    val unboundSymbols = symbolTable.allUnbound
+fun MessageCollector.checkNoUnboundSymbols(symbolTable: SymbolTable, whenDetected: String) {
+    val unboundSymbols = symbolTable.descriptorExtension.allUnboundSymbols
     if (unboundSymbols.isNotEmpty())
         UnexpectedUnboundIrSymbols(unboundSymbols, whenDetected).raiseIssue(this)
 }
 
 // N.B. Always checks for absence of unbound symbols. The condition whether this check should be applied is controlled outside.
 fun CompilerConfiguration.checkNoUnboundSymbols(symbolTable: SymbolTable, whenDetected: String) {
-    val unboundSymbols = symbolTable.allUnbound
+    val unboundSymbols = symbolTable.descriptorExtension.allUnboundSymbols
     if (unboundSymbols.isNotEmpty())
-        UnexpectedUnboundIrSymbols(unboundSymbols, whenDetected).raiseIssue(irMessageLogger)
+        UnexpectedUnboundIrSymbols(unboundSymbols, whenDetected).raiseIssue(messageCollector)
 }

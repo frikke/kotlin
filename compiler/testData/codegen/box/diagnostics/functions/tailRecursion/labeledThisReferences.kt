@@ -1,8 +1,4 @@
-// IGNORE_BACKEND: WASM
-// WASM_MUTE_REASON: IGNORED_IN_JS
-// !DIAGNOSTICS: -UNUSED_PARAMETER
-// TODO: muted automatically, investigate should it be ran for JS or not
-// IGNORE_BACKEND: JS
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 class B {
     inner class C {

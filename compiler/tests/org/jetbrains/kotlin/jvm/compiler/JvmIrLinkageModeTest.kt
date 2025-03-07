@@ -12,22 +12,34 @@ import org.jetbrains.kotlin.codegen.CodegenTestCase
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.JVMConfigurationKeys
 import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationBase
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.util.IdSignature
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
+import org.jetbrains.kotlin.ir.util.render
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
 import org.jetbrains.kotlin.test.ConfigurationKind
-import org.jetbrains.kotlin.test.TargetBackend
+import org.jetbrains.kotlin.test.FirParser
 import org.jetbrains.kotlin.utils.addIfNotNull
 
-class JvmIrLinkageModeTest : CodegenTestCase() {
-    override val backend: TargetBackend
-        get() = TargetBackend.JVM_IR
+class FirLightTreeLinkageModeTest : JvmIrLinkageModeTest() {
+    override val useFir: Boolean
+        get() = true
 
+    override val firParser: FirParser
+        get() = FirParser.LightTree
+}
+
+class FirPsiLinkageModeTest : JvmIrLinkageModeTest() {
+    override val useFir: Boolean
+        get() = true
+
+    override val firParser: FirParser
+        get() = FirParser.Psi
+}
+
+open class JvmIrLinkageModeTest : CodegenTestCase() {
     private var enableLinkageViaSignatures: Boolean? = null
 
     private var source = """
@@ -68,7 +80,7 @@ class JvmIrLinkageModeTest : CodegenTestCase() {
     }
 
     override fun setupEnvironment(environment: KotlinCoreEnvironment) {
-        val idSignatureShouldBePresent = environment.configuration.getBoolean(JVMConfigurationKeys.LINK_VIA_SIGNATURES)
+        val idSignatureShouldBePresent = !useFir && environment.configuration.getBoolean(JVMConfigurationKeys.LINK_VIA_SIGNATURES)
         IrGenerationExtension.registerExtension(environment.project, LinkageTestIrExtension(idSignatureShouldBePresent))
         super.setupEnvironment(environment)
     }
@@ -77,7 +89,7 @@ class JvmIrLinkageModeTest : CodegenTestCase() {
         override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
             val file = moduleFragment.files.single()
             val signatures = mutableListOf<IdSignature>()
-            file.acceptVoid(object : IrElementVisitorVoid {
+            file.acceptVoid(object : IrVisitorVoid() {
                 override fun visitElement(element: IrElement) {
                     element.acceptChildrenVoid(this)
                 }

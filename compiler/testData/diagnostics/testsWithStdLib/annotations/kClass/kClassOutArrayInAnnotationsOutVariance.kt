@@ -1,4 +1,4 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: FRONTEND
 import kotlin.reflect.KClass
 
 open class A

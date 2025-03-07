@@ -22,16 +22,20 @@ import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.transformStatement
 import org.jetbrains.kotlin.ir.types.IrType
+import org.jetbrains.kotlin.ir.util.irError
 import org.jetbrains.kotlin.ir.util.isElseBranch
 import org.jetbrains.kotlin.utils.memoryOptimizedMap
 import org.jetbrains.kotlin.ir.util.patchDeclarationParents
 import org.jetbrains.kotlin.ir.util.transformFlat
-import org.jetbrains.kotlin.ir.visitors.IrElementTransformer
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
+import org.jetbrains.kotlin.ir.visitors.IrTransformer
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.utils.addIfNotNull
 
+/**
+ * Transforms statement-like-expression nodes into pure-statement to make it easily transform into JS.
+ */
 class JsBlockDecomposerLowering(val context: JsIrBackendContext) : AbstractBlockDecomposerLowering(context) {
     override fun unreachableExpression(): IrExpression =
         JsIrBuilder.buildCall(context.intrinsics.unreachable, context.irBuiltIns.nothingType)
@@ -94,7 +98,7 @@ abstract class AbstractBlockDecomposerLowering(private val context: JsCommonBack
 }
 
 class BlockDecomposerTransformer(
-    private val context: CommonBackendContext,
+    private val context: JsCommonBackendContext,
     private val unreachableExpression: () -> IrExpression
 ) : IrElementTransformerVoid() {
     private lateinit var function: IrDeclarationParent
@@ -110,6 +114,9 @@ class BlockDecomposerTransformer(
     private val unitValue get() = JsIrBuilder.buildGetObjectValue(unitType, context.irBuiltIns.unitClass)
 
     private val booleanNotSymbol = context.irBuiltIns.booleanNotSymbol
+
+    private val boxIntrinsic = context.inlineClassesUtils.boxIntrinsic
+    private val unboxIntrinsic = context.inlineClassesUtils.unboxIntrinsic
 
     override fun visitScript(declaration: IrScript): IrStatement {
         function = declaration
@@ -166,7 +173,7 @@ class BlockDecomposerTransformer(
 
     private fun destructureComposite(expression: IrStatement) = (expression as? IrComposite)?.statements ?: listOf(expression)
 
-    private inner class BreakContinueUpdater(val breakLoop: IrLoop, val continueLoop: IrLoop) : IrElementTransformer<IrLoop> {
+    private inner class BreakContinueUpdater(val breakLoop: IrLoop, val continueLoop: IrLoop) : IrTransformer<IrLoop>() {
         override fun visitBreak(jump: IrBreak, data: IrLoop) = jump.apply {
             if (loop == data) loop = breakLoop
         }
@@ -534,18 +541,58 @@ class BlockDecomposerTransformer(
                     compositesLeft == 0 -> value
                     index == 0 && dontDetachFirstArgument -> value
                     value == null -> value
-                    value.isPure(anyVariable = false, context = context) -> value
+                    value.isPure(anyVariable = false, symbols = context.symbols) -> value
                     else -> {
                         // TODO: do not wrap if value is pure (const, variable, etc)
-                        val irVar = makeTempVar(value.type, value)
-                        newStatements += irVar
-                        JsIrBuilder.buildGetValue(irVar.symbol)
+                        val (newArg, tempVar) = mapArgument(value)
+                        newStatements += tempVar
+                        newArg
                     }
                 }
 
                 arguments += newArg
             }
             return arguments
+        }
+
+        /**
+         * Move the passing argument and store it in a temporary variable.
+         * However, the box and unbox intrinsics should be preserved in the call.
+         * They can be used later for optimizations, for example, in [EqualityAndComparisonCallsTransformer].
+         * Example:
+         *      foo(boxIntrinsic(<expr>))
+         * should be transformed to:
+         *      var tmp = <expr>
+         *      foo(boxIntrinsic(tmp))
+         */
+        private fun mapArgument(arg: IrExpression): Pair<IrExpression, IrVariable> {
+            var saveToTmp = arg
+            var rootIntrinsicCall: IrCall? = null
+            var lastIntrinsicCall: IrCall? = null
+            while (saveToTmp is IrCall && (saveToTmp.symbol == boxIntrinsic || saveToTmp.symbol == unboxIntrinsic)) {
+                if (lastIntrinsicCall == null) {
+                    lastIntrinsicCall = JsIrBuilder.buildCall(saveToTmp.symbol, saveToTmp.type, saveToTmp.typeArguments.filterNotNull())
+                    rootIntrinsicCall = lastIntrinsicCall
+                } else {
+                    val nextCall = JsIrBuilder.buildCall(saveToTmp.symbol, saveToTmp.type, saveToTmp.typeArguments.filterNotNull())
+                    lastIntrinsicCall.putValueArgument(0, nextCall)
+                    lastIntrinsicCall = nextCall
+                }
+                saveToTmp = saveToTmp.getValueArgument(0)
+                    ?: irError("expect passing 1 argument to boxing intrinsic") {
+                        withIrEntry("arg", arg)
+                        withIrEntry("saveToTmp", saveToTmp)
+                    }
+            }
+
+            val irTempVar = makeTempVar(saveToTmp.type, saveToTmp)
+            val irGetTempVar = JsIrBuilder.buildGetValue(irTempVar.symbol)
+            val newArg = lastIntrinsicCall?.let {
+                it.putValueArgument(0, irGetTempVar)
+                rootIntrinsicCall
+            } ?: irGetTempVar
+
+            return newArg to irTempVar
         }
 
         // TODO: remove this when vararg is lowered
@@ -713,7 +760,7 @@ class BlockDecomposerTransformer(
             val newTryResult = wrap(aTry.tryResult, irVar)
             val newCatches = aTry.catches.memoryOptimizedMap {
                 val newCatchBody = wrap(it.result, irVar)
-                IrCatchImpl(it.startOffset, it.endOffset, it.catchParameter, newCatchBody)
+                IrCatchImpl(it.startOffset, it.endOffset, it.catchParameter, newCatchBody, it.origin)
             }
 
             val newTry = aTry.run { IrTryImpl(startOffset, endOffset, unitType, newTryResult, newCatches, finallyExpression) }

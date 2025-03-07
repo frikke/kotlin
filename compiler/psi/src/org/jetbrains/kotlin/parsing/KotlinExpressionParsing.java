@@ -69,7 +69,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
     }
 
     private static final TokenSet TYPE_ARGUMENT_LIST_STOPPERS = TokenSet.create(
-            INTEGER_LITERAL, FLOAT_LITERAL, CHARACTER_LITERAL, OPEN_QUOTE,
+            INTEGER_LITERAL, FLOAT_LITERAL, CHARACTER_LITERAL, INTERPOLATION_PREFIX, OPEN_QUOTE,
             PACKAGE_KEYWORD, AS_KEYWORD, TYPE_ALIAS_KEYWORD, INTERFACE_KEYWORD, CLASS_KEYWORD, THIS_KEYWORD, VAL_KEYWORD, VAR_KEYWORD,
             FUN_KEYWORD, FOR_KEYWORD, NULL_KEYWORD,
             TRUE_KEYWORD, FALSE_KEYWORD, IS_KEYWORD, THROW_KEYWORD, RETURN_KEYWORD, BREAK_KEYWORD,
@@ -96,7 +96,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
             // literal constant
             TRUE_KEYWORD, FALSE_KEYWORD,
-            OPEN_QUOTE,
+            INTERPOLATION_PREFIX, OPEN_QUOTE,
             INTEGER_LITERAL, CHARACTER_LITERAL, FLOAT_LITERAL,
             NULL_KEYWORD,
 
@@ -314,6 +314,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
             error("Expecting an expression");
             return;
         }
+
         parseBinaryExpression(Precedence.ASSIGNMENT);
     }
 
@@ -682,11 +683,21 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
                 parseDoWhile();
                 break;
             case IDENTIFIER_Id:
+                // Try to parse anonymous function with context parameters
+                if (at(CONTEXT_KEYWORD) && lookahead(1) == LPAR) {
+                    if (parseLocalDeclaration(true, false)) {
+                        break;
+                    } else {
+                        at(IDENTIFIER);
+                    }
+                }
+
                 parseSimpleNameExpression();
                 break;
             case LBRACE_Id:
                 parseFunctionLiteral();
                 break;
+            case INTERPOLATION_PREFIX_Id:
             case OPEN_QUOTE_Id:
                 parseStringTemplate();
                 break;
@@ -742,14 +753,19 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
     /*
      * stringTemplate
-     *   : OPEN_QUOTE stringTemplateElement* CLOSING_QUOTE
+     *   : INTERPOLATION_PREFIX OPEN_QUOTE stringTemplateElement* CLOSING_QUOTE
      *   ;
      */
     private void parseStringTemplate() {
-        assert _at(OPEN_QUOTE);
+        assert _at(INTERPOLATION_PREFIX) || _at(OPEN_QUOTE);
 
         PsiBuilder.Marker template = mark();
 
+        if (at(INTERPOLATION_PREFIX)) {
+            advance(); // INTERPOLATION_PREFIX
+        }
+
+        assert _at(OPEN_QUOTE);
         advance(); // OPEN_QUOTE
 
         while (!eof()) {
@@ -900,8 +916,8 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
     /*
      * whenEntry
      *   // TODO : consider empty after ->
-     *   : whenCondition{","} "->" element SEMI
-     *   : "else" "->" element SEMI
+     *   : whenCondition{","} whenEntryGuard? "->" element SEMI
+     *   : "else" whenEntryGuard? "->" element SEMI
      *   ;
      */
     private void parseWhenEntry() {
@@ -909,6 +925,8 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
         if (at(ELSE_KEYWORD)) {
             advance(); // ELSE_KEYWORD
+
+            parseWhenEntryGuardOrSuggest();
 
             if (!at(ARROW)) {
                 errorUntil("Expecting '->'", TokenSet.create(ARROW, LBRACE, RBRACE, EOL_OR_SEMICOLON));
@@ -940,7 +958,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
     }
 
     /*
-     * : whenCondition{","} "->" element SEMI
+     * : whenCondition{","} whenEntryGuard? "->" element SEMI
      */
     private void parseWhenEntryNotElse() {
         while (true) {
@@ -952,6 +970,8 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
                 break;
             }
         }
+
+        parseWhenEntryGuardOrSuggest();
 
         expect(ARROW, "Expecting '->'", WHEN_CONDITION_RECOVERY_SET);
         if (atSet(WHEN_CONDITION_RECOVERY_SET)) {
@@ -1014,6 +1034,28 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
                 break;
         }
         myBuilder.restoreNewlinesState();
+    }
+
+    private void parseWhenEntryGuardOrSuggest() {
+        if (at(ANDAND)) {
+            errorUntil("Unexpected '&&', use 'if' to introduce additional conditions; see https://kotl.in/guards-in-when", TokenSet.create(LBRACE, RBRACE, ARROW));
+        } else if (at(IF_KEYWORD)) {
+            parseWhenEntryGuard();
+        }
+    }
+
+    /*
+     * whenEntryGuard
+     *   : "if" expression
+     *   ;
+     */
+    private void parseWhenEntryGuard() {
+        assert _at(IF_KEYWORD);
+
+        PsiBuilder.Marker guard = mark();
+        advance(); // IF_KEYWORD
+        parseExpression();
+        guard.done(WHEN_ENTRY_GUARD);
     }
 
     /*

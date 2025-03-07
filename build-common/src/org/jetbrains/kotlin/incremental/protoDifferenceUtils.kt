@@ -21,8 +21,10 @@ import org.jetbrains.kotlin.incremental.ProtoCompareGenerated.ProtoBufClassKind
 import org.jetbrains.kotlin.incremental.ProtoCompareGenerated.ProtoBufPackageKind
 import org.jetbrains.kotlin.incremental.storage.ProtoMapValue
 import org.jetbrains.kotlin.metadata.ProtoBuf
+import org.jetbrains.kotlin.metadata.ProtoBuf.Type
 import org.jetbrains.kotlin.metadata.deserialization.Flags
 import org.jetbrains.kotlin.metadata.deserialization.NameResolver
+import org.jetbrains.kotlin.metadata.deserialization.TypeTable
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmProtoBufUtil
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.protobuf.MessageLite
@@ -203,8 +205,7 @@ class DifferenceCalculatorForClass(
         }
 
         for (kind in diff) {
-            @Suppress("UNUSED_VARIABLE") // To make this 'when' exhaustive
-            val unused: Any = when (kind!!) {
+            when (kind!!) {
                 ProtoBufClassKind.COMPANION_OBJECT_NAME -> {
                     if (oldProto.hasCompanionObjectName()) oldProto.companionObjectName.oldToNames()
                     if (newProto.hasCompanionObjectName()) newProto.companionObjectName.newToNames()
@@ -249,8 +250,7 @@ class DifferenceCalculatorForClass(
                 }
                 ProtoBufClassKind.FLAGS,
                 ProtoBufClassKind.FQ_NAME,
-                ProtoBufClassKind.TYPE_PARAMETER_LIST,
-                ProtoBufClassKind.JS_EXT_CLASS_ANNOTATION_LIST -> {
+                ProtoBufClassKind.TYPE_PARAMETER_LIST -> {
                     isClassAffected = true
                     areSubclassesAffected = true
                 }
@@ -260,10 +260,40 @@ class DifferenceCalculatorForClass(
                     isClassAffected = true
                     areSubclassesAffected = true
 
-                    val oldSupertypes = oldProto.supertypeList.map { oldNameResolver.getClassId(it.className).asSingleFqName() }
-                    val newSupertypes = newProto.supertypeList.map { newNameResolver.getClassId(it.className).asSingleFqName() }
+                    val oldTypeTable = oldProto.typeTableOrNull?.let { TypeTable(it) }
+                    val newTypeTable = newProto.typeTableOrNull?.let { TypeTable(it) }
+
+                    fun getSupertypes(supertypeList: List<Type>, nameResolver: NameResolver): List<FqName> {
+                        return supertypeList.map { nameResolver.getClassId(it.className).asSingleFqName() }
+                    }
+
+                    fun getSupertypesById(supertypeIdList: List<Int>, typeTable: TypeTable?, nameResolver: NameResolver): List<FqName> {
+                        return supertypeIdList.mapNotNull { id ->
+                            typeTable?.get(id)?.className?.let {
+                                nameResolver.getClassId(it).asSingleFqName()
+                            }
+                        }
+                    }
+
+                    val oldSupertypes = getSupertypes(oldProto.supertypeList, oldNameResolver)
+                    val newSupertypes = getSupertypes(newProto.supertypeList, newNameResolver)
+
+                    val oldSupertypesById = getSupertypesById(
+                        oldProto.supertypeIdList,
+                        oldTypeTable,
+                        oldNameResolver
+                    )
+
+                    val newSupertypesById = getSupertypesById(
+                        newProto.supertypeIdList,
+                        newTypeTable,
+                        newNameResolver
+                    )
+
                     val changed = (oldSupertypes union newSupertypes) subtract (oldSupertypes intersect newSupertypes)
-                    changedSupertypes.addAll(changed)
+                    val changedById = (oldSupertypesById union newSupertypesById) subtract (oldSupertypesById intersect newSupertypesById)
+                    val elements: Set<FqName> = changed + changedById
+                    changedSupertypes.addAll(elements)
                 }
                 ProtoBufClassKind.JVM_EXT_CLASS_MODULE_NAME,
                 ProtoBufClassKind.JS_EXT_CLASS_CONTAINING_FILE_ID -> {
@@ -276,15 +306,8 @@ class DifferenceCalculatorForClass(
                     isClassAffected = true
                     areSubclassesAffected = true
                 }
-                ProtoBufClassKind.BUILT_INS_EXT_CLASS_ANNOTATION_LIST -> {
-                    isClassAffected = true
-                }
                 ProtoBufClassKind.JVM_EXT_ANONYMOUS_OBJECT_ORIGIN_NAME -> {
                     // Not affected, this extension is not used in the compiler
-                }
-                ProtoBufClassKind.KLIB_EXT_CLASS_ANNOTATION_LIST -> {
-                    isClassAffected = true
-                    areSubclassesAffected = true
                 }
                 ProtoBufClassKind.JVM_EXT_JVM_CLASS_FLAGS -> {
                     isClassAffected = true
@@ -300,6 +323,19 @@ class DifferenceCalculatorForClass(
                 }
                 ProtoBufClassKind.CONTEXT_RECEIVER_TYPE_LIST,
                 ProtoBufClassKind.CONTEXT_RECEIVER_TYPE_ID_LIST -> {
+                    isClassAffected = true
+                    areSubclassesAffected = true
+                }
+                ProtoBufClassKind.COMPILER_PLUGIN_DATA_LIST -> {
+                    // plugins may modify the whole hierarchy depending on metadata written by them,
+                    // so we should be conservative if this metadata has changed
+                    isClassAffected = true
+                    areSubclassesAffected = true
+                }
+                ProtoBufClassKind.ANNOTATION_LIST,
+                ProtoBufClassKind.JS_EXT_CLASS_ANNOTATION_LIST,
+                ProtoBufClassKind.KLIB_EXT_CLASS_ANNOTATION_LIST,
+                ProtoBufClassKind.BUILT_INS_EXT_CLASS_ANNOTATION_LIST -> {
                     isClassAffected = true
                     areSubclassesAffected = true
                 }

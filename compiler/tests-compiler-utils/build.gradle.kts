@@ -13,7 +13,6 @@ dependencies {
     testApi(project(":compiler:util"))
     testApi(project(":compiler:tests-mutes"))
     testApi(project(":compiler:backend"))
-    testApi(project(":compiler:ir.ir2cfg"))
     testApi(project(":compiler:frontend"))
     testApi(project(":compiler:frontend.java"))
     testApi(project(":compiler:util"))
@@ -30,12 +29,13 @@ dependencies {
     testApi(commonDependency("com.android.tools:r8"))
     testCompileOnly(intellijCore())
 
-    testApi(commonDependency("com.google.guava:guava"))
-    testApi(commonDependency("org.jetbrains.intellij.deps:trove4j"))
-    testApi(commonDependency("org.jetbrains.intellij.deps:asm-all"))
+    testApi(libs.guava)
+    testApi(libs.intellij.asm)
     testApi(commonDependency("org.jetbrains.intellij.deps:log4j"))
-    testApi(commonDependency("org.jetbrains.intellij.deps:jdom"))
+    testApi(intellijJDom())
 }
+
+optInToUnsafeDuringIrConstructionAPI()
 
 sourceSets {
     "main" { none() }

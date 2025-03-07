@@ -26,6 +26,8 @@ object FirSerializationErrors {
     val COMPANION_OBJECT_SERIALIZER_INSIDE_OTHER_SERIALIZABLE_CLASS by error2<PsiElement, ConeKotlinType, ConeKotlinType>()
     val COMPANION_OBJECT_SERIALIZER_INSIDE_NON_SERIALIZABLE_CLASS by warning2<PsiElement, ConeKotlinType, ConeKotlinType>()
 
+    val COMPANION_OBJECT_IS_SERIALIZABLE_INSIDE_SERIALIZABLE_CLASS by warning1<PsiElement, FirRegularClassSymbol>()
+
     val SERIALIZABLE_ANNOTATION_IGNORED by error0<KtAnnotationEntry>()
     val NON_SERIALIZABLE_PARENT_MUST_HAVE_NOARG_CTOR by error0<KtAnnotationEntry>()
     val PRIMARY_CONSTRUCTOR_PARAMETER_IS_NOT_A_PROPERTY by error0<KtAnnotationEntry>()
@@ -34,7 +36,11 @@ object FirSerializationErrors {
     val SERIALIZER_NOT_FOUND by error1<PsiElement, ConeKotlinType>()
     val SERIALIZER_NULLABILITY_INCOMPATIBLE by error2<PsiElement, ConeKotlinType, ConeKotlinType>()
     val SERIALIZER_TYPE_INCOMPATIBLE by warning3<PsiElement, ConeKotlinType, ConeKotlinType, ConeKotlinType>()
+    val ABSTRACT_SERIALIZER_TYPE by error2<PsiElement, ConeKotlinType, ConeKotlinType>()
     val LOCAL_SERIALIZER_USAGE by error1<PsiElement, ConeKotlinType>()
+    val CUSTOM_SERIALIZER_PARAM_ILLEGAL_COUNT by error3<PsiElement, ConeKotlinType, ConeKotlinType, String>()
+    val CUSTOM_SERIALIZER_PARAM_ILLEGAL_TYPE by error3<PsiElement, ConeKotlinType, ConeKotlinType, String>()
+
     val GENERIC_ARRAY_ELEMENT_NOT_SUPPORTED by error0<PsiElement>()
     val TRANSIENT_MISSING_INITIALIZER by error0<PsiElement>()
 
@@ -51,6 +57,15 @@ object FirSerializationErrors {
     val EXTERNAL_SERIALIZER_USELESS by warning1<PsiElement, FirClassSymbol<*>>()
     val EXTERNAL_CLASS_NOT_SERIALIZABLE by error2<PsiElement, FirClassSymbol<*>, ConeKotlinType>()
     val EXTERNAL_CLASS_IN_ANOTHER_MODULE by error2<PsiElement, FirClassSymbol<*>, ConeKotlinType>()
+    val EXTERNAL_SERIALIZER_NO_SUITABLE_CONSTRUCTOR by error3<PsiElement, FirClassSymbol<*>, ConeKotlinType, String>()
+
+    val KEEP_SERIALIZER_ANNOTATION_USELESS by error0<PsiElement>()
+    val KEEP_SERIALIZER_ANNOTATION_ON_POLYMORPHIC by error0<PsiElement>()
+
+    val PROTOBUF_PROTO_NUM_DUPLICATED by warning2<KtAnnotationEntry, String, String>()
+
+    val JSON_FORMAT_REDUNDANT_DEFAULT by warning0<PsiElement>()
+    val JSON_FORMAT_REDUNDANT by warning0<PsiElement>()
 
     init {
         RootDiagnosticRendererFactory.registerFactory(KtDefaultErrorMessagesSerialization)

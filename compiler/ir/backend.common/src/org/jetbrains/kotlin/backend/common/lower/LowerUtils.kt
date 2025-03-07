@@ -5,9 +5,8 @@
 
 package org.jetbrains.kotlin.backend.common.lower
 
-import org.jetbrains.kotlin.backend.common.BackendContext
-import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.descriptors.impl.ValueParameterDescriptorImpl
+import org.jetbrains.kotlin.backend.common.LoweringContext
+import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
@@ -18,14 +17,12 @@ import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.linkage.partial.isPartialLinkageRuntimeError
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
-import org.jetbrains.kotlin.ir.symbols.IrValueParameterSymbol
 import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.classifierOrFail
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
-import org.jetbrains.kotlin.name.Name
 
 class DeclarationIrBuilder(
     generatorContext: IrGeneratorContext,
@@ -66,7 +63,7 @@ fun IrBuiltIns.createIrBuilder(
 ) =
     DeclarationIrBuilder(IrGeneratorContextBase(this), symbol, startOffset, endOffset)
 
-fun BackendContext.createIrBuilder(
+fun LoweringContext.createIrBuilder(
     symbol: IrSymbol,
     startOffset: Int = UNDEFINED_OFFSET,
     endOffset: Int = UNDEFINED_OFFSET
@@ -82,9 +79,11 @@ fun <T : IrBuilder> T.at(element: IrElement) = this.at(element.startOffset, elem
 inline fun IrGeneratorWithScope.irBlock(
     expression: IrExpression, origin: IrStatementOrigin? = null,
     resultType: IrType? = expression.type,
+    startOffset: Int = expression.startOffset,
+    endOffset: Int = expression.endOffset,
     body: IrBlockBuilder.() -> Unit
 ) =
-    this.irBlock(expression.startOffset, expression.endOffset, origin, resultType, body)
+    this.irBlock(startOffset, endOffset, origin, resultType, body)
 
 inline fun IrGeneratorWithScope.irComposite(
     expression: IrExpression, origin: IrStatementOrigin? = null,
@@ -97,7 +96,7 @@ inline fun IrGeneratorWithScope.irBlockBody(irElement: IrElement, body: IrBlockB
     this.irBlockBody(irElement.startOffset, irElement.endOffset, body)
 
 fun IrBuilderWithScope.irIfThen(condition: IrExpression, thenPart: IrExpression) =
-    IrIfThenElseImpl(startOffset, endOffset, context.irBuiltIns.unitType).apply {
+    IrWhenImpl(startOffset, endOffset, context.irBuiltIns.unitType).apply {
         branches += IrBranchImpl(condition, thenPart)
     }
 
@@ -107,8 +106,8 @@ fun IrBuilderWithScope.irNot(arg: IrExpression) =
 fun IrBuilderWithScope.irThrow(arg: IrExpression) =
     IrThrowImpl(startOffset, endOffset, context.irBuiltIns.nothingType, arg)
 
-fun IrBuilderWithScope.irCatch(catchParameter: IrVariable, result: IrExpression): IrCatch =
-    IrCatchImpl(startOffset, endOffset, catchParameter, result)
+fun IrBuilderWithScope.irCatch(catchParameter: IrVariable, result: IrExpression, origin: IrStatementOrigin? = null): IrCatch =
+    IrCatchImpl(startOffset, endOffset, catchParameter, result, origin)
 
 fun IrBuilderWithScope.irImplicitCoercionToUnit(arg: IrExpression) =
     IrTypeOperatorCallImpl(
@@ -117,7 +116,7 @@ fun IrBuilderWithScope.irImplicitCoercionToUnit(arg: IrExpression) =
         arg
     )
 
-open class IrBuildingTransformer(private val context: BackendContext) : IrElementTransformerVoid() {
+open class IrBuildingTransformer(private val context: LoweringContext) : IrElementTransformerVoid() {
     private var currentBuilder: IrBuilderWithScope? = null
 
     protected val builder: IrBuilderWithScope
@@ -185,7 +184,7 @@ fun IrConstructor.delegationKind(irBuiltIns: IrBuiltIns): ConstructorDelegationK
     var callsSuper = false
     var numberOfDelegatingCalls = 0
     var hasPartialLinkageError = false
-    acceptChildrenVoid(object : IrElementVisitorVoid {
+    acceptChildrenVoid(object : IrVisitorVoid() {
         override fun visitElement(element: IrElement) {
             element.acceptChildrenVoid(this)
         }
@@ -224,59 +223,4 @@ fun IrConstructor.delegationKind(irBuiltIns: IrBuiltIns): ConstructorDelegationK
         return delegationKind
     else
         throw AssertionError("Expected exactly one delegating constructor call but $numberOfDelegatingCalls encountered: ${symbol.owner}")
-}
-
-@Deprecated(
-    "Replaced by delegationKind() that is aware of the possible partial linkage side effects",
-    ReplaceWith("delegationKind(irBuiltIns)")
-)
-fun IrConstructor.callsSuper(irBuiltIns: IrBuiltIns): Boolean = delegationKind(irBuiltIns) == ConstructorDelegationKind.CALLS_SUPER
-
-fun ParameterDescriptor.copyAsValueParameter(newOwner: CallableDescriptor, index: Int, name: Name = this.name) = when (this) {
-    is ValueParameterDescriptor -> this.copy(newOwner, name, index)
-    is ReceiverParameterDescriptor -> ValueParameterDescriptorImpl(
-        containingDeclaration = newOwner,
-        original = null,
-        index = index,
-        annotations = annotations,
-        name = name,
-        outType = type,
-        declaresDefaultValue = false,
-        isCrossinline = false,
-        isNoinline = false,
-        varargElementType = null,
-        source = source
-    )
-    else -> throw Error("Unexpected parameter descriptor: $this")
-}
-
-fun IrGetValue.actualize(classActualizer: (IrClass) -> IrClass, functionActualizer: (IrFunction) -> IrFunction): IrGetValue {
-    val symbol = symbol
-    if (symbol !is IrValueParameterSymbol) {
-        return this
-    }
-
-    val parameter = symbol.owner
-    val newSymbol = when (val parent = parameter.parent) {
-        is IrClass -> {
-            assert(parameter == parent.thisReceiver)
-            classActualizer(parent).thisReceiver!!
-        }
-
-        is IrFunction -> {
-            val actualizedFunction = functionActualizer(parent)
-            when (parameter) {
-                parent.dispatchReceiverParameter -> actualizedFunction.dispatchReceiverParameter!!
-                parent.extensionReceiverParameter -> actualizedFunction.extensionReceiverParameter!!
-                else -> {
-                    assert(parent.valueParameters[parameter.index] == parameter)
-                    actualizedFunction.valueParameters[parameter.index]
-                }
-            }
-        }
-
-        else -> error(parent)
-    }
-
-    return IrGetValueImpl(startOffset, endOffset, newSymbol.type, newSymbol.symbol, origin)
 }

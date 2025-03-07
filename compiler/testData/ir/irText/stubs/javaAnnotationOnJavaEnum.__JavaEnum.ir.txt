@@ -1,0 +1,2 @@
+(Full dump is not available: null)
+CLASS IR_EXTERNAL_JAVA_DECLARATION_STUB ENUM_CLASS name:JavaEnum modality:FINAL visibility:public superTypes:[kotlin.Enum<@[FlexibleNullability] <root>.JavaEnum?>]

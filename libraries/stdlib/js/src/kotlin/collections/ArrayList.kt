@@ -3,7 +3,11 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
+@file:JsFileName("ArrayListJs")
+
 package kotlin.collections
+
+import kotlin.js.collections.JsArray
 
 /**
  * Provides a [MutableList] implementation, which uses a resizable array as its backing storage.
@@ -159,7 +163,7 @@ public actual open class ArrayList<E> internal constructor(private var array: Ar
 
     actual override fun lastIndexOf(element: E): Int = array.lastIndexOf(element)
 
-    override fun toString() = arrayToString(array)
+    override fun toString(): String = arrayToString(array)
 
     @Suppress("UNCHECKED_CAST")
     override fun <T> toArray(array: Array<T>): Array<T> {
@@ -169,17 +173,17 @@ public actual open class ArrayList<E> internal constructor(private var array: Ar
 
         (this.array as Array<T>).copyInto(array)
 
-        if (array.size > size) {
-            array[size] = null as T // null-terminate
-        }
-
-        return array
+        return terminateCollectionToArray(size, array)
     }
 
     override fun toArray(): Array<Any?> {
         return js("[]").slice.call(array)
     }
 
+    @ExperimentalJsExport
+    @ExperimentalJsCollectionsApi
+    @SinceKotlin("2.0")
+    override fun asJsArrayView(): JsArray<E> = array.unsafeCast<JsArray<E>>()
 
     internal override fun checkIsMutable() {
         if (isReadOnly) throw UnsupportedOperationException()

@@ -35,6 +35,7 @@ val (nativeInteropRuntimeSourceSet, nativeInteropRuntimeApi) = extraSourceSet("n
 
 dependencies {
     api(kotlinStdlib("jdk8"))
+    api(project(":core:util.runtime"))
     api(intellijPlatformUtil()) {
         exclude(module = "annotations")
     }
@@ -54,23 +55,28 @@ dependencies {
     testApi(protobufSourceSet.output)
     testApi(protobufCompareSourceSet.output)
 
-    testApi(projectTests(":compiler:cli"))
+    testApi(project(":compiler:cli"))
     testApi(projectTests(":compiler:incremental-compilation-impl"))
     testApi(projectTests(":plugins:jvm-abi-gen"))
-    testApi(projectTests(":plugins:android-extensions-compiler"))
     testApi(projectTests(":plugins:parcelize:parcelize-compiler"))
-    testApi(projectTests(":kotlin-annotation-processing"))
     testApi(projectTests(":kotlin-annotation-processing-cli"))
+    testApi(projectTests(":kotlin-annotation-processing"))
     testApi(projectTests(":kotlin-allopen-compiler-plugin"))
     testApi(projectTests(":kotlin-noarg-compiler-plugin"))
     testApi(projectTests(":kotlin-lombok-compiler-plugin"))
+    testApi(projectTests(":kotlin-power-assert-compiler-plugin"))
     testApi(projectTests(":kotlin-sam-with-receiver-compiler-plugin"))
     testApi(projectTests(":kotlin-assignment-compiler-plugin"))
     testApi(projectTests(":kotlinx-serialization-compiler-plugin"))
     testApi(projectTests(":kotlin-atomicfu-compiler-plugin"))
-    testApi(projectTests(":plugins:fir-plugin-prototype"))
-    testApi(projectTests(":plugins:fir-plugin-prototype:fir-plugin-ic-test"))
+    testImplementation(projectTests(":analysis:analysis-api-impl-base"))
+    testImplementation(projectTests(":analysis:analysis-test-framework"))
+    testApi(projectTests(":plugins:plugin-sandbox"))
+    testApi(projectTests(":plugins:plugin-sandbox:plugin-sandbox-ic-test"))
+    testApi(projectTests(":plugins:plugins-interactions-testing"))
     testApi(projectTests(":generators:test-generator"))
+    testApi(projectTests(":generators:analysis-api-generator"))
+    testApi(projectTests(":plugins:scripting:scripting-tests"))
     testImplementation(commonDependency("org.jetbrains.kotlin:kotlin-reflect")) { isTransitive = false }
     testImplementation(projectTests(":compiler:test-infrastructure-utils"))
     testImplementation(projectTests(":compiler:test-infrastructure"))
@@ -78,12 +84,9 @@ dependencies {
     testImplementation(projectTests(":js:js.tests"))
     testImplementation(project(":kotlin-gradle-compiler-types"))
     testImplementation(project(":jps:jps-common"))
-    testApiJUnit5()
-
-    if (Ide.IJ()) {
-        testCompileOnly(jpsBuildTest())
-        testApi(jpsBuildTest())
-    }
+    testApi(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 }
 
 

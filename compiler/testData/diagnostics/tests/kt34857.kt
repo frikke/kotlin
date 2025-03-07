@@ -1,5 +1,4 @@
-// FIR_IDENTICAL
-
+// RUN_PIPELINE_TILL: FRONTEND
 val Int.plusAssign: (Int) -> Unit
     get() = {}
 

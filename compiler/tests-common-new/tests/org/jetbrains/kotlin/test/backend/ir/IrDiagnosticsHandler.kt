@@ -7,8 +7,11 @@ package org.jetbrains.kotlin.test.backend.ir
 
 import org.jetbrains.kotlin.test.FirParser
 import org.jetbrains.kotlin.test.backend.handlers.AbstractIrHandler
+import org.jetbrains.kotlin.test.backend.handlers.findByPath
+import org.jetbrains.kotlin.test.directives.DiagnosticsDirectives
 import org.jetbrains.kotlin.test.directives.FirDiagnosticsDirectives
 import org.jetbrains.kotlin.test.directives.model.singleOrZeroValue
+import org.jetbrains.kotlin.test.frontend.fir.handlers.FullDiagnosticsRenderer
 import org.jetbrains.kotlin.test.frontend.fir.handlers.diagnosticCodeMetaInfos
 import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.*
@@ -20,13 +23,20 @@ class IrDiagnosticsHandler(testServices: TestServices) : AbstractIrHandler(testS
     private val diagnosticsService: DiagnosticsService
         get() = testServices.diagnosticsService
 
+    override val additionalServices: List<ServiceRegistrationData>
+        get() = listOf(service(::DiagnosticsService))
+
+    private val fullDiagnosticsRenderer = FullDiagnosticsRenderer(DiagnosticsDirectives.RENDER_IR_DIAGNOSTICS_FULL_TEXT)
+
     override fun processModule(module: TestModule, info: IrBackendInput) {
         val diagnosticsByFilePath = info.diagnosticReporter.diagnosticsByFilePath
         for (currentModule in testServices.moduleStructure.modules) {
             val lightTreeComparingModeEnabled = FirDiagnosticsDirectives.COMPARE_WITH_LIGHT_TREE in currentModule.directives
             val lightTreeEnabled = currentModule.directives.singleOrZeroValue(FirDiagnosticsDirectives.FIR_PARSER) == FirParser.LightTree
             for (file in currentModule.files) {
-                val diagnostics = diagnosticsByFilePath["/" + file.relativePath]
+                val diagnostics = file.findByPath(testServices) {
+                    diagnosticsByFilePath[it]
+                }
                 if (diagnostics != null && diagnostics.isNotEmpty()) {
                     val diagnosticsMetadataInfos =
                         diagnostics.diagnosticCodeMetaInfos(
@@ -34,10 +44,13 @@ class IrDiagnosticsHandler(testServices: TestServices) : AbstractIrHandler(testS
                             lightTreeEnabled, lightTreeComparingModeEnabled
                         )
                     globalMetadataInfoHandler.addMetadataInfosForFile(file, diagnosticsMetadataInfos)
+                    fullDiagnosticsRenderer.storeFullDiagnosticRender(module, diagnostics, file)
                 }
             }
         }
     }
 
-    override fun processAfterAllModules(someAssertionWasFailed: Boolean) {}
+    override fun processAfterAllModules(someAssertionWasFailed: Boolean) {
+        fullDiagnosticsRenderer.assertCollectedDiagnostics(testServices, ".fir.ir.diag.txt")
+    }
 }

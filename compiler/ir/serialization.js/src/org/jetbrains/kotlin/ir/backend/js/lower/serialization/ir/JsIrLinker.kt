@@ -6,29 +6,32 @@
 package org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir
 
 import org.jetbrains.kotlin.backend.common.linkage.partial.PartialLinkageSupportForLinker
-import org.jetbrains.kotlin.backend.common.overrides.FakeOverrideBuilder
+import org.jetbrains.kotlin.backend.common.overrides.IrLinkerFakeOverrideProvider
 import org.jetbrains.kotlin.backend.common.serialization.*
+import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.ir.IrBuiltIns
-import org.jetbrains.kotlin.ir.builders.TranslationPluginContext
+import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.types.IrTypeSystemContextImpl
-import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.DeclarationStubGenerator
+import org.jetbrains.kotlin.ir.util.IdSignature
+import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.library.IrLibrary
 import org.jetbrains.kotlin.library.KotlinAbiVersion
 import org.jetbrains.kotlin.library.KotlinLibrary
 import org.jetbrains.kotlin.library.containsErrorCode
+import org.jetbrains.kotlin.utils.memoryOptimizedMap
 
 class JsIrLinker(
-    private val currentModule: ModuleDescriptor?, messageLogger: IrMessageLogger, builtIns: IrBuiltIns, symbolTable: SymbolTable,
+    private val currentModule: ModuleDescriptor?, messageCollector: MessageCollector, builtIns: IrBuiltIns, symbolTable: SymbolTable,
     override val partialLinkageSupport: PartialLinkageSupportForLinker,
-    override val translationPluginContext: TranslationPluginContext?,
     private val icData: ICData? = null,
     friendModules: Map<String, Collection<String>> = emptyMap(),
     private val stubGenerator: DeclarationStubGenerator? = null
 ) : KotlinIrLinker(
     currentModule = currentModule,
-    messageLogger = messageLogger,
+    messageCollector = messageCollector,
     builtIns = builtIns,
     symbolTable = symbolTable,
     exportedDependencies = emptyList(),
@@ -39,7 +42,7 @@ class JsIrLinker(
         symbol
     }) {
 
-    override val fakeOverrideBuilder = FakeOverrideBuilder(
+    override val fakeOverrideBuilder = IrLinkerFakeOverrideProvider(
         linker = this,
         symbolTable = symbolTable,
         mangler = JsManglerIr,
@@ -67,8 +70,16 @@ class JsIrLinker(
         }
     }
 
+    private val deserializedFilesInKlibOrder = mutableMapOf<IrModuleFragment, List<IrFile>>()
+
     private inner class JsModuleDeserializer(moduleDescriptor: ModuleDescriptor, klib: IrLibrary, strategyResolver: (String) -> DeserializationStrategy, libraryAbiVersion: KotlinAbiVersion, allowErrorCode: Boolean) :
-        BasicIrModuleDeserializer(this, moduleDescriptor, klib, strategyResolver, libraryAbiVersion, allowErrorCode, false)
+        BasicIrModuleDeserializer(this, moduleDescriptor, klib, strategyResolver, libraryAbiVersion, allowErrorCode, true) {
+
+        override fun init(delegate: IrModuleDeserializer) {
+            super.init(delegate)
+            deserializedFilesInKlibOrder[moduleFragment] = fileDeserializationStates.memoryOptimizedMap { it.file }
+        }
+    }
 
     override fun createCurrentModuleDeserializer(moduleFragment: IrModuleFragment, dependencies: Collection<IrModuleDeserializer>): IrModuleDeserializer {
         val currentModuleDeserializer = super.createCurrentModuleDeserializer(moduleFragment, dependencies)
@@ -91,10 +102,7 @@ class JsIrLinker(
         return deserializersForModules[moduleDescriptor.name.asString()] ?: error("Deserializer for $moduleDescriptor not found")
     }
 
-    class JsFePluginContext(
-        override val moduleDescriptor: ModuleDescriptor,
-        override val symbolTable: ReferenceSymbolTable,
-        override val typeTranslator: TypeTranslator,
-        override val irBuiltIns: IrBuiltIns,
-    ) : TranslationPluginContext
+    fun getDeserializedFilesInKlibOrder(fragment: IrModuleFragment): List<IrFile> {
+        return deserializedFilesInKlibOrder[fragment] ?: emptyList()
+    }
 }

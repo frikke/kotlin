@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: BACKEND
 // FIR_IDENTICAL
 // MODULE: m1-common
 // FILE: common.kt
@@ -13,12 +14,4 @@ actual class Foo {
     actual val foo: String = "JVM"
 
     actual fun bar(x: Int): Int = x + 1
-}
-
-// MODULE: m3-js()()(m1-common)
-// FILE: js.kt
-actual class Foo {
-    actual val foo: String = "JS"
-
-    actual fun bar(x: Int): Int = x - 1
 }

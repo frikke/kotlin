@@ -1,4 +1,4 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: BACKEND
 interface I
 open class C
 

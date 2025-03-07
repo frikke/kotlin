@@ -3,6 +3,8 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.jetbrains.kotlin.scripting.compiler.plugin.repl
 
 import com.intellij.openapi.Disposable
@@ -10,7 +12,6 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.impl.PsiFileFactoryImpl
 import com.intellij.testFramework.LightVirtualFile
-import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
 import org.jetbrains.kotlin.cli.common.messages.AnalyzerWithCompilerReport
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.cli.common.repl.*
@@ -20,6 +21,7 @@ import org.jetbrains.kotlin.cli.jvm.config.jvmClasspathRoots
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.JVMConfigurationKeys
 import org.jetbrains.kotlin.config.JvmTarget
+import org.jetbrains.kotlin.config.messageCollector
 import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.jetbrains.kotlin.parsing.KotlinParserDefinition
 import org.jetbrains.kotlin.psi.KtFile
@@ -49,7 +51,7 @@ open class GenericReplChecker(
                 configurationDependencies(JvmDependency(jvmClasspathRoots))
             }
             add(ScriptingConfigurationKeys.SCRIPT_DEFINITIONS, ScriptDefinition.FromLegacy(hostConfiguration, scriptDefinition))
-            put<MessageCollector>(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, messageCollector)
+            this.messageCollector = messageCollector
             put(JVMConfigurationKeys.RETAIN_OUTPUT_IN_MEMORY, true)
 
             if (get(JVMConfigurationKeys.JVM_TARGET) == null) {

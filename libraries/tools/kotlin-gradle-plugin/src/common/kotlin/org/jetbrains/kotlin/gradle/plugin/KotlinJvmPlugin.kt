@@ -10,9 +10,7 @@ import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
 import org.jetbrains.kotlin.gradle.dsl.*
 import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.kotlinPropertiesProvider
 import org.jetbrains.kotlin.gradle.plugin.mpp.*
-import org.jetbrains.kotlin.gradle.scripting.internal.ScriptingGradleSubplugin
 import org.jetbrains.kotlin.gradle.tasks.*
-import org.jetbrains.kotlin.gradle.utils.configureExperimentalTryK2
 
 const val KOTLIN_DSL_NAME = "kotlin"
 
@@ -29,25 +27,17 @@ internal open class KotlinJvmPlugin(
 
         internal fun Project.configureCompilerOptionsForTarget(
             extensionCompilerOptions: KotlinJvmCompilerOptions,
-            @Suppress("DEPRECATION") compilationsContainer: NamedDomainObjectContainer<out AbstractKotlinCompilation<KotlinJvmOptions>>
+            targetCompilerOptions: KotlinJvmCompilerOptions
         ) {
-            extensionCompilerOptions.verbose.convention(logger.isDebugEnabled)
             extensionCompilerOptions.moduleName.convention(baseModuleName())
             DefaultKotlinJavaToolchain.wireJvmTargetToToolchain(
                 extensionCompilerOptions,
                 project
             )
-            compilationsContainer.configureEach {
-                val jvmCompilerOptions = it.compilerOptions.options as KotlinJvmCompilerOptions
-                KotlinJvmCompilerOptionsHelper.syncOptionsAsConvention(
-                    from = extensionCompilerOptions,
-                    into = jvmCompilerOptions
-                )
-
-                jvmCompilerOptions.moduleName.convention(
-                    it.moduleNameForCompilation(extensionCompilerOptions.moduleName)
-                )
-            }
+            KotlinJvmCompilerOptionsHelper.syncOptionsAsConvention(
+                from = extensionCompilerOptions,
+                into = targetCompilerOptions
+            )
         }
     }
 
@@ -55,45 +45,21 @@ internal open class KotlinJvmPlugin(
         Kotlin2JvmSourceSetProcessor(tasksProvider, KotlinCompilationInfo(compilation))
 
     override fun apply(project: Project) {
-        @Suppress("UNCHECKED_CAST")
-        val target = (project.objects.newInstance(
-            KotlinWithJavaTarget::class.java,
-            project,
-            KotlinPlatformType.jvm,
-            targetName,
-            {
-                object : HasCompilerOptions<KotlinJvmCompilerOptions> {
-                    override val options: KotlinJvmCompilerOptions =
-                        project.objects
-                            .newInstance(KotlinJvmCompilerOptionsDefault::class.java)
-                            .configureExperimentalTryK2(project)
-                }
-            },
-            { compilerOptions: KotlinJvmCompilerOptions ->
-                object : KotlinJvmOptions {
-                    override val options: KotlinJvmCompilerOptions get() = compilerOptions
-                }
-            }
-        ) as KotlinWithJavaTarget<KotlinJvmOptions, KotlinJvmCompilerOptions>)
-            .apply {
-                disambiguationClassifier = null // don't add anything to the task names
-            }
+        val target = project.objects.KotlinWithJavaTargetForJvm(project, targetName)
         val kotlinExtension = project.kotlinExtension as KotlinJvmProjectExtension
-        kotlinExtension.target = target
+        kotlinExtension.targetFuture.complete(target)
 
         super.apply(project)
 
         project.configureCompilerOptionsForTarget(
             kotlinExtension.compilerOptions,
-            target.compilations
+            target.compilerOptions
         )
-
-        project.pluginManager.apply(ScriptingGradleSubplugin::class.java)
     }
 
     override fun configureClassInspectionForIC(project: Project) {
         // For new IC this task is not needed
-        if (!project.kotlinPropertiesProvider.useClasspathSnapshot) {
+        if (!project.kotlinPropertiesProvider.useClasspathSnapshot.get()) {
             super.configureClassInspectionForIC(project)
         }
     }

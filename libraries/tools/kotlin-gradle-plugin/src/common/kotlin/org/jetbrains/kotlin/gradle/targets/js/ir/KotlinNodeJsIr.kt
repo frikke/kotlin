@@ -6,56 +6,59 @@
 package org.jetbrains.kotlin.gradle.targets.js.ir
 
 import org.gradle.api.Action
+import org.gradle.api.model.ObjectFactory
+import org.gradle.api.provider.ProviderFactory
+import org.jetbrains.kotlin.gradle.InternalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import org.jetbrains.kotlin.gradle.targets.js.KotlinWasmTargetType
+import org.jetbrains.kotlin.gradle.targets.js.dsl.ExperimentalMainFunctionArgumentsDsl
 import org.jetbrains.kotlin.gradle.targets.js.dsl.KotlinJsNodeDsl
 import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsExec
-import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.Companion.kotlinNodeJsExtension
 import org.jetbrains.kotlin.gradle.targets.js.testing.KotlinJsTest
 import org.jetbrains.kotlin.gradle.targets.js.testing.KotlinWasmNode
-import org.jetbrains.kotlin.gradle.tasks.dependsOn
-import org.jetbrains.kotlin.gradle.tasks.locateTask
-import org.jetbrains.kotlin.gradle.tasks.withType
+import org.jetbrains.kotlin.gradle.utils.withType
 import javax.inject.Inject
 
-abstract class KotlinNodeJsIr @Inject constructor(target: KotlinJsIrTarget) :
-    KotlinJsIrSubTargetBase(target, "node"),
+abstract class KotlinNodeJsIr
+@InternalKotlinGradlePluginApi
+@Inject
+constructor(
+    target: KotlinJsIrTarget,
+    private val objects: ObjectFactory,
+    private val providers: ProviderFactory,
+) :
+    KotlinJsIrNpmBasedSubTarget(target, "node"),
     KotlinJsNodeDsl {
-
-    private val nodeJs = project.rootProject.kotlinNodeJsExtension
-    private val nodeJsTaskProviders = project.rootProject.kotlinNodeJsExtension
 
     override val testTaskDescription: String
         get() = "Run all ${target.name} tests inside nodejs using the builtin test framework"
 
     override fun runTask(body: Action<NodeJsExec>) {
-        project.tasks.withType<NodeJsExec>().named(runTaskName).configure(body)
+        subTargetConfigurators
+            .withType<NodeJsEnvironmentConfigurator>()
+            .configureEach {
+                it.configureRun(body)
+            }
     }
 
-    override fun locateOrRegisterRunTask(binary: JsIrBinary, name: String) {
-        if (project.locateTask<NodeJsExec>(name) != null) return
+    @ExperimentalMainFunctionArgumentsDsl
+    override fun passProcessArgvToMainFunction() {
+        target.passAsArgumentToMainFunction("process.argv")
+    }
 
-        val runTaskHolder = NodeJsExec.create(binary.compilation, name) {
-            group = taskGroupName
-            dependsOn(binary.linkSyncTask)
-            inputFileProperty.fileProvider(
-                binary.linkSyncTask.flatMap { linkSyncTask ->
-                    binary.linkTask.flatMap { linkTask ->
-                        linkTask.outputFileProperty.map { file ->
-                            linkSyncTask.destinationDirectory.get().resolve(file.name)
-                        }
-                    }
-                }
-            )
+    override fun configureTestDependencies(test: KotlinJsTest, binary: JsIrBinary) {
+        with(nodeJsEnvSpec) {
+            test.dependsOn(project.nodeJsSetupTaskProvider)
         }
-        target.runTask.dependsOn(runTaskHolder)
-    }
 
-    override fun configureTestDependencies(test: KotlinJsTest) {
-        test.dependsOn(
-            nodeJsTaskProviders.npmInstallTaskProvider,
-            nodeJsTaskProviders.storeYarnLockTaskProvider,
-            nodeJsTaskProviders.nodeJsSetupTaskProvider
-        )
+        if (target.wasmTargetType != KotlinWasmTargetType.WASI) {
+            test.dependsOn(
+                nodeJsRoot.npmInstallTaskProvider,
+            )
+            test.dependsOn(nodeJsRoot.packageManagerExtension.map { it.postInstallTasks })
+            test.dependsOn(binary.linkSyncTask)
+        }
+        test.dependsOn(binary.linkTask)
     }
 
     override fun configureDefaultTestFramework(test: KotlinJsTest) {
@@ -64,10 +67,10 @@ abstract class KotlinNodeJsIr @Inject constructor(target: KotlinJsIrTarget) :
                 test.useMocha { }
             }
             if (test.enabled) {
-                nodeJs.taskRequirements.addTaskRequirements(test)
+                nodeJsRoot.taskRequirements.addTaskRequirements(test)
             }
         } else {
-            test.testFramework = KotlinWasmNode(test)
+            test.testFramework = KotlinWasmNode(test, objects, providers)
         }
     }
 }

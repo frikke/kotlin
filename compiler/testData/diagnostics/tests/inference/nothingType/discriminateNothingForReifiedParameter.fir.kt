@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER -UNREACHABLE_CODE
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNUSED_PARAMETER -UNREACHABLE_CODE
 
 interface Bound
 
@@ -47,6 +48,6 @@ fun test7(): Bound? =
 fun test8() {
     select(
         null,
-        <!REIFIED_TYPE_FORBIDDEN_SUBSTITUTION!>materializeReifiedUnbound<!>()
+        materializeReifiedUnbound()
     )
 }

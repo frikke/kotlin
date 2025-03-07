@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
+
 package lvalue_assignment
 
 open class B() {
@@ -102,6 +104,11 @@ class Test() {
 
         @Ann
         l@ (<!VARIABLE_EXPECTED!>1<!>) = 123
+    }
+
+    fun testIllegalTypeRef(): Any {
+        <!UNREACHABLE_CODE!>Char=<!>
+            return ""
     }
 
     fun testIncompleteSyntax() {

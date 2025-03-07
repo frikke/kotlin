@@ -1,4 +1,4 @@
-// !LANGUAGE: +ContextReceivers
+// LANGUAGE: +ContextReceivers
 
 class C {
     val result = "OK"

@@ -6,27 +6,25 @@
 package org.jetbrains.kotlin.test.runners.codegen
 
 import org.jetbrains.kotlin.test.Constructor
-import org.jetbrains.kotlin.test.TargetBackend
-import org.jetbrains.kotlin.test.backend.classic.ClassicBackendInput
-import org.jetbrains.kotlin.test.backend.classic.ClassicJvmBackendFacade
+import org.jetbrains.kotlin.test.FirParser
+import org.jetbrains.kotlin.test.backend.ir.BackendCliJvmFacade
 import org.jetbrains.kotlin.test.backend.ir.IrBackendInput
 import org.jetbrains.kotlin.test.backend.ir.JvmIrBackendFacade
 import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
-import org.jetbrains.kotlin.test.FirParser
-import org.jetbrains.kotlin.test.directives.configureFirParser
+import org.jetbrains.kotlin.test.configuration.configureDumpHandlersForCodegenTest
 import org.jetbrains.kotlin.test.directives.LanguageSettingsDirectives
-import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontend2ClassicBackendConverter
+import org.jetbrains.kotlin.test.directives.configureFirParser
 import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontend2IrConverter
 import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontendFacade
 import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontendOutputArtifact
-import org.jetbrains.kotlin.test.frontend.fir.Fir2IrJvmResultsConverter
-import org.jetbrains.kotlin.test.frontend.fir.FirFrontendFacade
+import org.jetbrains.kotlin.test.frontend.fir.Fir2IrCliJvmFacade
+import org.jetbrains.kotlin.test.frontend.fir.FirCliJvmFacade
 import org.jetbrains.kotlin.test.frontend.fir.FirOutputArtifact
 import org.jetbrains.kotlin.test.model.*
 
 open class AbstractIrSteppingWithBytecodeInlinerTest(
     private val useIrInliner: Boolean = false
-) : AbstractSteppingTestBase<ClassicFrontendOutputArtifact, IrBackendInput>(FrontendKinds.ClassicFrontend, TargetBackend.JVM_IR) {
+) : AbstractSteppingTestBase<ClassicFrontendOutputArtifact>(FrontendKinds.ClassicFrontend) {
     override val frontendFacade: Constructor<FrontendFacade<ClassicFrontendOutputArtifact>>
         get() = ::ClassicFrontendFacade
 
@@ -45,40 +43,19 @@ open class AbstractIrSteppingWithBytecodeInlinerTest(
     }
 }
 
-open class AbstractIrSteppingWithIrInlinerTest : AbstractIrSteppingWithBytecodeInlinerTest(useIrInliner = true) {}
+open class AbstractIrSteppingWithIrInlinerTest : AbstractIrSteppingWithBytecodeInlinerTest(useIrInliner = true)
 
-open class AbstractSteppingTest : AbstractSteppingTestBase<ClassicFrontendOutputArtifact, ClassicBackendInput>(
-    FrontendKinds.ClassicFrontend,
-    TargetBackend.JVM
-) {
-
-    override val frontendFacade: Constructor<FrontendFacade<ClassicFrontendOutputArtifact>>
-        get() = ::ClassicFrontendFacade
-
-    override val frontendToBackendConverter: Constructor<Frontend2BackendConverter<ClassicFrontendOutputArtifact, ClassicBackendInput>>
-        get() = ::ClassicFrontend2ClassicBackendConverter
-
-    override val backendFacade: Constructor<BackendFacade<ClassicBackendInput, BinaryArtifacts.Jvm>>
-        get() = ::ClassicJvmBackendFacade
-
-    override fun configure(builder: TestConfigurationBuilder) {
-        super.configure(builder)
-        builder.configureDumpHandlersForCodegenTest()
-    }
-}
-
-open class AbstractFirSteppingTestBase(val parser: FirParser) : AbstractSteppingTestBase<FirOutputArtifact, IrBackendInput>(
-    FrontendKinds.FIR,
-    TargetBackend.JVM_IR
+open class AbstractFirSteppingTestBase(val parser: FirParser) : AbstractSteppingTestBase<FirOutputArtifact>(
+    FrontendKinds.FIR
 ) {
     override val frontendFacade: Constructor<FrontendFacade<FirOutputArtifact>>
-        get() = ::FirFrontendFacade
+        get() = ::FirCliJvmFacade
 
     override val frontendToBackendConverter: Constructor<Frontend2BackendConverter<FirOutputArtifact, IrBackendInput>>
-        get() = ::Fir2IrJvmResultsConverter
+        get() = ::Fir2IrCliJvmFacade
 
     override val backendFacade: Constructor<BackendFacade<IrBackendInput, BinaryArtifacts.Jvm>>
-        get() = ::JvmIrBackendFacade
+        get() = ::BackendCliJvmFacade
 
     override fun configure(builder: TestConfigurationBuilder) {
         super.configure(builder)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -12,19 +12,21 @@ import kotlin.math.min
  * The `String` class represents character strings. All string literals in Kotlin programs, such as `"abc"`, are
  * implemented as instances of this class.
  */
-public class String internal @WasmPrimitiveConstructor constructor(
+public actual class String internal @WasmPrimitiveConstructor constructor(
     private var leftIfInSum: String?,
     @kotlin.internal.IntrinsicConstEvaluation
-    public override val length: Int,
+    public actual override val length: Int,
     private var _chars: WasmCharArray,
 ) : Comparable<String>, CharSequence {
-    public companion object {}
+    public actual companion object {}
 
     /**
      * Returns a string obtained by concatenating this string with the string representation of the given [other] object.
+     *
+     * @sample samples.text.Strings.stringPlus
      */
     @kotlin.internal.IntrinsicConstEvaluation
-    public operator fun plus(other: Any?): String {
+    public actual operator fun plus(other: Any?): String {
         val right = other.toString()
         return String(this, this.length + right.length, right.chars)
     }
@@ -36,7 +38,7 @@ public class String internal @WasmPrimitiveConstructor constructor(
      * where the behavior is unspecified.
      */
     @kotlin.internal.IntrinsicConstEvaluation
-    public override fun get(index: Int): Char {
+    public actual override fun get(index: Int): Char {
         rangeCheck(index, this.length)
         return chars.get(index)
     }
@@ -66,7 +68,7 @@ public class String internal @WasmPrimitiveConstructor constructor(
         return _chars
     }
 
-    public override fun subSequence(startIndex: Int, endIndex: Int): CharSequence {
+    public actual override fun subSequence(startIndex: Int, endIndex: Int): CharSequence {
         val actualStartIndex = startIndex.coerceAtLeast(0)
         val actualEndIndex = endIndex.coerceAtMost(this.length)
         val newLength = actualEndIndex - actualStartIndex
@@ -77,7 +79,7 @@ public class String internal @WasmPrimitiveConstructor constructor(
     }
 
     @kotlin.internal.IntrinsicConstEvaluation
-    public override fun compareTo(other: String): Int {
+    public actual override fun compareTo(other: String): Int {
         if (this === other) return 0
         val thisChars = this.chars
         val otherChars = other.chars
@@ -93,8 +95,17 @@ public class String internal @WasmPrimitiveConstructor constructor(
         return thisLength - otherLength
     }
 
+    /**
+     * Indicates if [other] object is equal to this [String].
+     *
+     * An [other] object is equal to this [String] if and only if it is also a [String],
+     * it has the same [length] as this String,
+     * and characters at the same positions in each string are equal to each other.
+     *
+     * @sample samples.text.Strings.stringEquals
+     */
     @kotlin.internal.IntrinsicConstEvaluation
-    public override fun equals(other: Any?): Boolean {
+    public actual override fun equals(other: Any?): Boolean {
         if (other == null) return false
         if (other === this) return true
         val otherString = other as? String ?: return false
@@ -116,7 +127,7 @@ public class String internal @WasmPrimitiveConstructor constructor(
     }
 
     @kotlin.internal.IntrinsicConstEvaluation
-    public override fun toString(): String = this
+    public actual override fun toString(): String = this
 
     public override fun hashCode(): Int {
         if (_hashCode != 0) return _hashCode
@@ -126,7 +137,7 @@ public class String internal @WasmPrimitiveConstructor constructor(
         val thisChars = chars
         var hash = 0
         repeat(thisLength) {
-            hash = (hash shl 5) - hash + thisChars.get(it).toInt()
+            hash = (hash shl 5) - hash + thisChars.get(it).code
         }
         _hashCode = hash
         return _hashCode

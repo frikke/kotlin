@@ -10,10 +10,16 @@ dependencies {
     api(project(":compiler:fir:tree"))
     implementation(project(":core:util.runtime"))
 
-    compileOnly(commonDependency("com.google.guava:guava"))
+    compileOnly(libs.guava)
 }
 
 sourceSets {
     "main" { projectDefault() }
     "test" { none() }
+}
+
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xconsistent-data-class-copy-visibility")
+    }
 }

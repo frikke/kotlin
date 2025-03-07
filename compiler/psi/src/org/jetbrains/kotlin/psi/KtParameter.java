@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2025 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.psi;
@@ -20,7 +9,6 @@ import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.navigation.ItemPresentationProviders;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.tree.TokenSet;
@@ -75,7 +63,7 @@ public class KtParameter extends KtNamedDeclarationStub<KotlinParameterStub> imp
     }
 
     public boolean hasDefaultValue() {
-        KotlinParameterStub stub = getStub();
+        KotlinParameterStub stub = getGreenStub();
         if (stub != null) {
             return stub.hasDefaultValue();
         }
@@ -101,7 +89,7 @@ public class KtParameter extends KtNamedDeclarationStub<KotlinParameterStub> imp
     }
 
     public boolean isMutable() {
-        KotlinParameterStub stub = getStub();
+        KotlinParameterStub stub = getGreenStub();
         if (stub != null) {
             return stub.isMutable();
         }
@@ -115,7 +103,7 @@ public class KtParameter extends KtNamedDeclarationStub<KotlinParameterStub> imp
     }
 
     public boolean hasValOrVar() {
-        KotlinParameterStub stub = getStub();
+        KotlinParameterStub stub = getGreenStub();
         if (stub != null) {
             return stub.hasValOrVar();
         }
@@ -157,19 +145,25 @@ public class KtParameter extends KtNamedDeclarationStub<KotlinParameterStub> imp
         if (parent == null) {
             return false;
         }
-        if (klass.isInstance(parent.getParent())) {
-            //don't check ast if the tree structure is different; skip for compiled code
-            if (!getContainingKtFile().isCompiled() && 
-                parent.getNextSibling() instanceof PsiErrorElement) {
-                return false;
-            }
-            return true;
-        }
-        return false;
+        return klass.isInstance(parent.getParent());
     }
 
     public boolean isCatchParameter() {
         return checkParentOfParentType(KtCatchClause.class);
+    }
+
+    /**
+     * <pre>
+     *   context(contextParameter: Int)
+     *   fun foo() {}
+     * </pre>
+     *
+     * @return true whether this [KtParameter] is a context parameter.
+     *
+     * @see KtContextReceiverList
+     */
+    public boolean isContextParameter() {
+        return getParent() instanceof KtContextReceiverList;
     }
 
     /**
@@ -212,12 +206,6 @@ public class KtParameter extends KtNamedDeclarationStub<KotlinParameterStub> imp
         return null;
     }
 
-    @NotNull
-    @Override
-    public List<KtContextReceiver> getContextReceivers() {
-        return Collections.emptyList();
-    }
-
     @Nullable
     @Override
     public KtTypeParameterList getTypeParameterList() {
@@ -247,6 +235,26 @@ public class KtParameter extends KtNamedDeclarationStub<KotlinParameterStub> imp
         PsiElement parent = getParentByStub();
         if (!(parent instanceof KtParameterList)) return null;
         return ((KtParameterList) parent).getOwnerFunction();
+    }
+
+    /**
+     * @see KtParameterList#getOwnerFunction()
+     * @see KtContextReceiverList#getOwnerDeclaration()
+     *
+     * @return the parameter's owner declaration or null if it is from a functional type
+     */
+    @Nullable
+    public KtDeclaration getOwnerDeclaration() {
+        PsiElement parent = getParent();
+        if (parent instanceof KtParameterList) {
+            return ((KtParameterList) parent).getOwnerFunction();
+        }
+
+        if (parent instanceof KtContextReceiverList) {
+            return ((KtContextReceiverList) parent).getOwnerDeclaration();
+        }
+
+        return null;
     }
 
     @NotNull

@@ -1,6 +1,7 @@
 // WITH_STDLIB
-// IGNORE_BACKEND: JVM, JS
-// !LANGUAGE: +SuspendFunctionAsSupertype
+// LANGUAGE: +SuspendFunctionAsSupertype
+// IGNORE_IR_DESERIALIZATION_TEST: NATIVE
+// ^^^ KT-74942: non-deterministic value param names resolution in fake overrides
 
 import kotlin.coroutines.*
 

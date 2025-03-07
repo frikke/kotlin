@@ -1,5 +1,14 @@
-// !LANGUAGE: +AllowContractsForNonOverridableMembers +AllowReifiedGenericsInContracts
-// !OPT_IN: kotlin.contracts.ExperimentalContracts
+// LANGUAGE: +AllowContractsForNonOverridableMembers +AllowReifiedGenericsInContracts
+// OPT_IN: kotlin.contracts.ExperimentalContracts
+
+/*
+ * KOTLIN DIAGNOSTICS NOT LINKED SPEC TEST (NEGATIVE)
+ *
+ * SECTIONS: contracts, declarations, contractBuilder, effects, returns
+ * NUMBER: 7
+ * DESCRIPTION: Returns effect with type checking with generic parameter
+ * ISSUES: KT-26296
+ */
 
 import kotlin.contracts.*
 

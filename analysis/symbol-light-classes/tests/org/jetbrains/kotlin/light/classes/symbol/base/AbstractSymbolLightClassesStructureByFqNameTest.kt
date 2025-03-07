@@ -1,18 +1,18 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2025 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.light.classes.symbol.base
 
+import org.jetbrains.kotlin.analysis.test.framework.projectStructure.KtTestModule
 import org.jetbrains.kotlin.analysis.test.framework.test.configurators.AnalysisApiTestConfigurator
 import org.jetbrains.kotlin.analysis.utils.printer.prettyPrint
 import org.jetbrains.kotlin.asJava.LightClassTestCommon
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
+import org.jetbrains.kotlin.test.directives.model.DirectivesContainer
 import org.jetbrains.kotlin.test.directives.model.SimpleDirectivesContainer
 import org.jetbrains.kotlin.test.directives.model.singleValue
-import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.assertions
 
@@ -21,19 +21,17 @@ abstract class AbstractSymbolLightClassesStructureByFqNameTest(
     testPrefix: String,
     stopIfCompilationErrorDirectivePresent: Boolean,
 ) : AbstractSymbolLightClassesStructureTestBase(configurator, testPrefix, stopIfCompilationErrorDirectivePresent) {
-    override fun configureTest(builder: TestConfigurationBuilder) {
-        super.configureTest(builder)
-        builder.useDirectives(Directives)
-    }
+    override val additionalDirectives: List<DirectivesContainer>
+        get() = super.additionalDirectives + listOf(Directives)
 
-    override fun doTestByFileStructure(ktFiles: List<KtFile>, module: TestModule, testServices: TestServices) {
+    override fun doLightClassTest(ktFiles: List<KtFile>, module: KtTestModule, testServices: TestServices) {
         val result = prettyPrint {
-            val fqName = module.directives.singleValue(Directives.FQ_NAME)
+            val fqName = module.testModule.directives.singleValue(Directives.FQ_NAME)
             val psiClass = findLightClass(fqName, ktFiles.first().project)
             psiClass?.let { handleClass(it) } ?: append(LightClassTestCommon.NOT_GENERATED_DIRECTIVE)
         }
 
-        testServices.assertions.assertEqualsToTestDataFileSibling(result, testPrefix = testPrefix)
+        testServices.assertions.assertEqualsToTestDataFileSibling(result, testPrefixes = listOf(testPrefix))
 
         doTestInheritors(ktFiles, testServices)
     }

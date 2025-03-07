@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// RUN_PIPELINE_TILL: FRONTEND
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 object Legal {
     operator fun get(i: Int) = 0
@@ -38,8 +39,8 @@ fun testMismatchingArities() {
     <!NO_VALUE_FOR_PARAMETER!>MismatchingArities1[0]++<!>
     MismatchingArities1[0] <!UNRESOLVED_REFERENCE!>+=<!> 1
 
-    <!NO_VALUE_FOR_PARAMETER!>++MismatchingArities2[0]<!>
-    <!NO_VALUE_FOR_PARAMETER!>MismatchingArities2[0]++<!>
+    ++<!NO_VALUE_FOR_PARAMETER!>MismatchingArities2[0]<!>
+    <!NO_VALUE_FOR_PARAMETER!>MismatchingArities2[0]<!>++
     <!NO_VALUE_FOR_PARAMETER!>MismatchingArities2[0]<!> += 1
 }
 

@@ -1,52 +1,50 @@
 /*
- * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.js.test.ir
 
 import org.jetbrains.kotlin.js.test.JsSteppingTestAdditionalSourceProvider
-import org.jetbrains.kotlin.js.test.converters.JsIrBackendFacade
-import org.jetbrains.kotlin.js.test.converters.JsKlibBackendFacade
-import org.jetbrains.kotlin.js.test.converters.incremental.RecompileModuleJsIrBackendFacade
-import org.jetbrains.kotlin.js.test.handlers.JsDebugRunner
-import org.jetbrains.kotlin.js.test.handlers.JsDtsHandler
-import org.jetbrains.kotlin.js.test.handlers.JsIrRecompiledArtifactsIdentityHandler
-import org.jetbrains.kotlin.js.test.handlers.JsLineNumberHandler
+import org.jetbrains.kotlin.js.test.converters.JsKlibSerializerFacade
+import org.jetbrains.kotlin.js.test.handlers.*
+import org.jetbrains.kotlin.js.test.utils.configureJsTypeScriptExportTest
+import org.jetbrains.kotlin.js.test.utils.configureLineNumberTests
+import org.jetbrains.kotlin.js.test.utils.configureSteppingTests
 import org.jetbrains.kotlin.parsing.parseBoolean
 import org.jetbrains.kotlin.test.Constructor
 import org.jetbrains.kotlin.test.TargetBackend
 import org.jetbrains.kotlin.test.backend.ir.IrBackendInput
-import org.jetbrains.kotlin.test.builders.*
+import org.jetbrains.kotlin.test.builders.TestConfigurationBuilder
+import org.jetbrains.kotlin.test.builders.configureJsArtifactsHandlersStep
+import org.jetbrains.kotlin.test.builders.jsArtifactsHandlersStep
 import org.jetbrains.kotlin.test.directives.JsEnvironmentConfigurationDirectives
 import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontend2IrConverter
 import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontendFacade
 import org.jetbrains.kotlin.test.frontend.classic.ClassicFrontendOutputArtifact
 import org.jetbrains.kotlin.test.model.*
 import org.jetbrains.kotlin.test.services.configuration.JsEnvironmentConfigurator
+import org.jetbrains.kotlin.utils.bind
 import java.lang.Boolean.getBoolean
 
 abstract class AbstractJsIrTest(
     pathToTestDir: String,
     testGroupOutputDirPrefix: String,
-    targetBackend: TargetBackend = TargetBackend.JS_IR
-) : AbstractJsBlackBoxCodegenTestBase<ClassicFrontendOutputArtifact, IrBackendInput, BinaryArtifacts.KLib>(
-    FrontendKinds.ClassicFrontend, targetBackend, pathToTestDir, testGroupOutputDirPrefix, skipMinification = true
+    targetBackend: TargetBackend = TargetBackend.JS_IR,
+) : AbstractJsBlackBoxCodegenTestBase<ClassicFrontendOutputArtifact>(
+    FrontendKinds.ClassicFrontend, targetBackend, pathToTestDir, testGroupOutputDirPrefix
 ) {
     override val frontendFacade: Constructor<FrontendFacade<ClassicFrontendOutputArtifact>>
         get() = ::ClassicFrontendFacade
 
-    override val frontendToBackendConverter: Constructor<Frontend2BackendConverter<ClassicFrontendOutputArtifact, IrBackendInput>>
+    override val frontendToIrConverter: Constructor<Frontend2BackendConverter<ClassicFrontendOutputArtifact, IrBackendInput>>
         get() = ::ClassicFrontend2IrConverter
 
-    override val backendFacade: Constructor<BackendFacade<IrBackendInput, BinaryArtifacts.KLib>>
-        get() = ::JsKlibBackendFacade
+    override val serializerFacade: Constructor<BackendFacade<IrBackendInput, BinaryArtifacts.KLib>>
+        get() = ::JsKlibSerializerFacade
 
-    override val afterBackendFacade: Constructor<AbstractTestFacade<BinaryArtifacts.KLib, BinaryArtifacts.Js>>?
-        get() = ::JsIrBackendFacade
-
-    override val recompileFacade: Constructor<AbstractTestFacade<BinaryArtifacts.Js, BinaryArtifacts.Js>>
-        get() = { RecompileModuleJsIrBackendFacade(it) }
+    override val backendFacades: JsBackendFacades
+        get() = JsBackendFacades.WithRecompilation
 
     private fun getBoolean(s: String, default: Boolean) = System.getProperty(s)?.let { parseBoolean(it) } ?: default
 
@@ -87,38 +85,28 @@ open class AbstractIrJsCodegenBoxTest : AbstractJsIrTest(
     testGroupOutputDirPrefix = "codegen/irBox/"
 )
 
-open class AbstractIrJsCodegenBoxErrorTest : AbstractJsIrTest(
-    pathToTestDir = "compiler/testData/codegen/boxError/",
-    testGroupOutputDirPrefix = "codegen/irBoxError/"
-)
-
 open class AbstractIrJsCodegenInlineTest : AbstractJsIrTest(
     pathToTestDir = "compiler/testData/codegen/boxInline/",
     testGroupOutputDirPrefix = "codegen/irBoxInline/"
 )
 
 open class AbstractIrJsTypeScriptExportTest : AbstractJsIrTest(
-    pathToTestDir = "${JsEnvironmentConfigurator.TEST_DATA_DIR_PATH}/typescript-export/",
-    testGroupOutputDirPrefix = "typescript-export/"
+    pathToTestDir = "${JsEnvironmentConfigurator.TEST_DATA_DIR_PATH}/typescript-export/js/",
+    testGroupOutputDirPrefix = "typescript-export/ir/"
 ) {
     override fun configure(builder: TestConfigurationBuilder) {
         super.configure(builder)
-        configureIrJsTypeScriptExportTest(builder)
+        builder.configureJsTypeScriptExportTest()
     }
 }
 
-private fun configureIrJsTypeScriptExportTest(builder: TestConfigurationBuilder) {
-    with(builder) {
-        defaultDirectives {
-            +JsEnvironmentConfigurationDirectives.GENERATE_DTS
-            if (getBoolean("kotlin.js.updateReferenceDtsFiles")) +JsEnvironmentConfigurationDirectives.UPDATE_REFERENCE_DTS_FILES
-        }
-
-        configureJsArtifactsHandlersStep {
-            useHandlers(
-                ::JsDtsHandler
-            )
-        }
+open class AbstractIrJsES6TypeScriptExportTest : AbstractJsIrES6Test(
+    pathToTestDir = "${JsEnvironmentConfigurator.TEST_DATA_DIR_PATH}/typescript-export/js/",
+    testGroupOutputDirPrefix = "typescript-export/ir-es6/"
+) {
+    override fun configure(builder: TestConfigurationBuilder) {
+        super.configure(builder)
+        builder.configureJsTypeScriptExportTest()
     }
 }
 
@@ -128,37 +116,71 @@ open class AbstractJsIrLineNumberTest : AbstractJsIrTest(
 ) {
     override fun configure(builder: TestConfigurationBuilder) {
         super.configure(builder)
-        configureJsIrLineNumberTest(builder)
+        builder.configureLineNumberTests(::createIrJsLineNumberHandler)
     }
 }
 
-private fun configureJsIrLineNumberTest(builder: TestConfigurationBuilder) {
-    with(builder) {
-        defaultDirectives {
-            +JsEnvironmentConfigurationDirectives.KJS_WITH_FULL_RUNTIME
-            +JsEnvironmentConfigurationDirectives.NO_COMMON_FILES
-            -JsEnvironmentConfigurationDirectives.GENERATE_NODE_JS_RUNNER
-            JsEnvironmentConfigurationDirectives.DONT_RUN_GENERATED_CODE.with(listOf("JS", "JS_IR", "JS_IR_ES6"))
+open class AbstractSourceMapGenerationSmokeTest : AbstractJsIrTest(
+    pathToTestDir = "${JsEnvironmentConfigurator.TEST_DATA_DIR_PATH}/sourcemap/",
+    testGroupOutputDirPrefix = "irSourcemap/"
+) {
+    override fun configure(builder: TestConfigurationBuilder) {
+        super.configure(builder)
+        with(builder) {
+            defaultDirectives {
+                +JsEnvironmentConfigurationDirectives.GENERATE_SOURCE_MAP
+                -JsEnvironmentConfigurationDirectives.GENERATE_NODE_JS_RUNNER
+            }
         }
-        configureJsArtifactsHandlersStep {
-            useHandlers(::JsLineNumberHandler)
+    }
+}
+
+open class AbstractMultiModuleOrderTest : AbstractJsIrTest(
+    pathToTestDir = "${JsEnvironmentConfigurator.TEST_DATA_DIR_PATH}/multiModuleOrder/",
+    testGroupOutputDirPrefix = "irMultiModuleOrder/"
+) {
+    override fun configure(builder: TestConfigurationBuilder) {
+        super.configure(builder)
+        with(builder) {
+            configureJsArtifactsHandlersStep {
+                useHandlers(
+                    ::JsWrongModuleHandler
+                )
+            }
+        }
+    }
+}
+
+open class AbstractWebDemoExamplesTest : AbstractJsIrTest(
+    pathToTestDir = "${JsEnvironmentConfigurator.TEST_DATA_DIR_PATH}/webDemoExamples/",
+    testGroupOutputDirPrefix = "webDemoExamples/"
+) {
+    override fun configure(builder: TestConfigurationBuilder) {
+        super.configure(builder)
+        with(builder) {
+            defaultDirectives {
+                +JsEnvironmentConfigurationDirectives.KJS_WITH_FULL_RUNTIME
+                -JsEnvironmentConfigurationDirectives.GENERATE_NODE_JS_RUNNER
+                JsEnvironmentConfigurationDirectives.DONT_RUN_GENERATED_CODE.with("JS_IR")
+            }
+
+            configureJsArtifactsHandlersStep {
+                useHandlers(::MainCallWithArgumentsHandler)
+            }
         }
     }
 }
 
 open class AbstractIrJsSteppingTest : AbstractJsIrTest(
     pathToTestDir = "compiler/testData/debug/stepping/",
-    testGroupOutputDirPrefix = "debug/stepping/"
+    testGroupOutputDirPrefix = "debug/irStepping/"
 ) {
-    override fun TestConfigurationBuilder.configuration() {
-        commonConfigurationForJsBlackBoxCodegenTest()
-        defaultDirectives {
-            +JsEnvironmentConfigurationDirectives.NO_COMMON_FILES
-        }
-        useAdditionalSourceProviders(::JsSteppingTestAdditionalSourceProvider)
-        jsArtifactsHandlersStep {
-            useHandlers({ JsDebugRunner(it, localVariables = false) })
-        }
+    override val enableBoxHandlers: Boolean
+        get() = false
+
+    override fun configure(builder: TestConfigurationBuilder) {
+        super.configure(builder)
+        builder.configureSteppingTests()
     }
 }
 
@@ -166,19 +188,26 @@ open class AbstractIrJsLocalVariableTest : AbstractJsIrTest(
     pathToTestDir = "compiler/testData/debug/localVariables/",
     testGroupOutputDirPrefix = "debug/localVariables/"
 ) {
-    override fun TestConfigurationBuilder.configuration() {
-        commonConfigurationForJsBlackBoxCodegenTest()
-        defaultDirectives {
-            +JsEnvironmentConfigurationDirectives.NO_COMMON_FILES
-        }
-        useAdditionalSourceProviders(::JsSteppingTestAdditionalSourceProvider)
-        jsArtifactsHandlersStep {
-            useHandlers({ JsDebugRunner(it, localVariables = true) })
+    override val enableBoxHandlers: Boolean
+        get() = false
+
+    override fun configure(builder: TestConfigurationBuilder) {
+        super.configure(builder)
+        with(builder) {
+            defaultDirectives {
+                +JsEnvironmentConfigurationDirectives.NO_COMMON_FILES
+            }
+            useAdditionalSourceProviders(::JsSteppingTestAdditionalSourceProvider)
+            jsArtifactsHandlersStep {
+                useHandlers(
+                    ::JsDebugRunner.bind(true)
+                )
+            }
         }
     }
 }
 
 open class AbstractIrCodegenWasmJsInteropJsTest : AbstractJsIrTest(
-    pathToTestDir = "compiler/testData/codegen/wasmJsInterop",
-    testGroupOutputDirPrefix = "codegen/wasmJsInteropJs"
+    pathToTestDir = "compiler/testData/codegen/wasmJsInterop/",
+    testGroupOutputDirPrefix = "codegen/irWasmJsInteropJs/"
 )

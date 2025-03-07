@@ -3,21 +3,28 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
+@file:OptIn(DeprecatedTargetPresetApi::class, InternalKotlinGradlePluginApi::class)
+
 package org.jetbrains.kotlin.generators.gradle.dsl
 
 import org.gradle.api.Action
+import org.jetbrains.kotlin.generators.arguments.getPrinterToFile
+import org.jetbrains.kotlin.gradle.DeprecatedTargetPresetApi
+import org.jetbrains.kotlin.gradle.InternalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.plugin.KotlinTargetsContainerWithPresets
+import org.jetbrains.kotlin.utils.Printer
 import java.io.File
 
 fun main() {
-    generateKotlinTargetContainerWithPresetFunctionsInterface()
+    generateKotlinTargetContainerWithPresetFunctionsInterface(::getPrinterToFile)
 }
 
 private val parentInterface = KotlinTargetsContainerWithPresets::class
 
+@Suppress("DEPRECATION_ERROR")
 private val presetsProperty = KotlinTargetsContainerWithPresets::presets.name
 
-private fun generateKotlinTargetContainerWithPresetFunctionsInterface() {
+internal fun generateKotlinTargetContainerWithPresetFunctionsInterface(withPrinterToFile: (targetFile: File, Printer.() -> Unit) -> Unit) {
     // Generate KotlinMultiplatformExtension subclass with member functions for the presets:
     val functions = allPresetEntries.map { kotlinPreset ->
         generatePresetFunctions(kotlinPreset, presetsProperty, "configureOrCreate")
@@ -50,13 +57,16 @@ private fun generateKotlinTargetContainerWithPresetFunctionsInterface() {
         imports,
         generatedCodeWarning,
         extraTopLevelDeclarations,
-        "interface ${className.renderShort()} : ${parentInterfaceName.renderShort()} {",
+        "@KotlinGradlePluginPublicDsl\ninterface ${className.renderShort()} : ${parentInterfaceName.renderShort()} {",
         functions.joinToString("\n\n") { it.indented(4) },
         "}"
     ).joinToString("\n\n")
 
-    val targetFile = File("$outputSourceRoot/${className.fqName.replace(".", "/")}.kt")
-    targetFile.writeText(code)
+    val targetFile = File("$kotlinGradlePluginSourceRoot/${className.fqName.replace(".", "/")}.kt")
+
+    withPrinterToFile(targetFile) {
+        println(code)
+    }
 }
 
 private fun generatePresetFunctions(
@@ -89,6 +99,9 @@ private fun generatePresetFunctions(
         ""
     }
 
+    // Suppress presets deprecation to prevent warnings inside kotlin-gradle-plugin
+    val suppressPresetsDeprecation = "@Suppress(\"DEPRECATION_ERROR\")"
+
     val alsoBlockAfterConfiguration = if (presetEntry.alsoBlockAfterConfiguration != null) {
         """
             .also {
@@ -109,6 +122,7 @@ private fun generatePresetFunctions(
     ): ${presetEntry.targetType.renderShort()} =
         $configureOrCreateFunctionName(
             name,
+            ${suppressPresetsDeprecation}
             $getPresetsExpression.getByName("$entityName") as ${presetEntry.presetType.renderShort()},
             configure
         )$alsoBlockAfterConfiguration

@@ -1,6 +1,8 @@
 @file:Suppress("HasPlatformType")
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.jetbrains.kotlin.konan.target.HostManager
+import org.jetbrains.kotlin.konan.target.KonanTarget.*
 
 plugins {
     kotlin("jvm")
@@ -21,9 +23,9 @@ val embedded by configurations.getting {
 
 dependencies {
     api(project(":kotlin-gradle-plugin-idea"))
-    embedded("com.google.protobuf:protobuf-java:3.21.9")
-    embedded("com.google.protobuf:protobuf-kotlin:3.21.9")
-    testImplementation(project(":kotlin-test:kotlin-test-junit"))
+    embedded(libs.protobuf.java)
+    embedded(libs.protobuf.kotlin)
+    testImplementation(kotlinTest("junit"))
     testImplementation(kotlin("reflect"))
     testImplementation(testFixtures(project(":kotlin-gradle-plugin-idea")))
 }
@@ -64,35 +66,76 @@ run {
     }
 }
 
+
 /* Setup protoc */
-tasks.register<Exec>("protoc") {
-    val protoSources = file("src/main/proto")
-    val javaOutput = file("src/generated/java/")
-    val kotlinOutput = file("src/generated/kotlin/")
-
-    inputs.dir(protoSources)
-    outputs.dir(javaOutput)
-    outputs.dir(kotlinOutput)
-
-    doFirst {
-        javaOutput.deleteRecursively()
-        kotlinOutput.deleteRecursively()
-        javaOutput.mkdirs()
-        kotlinOutput.mkdirs()
+run {
+    val protoc = configurations.create("protoc") {
+        isCanBeResolved = true
+        isCanBeConsumed = false
     }
 
-    workingDir(project.projectDir)
+    dependencies {
+        protoc(libs.protoc) {
+            artifact {
+                type = "exe"
+                classifier = when (HostManager.host) {
+                    MACOS_ARM64 -> "osx-aarch_64"
+                    MACOS_X64 -> "osx-x86_64"
+                    MINGW_X64 -> "windows-x86_64"
+                    LINUX_X64 -> "linux-x86_64"
+                    else -> null
+                }
+            }
+        }
 
-    commandLine(
-        *arrayOf(
-            "protoc",
-            "-I=$protoSources",
-            "--java_out=${javaOutput.absolutePath}",
-            "--kotlin_out=${kotlinOutput.absolutePath}"
-        ) + protoSources.listFiles().orEmpty()
-            .filter { it.extension == "proto" }
-            .map { it.path },
-    )
+        val protocVersion = libs.versions.protobuf.get()
+
+        implicitDependencies("com.google.protobuf:protoc:$protocVersion:linux-x86_64@exe")
+        implicitDependencies("com.google.protobuf:protoc:$protocVersion:osx-aarch_64@exe")
+        implicitDependencies("com.google.protobuf:protoc:$protocVersion:osx-x86_64@exe")
+        implicitDependencies("com.google.protobuf:protoc:$protocVersion:windows-x86_64@exe")
+    }
+
+    val protocExecutable = layout.buildDirectory.file("protoc/bin")
+    val setupProtoc = tasks.register("setupProtoc") {
+        doFirst {
+            val protocFile = protocExecutable.get().asFile
+            protoc.files.single().copyTo(protocFile, overwrite = true)
+            protocFile.setExecutable(true)
+        }
+    }
+
+    tasks.register<Exec>("protoc") {
+        dependsOn(setupProtoc)
+
+        val protoSources = file("src/main/proto")
+        val javaOutput = file("src/generated/java/")
+        val kotlinOutput = file("src/generated/kotlin/")
+
+        inputs.dir(protoSources)
+        outputs.dir(javaOutput)
+        outputs.dir(kotlinOutput)
+
+        doFirst {
+            javaOutput.deleteRecursively()
+            kotlinOutput.deleteRecursively()
+            javaOutput.mkdirs()
+            kotlinOutput.mkdirs()
+        }
+
+        workingDir(project.projectDir)
+
+        argumentProviders.add {
+            listOf(
+                protocExecutable.get().asFile.absolutePath,
+                "-I=$protoSources",
+                "--java_out=${javaOutput.absolutePath}",
+                "--kotlin_out=${kotlinOutput.absolutePath}"
+            ) + protoSources.listFiles().orEmpty()
+                .filter { it.extension == "proto" }
+                .map { it.path }
+        }
+    }
 }
 
 
@@ -118,4 +161,3 @@ run {
         }
     }
 }
-

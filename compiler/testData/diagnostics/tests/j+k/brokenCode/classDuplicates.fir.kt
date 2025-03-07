@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FILE: Hello.kt
-private class <!PACKAGE_OR_CLASSIFIER_REDECLARATION!>Hello<!>()
+private class <!CLASSIFIER_REDECLARATION!>Hello<!>()
 {
     val a = 4
 }

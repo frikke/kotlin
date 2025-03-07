@@ -38,31 +38,6 @@ interface IrLazyFunctionBase : IrLazyDeclarationBase, IrTypeParametersContainer 
             stubGenerator.generateFunctionStub(initialSignatureDescriptor.original)
         }
 
-    fun createValueParameters(): List<IrValueParameter> =
-        typeTranslator.buildWithScope(this) {
-            val result = arrayListOf<IrValueParameter>()
-            descriptor.contextReceiverParameters.mapIndexedTo(result) { i, contextReceiverParameter ->
-                factory.createValueParameter(
-                    UNDEFINED_OFFSET, UNDEFINED_OFFSET, origin, IrValueParameterSymbolImpl(contextReceiverParameter),
-                    Name.identifier("contextReceiverParameter$i"), i, contextReceiverParameter.type.toIrType(),
-                    null, isCrossinline = false, isNoinline = false, isHidden = false, isAssignable = false
-                ).apply { parent = this@IrLazyFunctionBase }
-            }
-            descriptor.valueParameters.mapTo(result) {
-                stubGenerator.generateValueParameterStub(it, it.index + descriptor.contextReceiverParameters.size)
-                    .apply { parent = this@IrLazyFunctionBase }
-            }
-        }
-
-    fun createReceiverParameter(
-        parameter: ReceiverParameterDescriptor?,
-        functionDispatchReceiver: Boolean = false,
-    ): IrValueParameter? =
-        if (functionDispatchReceiver && stubGenerator.extensions.isStaticFunction(descriptor)) null
-        else typeTranslator.buildWithScope(this) {
-            parameter?.generateReceiverParameterStub()?.also { it.parent = this@IrLazyFunctionBase }
-        }
-
     fun createReturnType(): IrType =
         typeTranslator.buildWithScope(this) {
             descriptor.returnType!!.toIrType()

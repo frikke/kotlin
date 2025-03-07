@@ -1,7 +1,7 @@
 // WITH_STDLIB
-// IGNORE_BACKEND: JVM
 // TARGET_BACKEND: JVM
 // WORKS_WHEN_VALUE_CLASS
+// JVM_ABI_K1_K2_DIFF: KT-63855
 
 // LANGUAGE: +ValueClasses, +GenericInlineClassParameter
 // FILE: JavaClass.java

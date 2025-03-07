@@ -9,13 +9,12 @@ import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.irAttribute
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.types.isStrictSubtypeOfClass
-import org.jetbrains.kotlin.ir.types.isSubtypeOfClass
-import org.jetbrains.kotlin.ir.util.functions
-import org.jetbrains.kotlin.ir.util.isFromJava
-import org.jetbrains.kotlin.ir.util.parentAsClass
-import java.util.concurrent.ConcurrentHashMap
+import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.utils.addToStdlib.getOrSetIfNull
+
+private var IrClass.cachedStubsForCollectionClass: List<StubsForCollectionClass>? by irAttribute(copyByDefault = false)
 
 class CollectionStubComputer(val context: JvmBackendContext) {
     private class LazyStubsForCollectionClass(
@@ -65,7 +64,7 @@ class CollectionStubComputer(val context: JvmBackendContext) {
     }
 
     private val preComputedStubs: Collection<StubsForCollectionClass> by lazy {
-        with(context.ir.symbols) {
+        with(context.symbols) {
             listOf(
                 LazyStubsForCollectionClass(collection, mutableCollection),
                 LazyStubsForCollectionClass(set, mutableSet),
@@ -79,10 +78,8 @@ class CollectionStubComputer(val context: JvmBackendContext) {
         }
     }
 
-    private val stubsCache = ConcurrentHashMap<IrClass, List<StubsForCollectionClass>>()
-
     fun stubsForCollectionClasses(irClass: IrClass): List<StubsForCollectionClass> =
-        stubsCache.getOrPut(irClass) {
+        irClass::cachedStubsForCollectionClass.getOrSetIfNull {
             computeStubsForCollectionClasses(irClass)
         }
 

@@ -4,7 +4,7 @@ import org.gradle.api.Project
 import org.jetbrains.kotlin.gradle.dsl.KotlinArtifact
 import org.jetbrains.kotlin.gradle.dsl.KotlinArtifactConfig
 import org.jetbrains.kotlin.gradle.dsl.KotlinArtifactsExtension
-import org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode
+import org.jetbrains.kotlin.gradle.plugin.mpp.BITCODE_EMBEDDING_DEPRECATION_MESSAGE
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 import org.jetbrains.kotlin.konan.target.DEPRECATED_TARGET_MESSAGE
 import org.jetbrains.kotlin.konan.target.KonanTarget
@@ -21,12 +21,16 @@ abstract class KotlinArtifactsExtensionImpl @Inject constructor(project: Project
     val RELEASE = NativeBuildType.RELEASE
     val DEBUG = NativeBuildType.DEBUG
 
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE, level = DeprecationLevel.ERROR)
+    @Suppress("DEPRECATION_ERROR")
     class BitcodeEmbeddingModeDsl {
-        val DISABLE = BitcodeEmbeddingMode.DISABLE
-        val BITCODE = BitcodeEmbeddingMode.BITCODE
-        val MARKER = BitcodeEmbeddingMode.MARKER
+        val DISABLE = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.DISABLE
+        val BITCODE = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.BITCODE
+        val MARKER = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.MARKER
     }
 
+    @Suppress("DEPRECATION_ERROR")
+    @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE, level = DeprecationLevel.ERROR)
     @JvmField
     val EmbedBitcodeMode = BitcodeEmbeddingModeDsl()
 
@@ -53,24 +57,6 @@ abstract class KotlinArtifactsExtensionImpl @Inject constructor(project: Project
 
 
     @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    val iosArm32 = KonanTarget.IOS_ARM32
-
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    val watchosX86 = KonanTarget.WATCHOS_X86
-
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    val mingwX86 = KonanTarget.MINGW_X86
-
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
     val linuxArm32Hfp = KonanTarget.LINUX_ARM32_HFP
-
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    val linuxMips32 = KonanTarget.LINUX_MIPS32
-
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    val linuxMipsel32 = KonanTarget.LINUX_MIPSEL32
-
-    @Deprecated(DEPRECATED_TARGET_MESSAGE, level = DeprecationLevel.ERROR)
-    val wasm32 = KonanTarget.WASM32
 
 }

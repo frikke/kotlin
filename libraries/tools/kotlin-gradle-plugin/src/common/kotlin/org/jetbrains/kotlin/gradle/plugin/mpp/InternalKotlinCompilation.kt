@@ -6,23 +6,50 @@
 package org.jetbrains.kotlin.gradle.plugin.mpp
 
 import org.gradle.api.file.FileCollection
-import org.jetbrains.kotlin.gradle.dsl.KotlinCommonOptions
+import org.jetbrains.kotlin.gradle.InternalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.dsl.*
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilation
+import org.jetbrains.kotlin.gradle.plugin.KotlinPluginLifecycle
 import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
+import org.jetbrains.kotlin.gradle.plugin.await
 import org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.KotlinCompilationConfigurationsContainer
 import org.jetbrains.kotlin.gradle.utils.ObservableSet
 import org.jetbrains.kotlin.tooling.core.HasMutableExtras
 
+@Suppress("DEPRECATION")
+@InternalKotlinGradlePluginApi
 internal interface InternalKotlinCompilation<out T : KotlinCommonOptions> : KotlinCompilation<T>, HasMutableExtras {
     override val kotlinSourceSets: ObservableSet<KotlinSourceSet>
     override val allKotlinSourceSets: ObservableSet<KotlinSourceSet>
 
+    override val associatedCompilations: ObservableSet<KotlinCompilation<*>>
+    override val allAssociatedCompilations: ObservableSet<KotlinCompilation<*>>
+
     val configurations: KotlinCompilationConfigurationsContainer
     val friendPaths: Iterable<FileCollection>
     val processResourcesTaskName: String?
+
+    /**
+     * @see [org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.KotlinCompilationArchiveTasks]
+     */
+    val archiveTaskName: String?
 }
 
+@Suppress("DEPRECATION")
 internal val <T : KotlinCommonOptions> KotlinCompilation<T>.internal: InternalKotlinCompilation<T>
     get() = (this as? InternalKotlinCompilation<T>) ?: throw IllegalArgumentException(
         "KotlinCompilation($name) ${this::class} does not implement ${InternalKotlinCompilation::class}"
     )
+
+internal suspend fun InternalKotlinCompilation<*>.awaitAllKotlinSourceSets(): Set<KotlinSourceSet> {
+    KotlinPluginLifecycle.Stage.AfterFinaliseCompilations.await()
+    return allKotlinSourceSets
+}
+
+@Deprecated(
+    "KT-58234: Adding source sets to Compilation is not recommended. Please consider using dependsOn. Scheduled for removal in Kotlin 2.3.",
+    level = DeprecationLevel.ERROR
+)
+internal fun KotlinCompilation<*>.addSourceSet(kotlinSourceSet: KotlinSourceSet) {
+    internal.decoratedInstance.compilation.sourceSets.source(kotlinSourceSet)
+}

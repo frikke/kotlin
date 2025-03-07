@@ -14,11 +14,12 @@ internal class JavaElementPsiSourceWithSmartPointer<PSI : PsiElement>(
     val pointer: SmartPsiElementPointer<PSI>,
     override val factory: JavaElementSourceFactory,
 ) : JavaElementPsiSource<PSI>() {
-
     override val psi: PSI
-        get() {
-            return pointer.element
-                ?: error("Cannot restore a PsiElement from $pointer")
-        }
-}
+        get() = pointer.element ?: error("Cannot restore a PsiElement from $pointer")
 
+    // Only compare pointers here to avoid an underlying PCE (see KT-59445).
+    override fun equals(other: Any?): Boolean =
+        other === this || other is JavaElementPsiSourceWithSmartPointer<*> && pointer == other.pointer
+
+    override fun hashCode(): Int = pointer.hashCode()
+}

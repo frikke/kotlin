@@ -4,17 +4,19 @@
 @file:BenchmarkProject(
     name = "duckduckgo",
     gitUrl = "https://github.com/duckduckgo/Android.git",
-    gitCommitSha = "3df1c07fad63f238f5e02050320c06abde732f58",
-    stableKotlinVersion = "1.8.21",
+    gitCommitSha = "5bec6f290634f1e9eb8f7956099de5384c604423",
+    stableKotlinVersion = "2.1.0",
 )
 
 import java.io.File
 
 val repoPatch = {
-    "duckduckgo-kotlin-repo.patch" to File("benchmarkScripts/files/duckduckgo-kotlin-repo.patch")
-        .readText()
-        .run { replace("<kotlin_version>", currentKotlinVersion) }
-        .byteInputStream()
+    listOf(
+        "duckduckgo-kotlin-repo.patch" to File("benchmarkScripts/files/duckduckgo-kotlin-repo.patch")
+            .readText()
+            .run { replace("<kotlin_version>", currentKotlinVersion) }
+            .byteInputStream(),
+    )
 }
 
 runBenchmarks(
@@ -33,7 +35,7 @@ runBenchmarks(
             useGradleArgs("--no-build-cache")
 
             runTasks(":app:assemblePlayDebug")
-            applyAbiChangeTo("common/src/main/java/com/duckduckgo/app/global/VpnViewModelFactory.kt")
+            applyAbiChangeTo("common/common-utils/src/main/java/com/duckduckgo/app/global/VpnViewModelFactory.kt")
         }
 
         scenario {
@@ -58,7 +60,7 @@ runBenchmarks(
 
             runTasks(":app:assemblePlayDebug")
 
-            applyAndroidResourceValueChange("common/src/main/res/values/strings-common.xml")
+            applyAndroidResourceValueChange("common/common-utils/src/main/res/values/strings-common.xml")
         }
 
         scenario {

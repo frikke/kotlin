@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 @RequiresOptIn
 annotation class Marker
 
@@ -13,6 +14,11 @@ class Other(val x: Int) {
 
     @OptIn(Marker::class)
     constructor(y: Long, some: Some? = null): this(some?.x ?: y.toInt())
+}
+
+enum class Enumeration @Marker constructor() {
+    ENTRY<!OPT_IN_USAGE_ERROR!><!>(),
+    ENTRY2;
 }
 
 fun foo(some: <!OPT_IN_USAGE_ERROR!>Some<!>? = null) {}

@@ -5,17 +5,21 @@
 
 package kotlin.script.experimental.jvmhost.test
 
-import junit.framework.TestCase
-import org.junit.Test
 import java.io.File
 import kotlin.script.experimental.api.*
 import kotlin.script.experimental.host.toScriptSource
-import kotlin.script.experimental.jvm.*
+import kotlin.script.experimental.jvm.JvmDependencyFromClassLoader
+import kotlin.script.experimental.jvm.baseClassLoader
+import kotlin.script.experimental.jvm.jvm
+import kotlin.script.experimental.jvm.updateClasspath
 import kotlin.script.experimental.jvm.util.classpathFromClass
 import kotlin.script.experimental.jvmhost.BasicJvmScriptingHost
 import kotlin.script.experimental.jvmhost.test.ReplTest.Companion.checkEvaluateInRepl
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
-class ResolveDependenciesTest : TestCase() {
+class ResolveDependenciesTest {
 
     private val configurationWithDependenciesFromClassloader = ScriptCompilationConfiguration {
         dependencies(JvmDependencyFromClassLoader { ShouldBeVisibleFromScript::class.java.classLoader })
@@ -41,8 +45,9 @@ class ResolveDependenciesTest : TestCase() {
         """.trimMargin()
     private val funAndValImportScript = funAndValImportScriptText.toScriptSource()
 
+    // All tests with dependencies from classloader are expected to fail until the KT-60443 is implemented
     @Test
-    fun testResolveClassFromClassloader() {
+    fun testResolveClassFromClassloader() = expectTestToFailOnK2 {
         runScriptAndCheckResult(classAccessScript, configurationWithDependenciesFromClassloader, null, 42)
         runScriptAndCheckResult(classImportScript, configurationWithDependenciesFromClassloader, null, 42)
     }
@@ -54,13 +59,13 @@ class ResolveDependenciesTest : TestCase() {
     }
 
     @Test
-    fun testResolveFunAndValFromClassloader() {
+    fun testResolveFunAndValFromClassloader() = expectTestToFailOnK2 {
         runScriptAndCheckResult(funAndValAccessScript, configurationWithDependenciesFromClassloader, null, 42)
         runScriptAndCheckResult(funAndValImportScript, configurationWithDependenciesFromClassloader, null, 42)
     }
 
     @Test
-    fun testReplResolveFunAndValFromClassloader() {
+    fun testReplResolveFunAndValFromClassloader() = expectTestToFailOnK2 {
         checkEvaluateInRepl(
             sequenceOf(funAndValAccessScriptText, funAndValAccessScriptText), sequenceOf(42, 42),
             configurationWithDependenciesFromClassloader,
@@ -81,7 +86,7 @@ class ResolveDependenciesTest : TestCase() {
     }
 
     @Test
-    fun testResolveClassFromClassloaderIsolated() {
+    fun testResolveClassFromClassloaderIsolated() = expectTestToFailOnK2 {
         val evaluationConfiguration = ScriptEvaluationConfiguration {
             jvm {
                 baseClassLoader(null)
@@ -91,14 +96,14 @@ class ResolveDependenciesTest : TestCase() {
     }
 
     @Test
-    fun testResolveClassesFromClassloaderAndClassPath() {
+    fun testResolveClassesFromClassloaderAndClassPath() = expectTestToFailOnK2 {
         val script = """
             org.jetbrains.kotlin.mainKts.MainKtsConfigurator()
             ${thisPackage}.ShouldBeVisibleFromScript().x
         """.trimIndent().toScriptSource()
         val classpath = listOf(
             File("dist/kotlinc/lib/kotlin-main-kts.jar").also {
-                assertTrue("kotlin-main-kts.jar not found, run dist task: ${it.absolutePath}", it.exists())
+                assertTrue(it.exists(), "kotlin-main-kts.jar not found, run dist task: ${it.absolutePath}")
             }
         )
         val compilationConfiguration = configurationWithDependenciesFromClassloader.with {

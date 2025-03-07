@@ -13,7 +13,9 @@ import org.jetbrains.kotlin.gradle.plugin.ide.dependencyResolvers.*
 import org.jetbrains.kotlin.gradle.plugin.ide.dependencyTransformers.IdePlatformStdlibCommonDependencyFilter
 import org.jetbrains.kotlin.gradle.targets.native.internal.commonizerTarget
 
-internal fun IdeMultiplatformImport(extension: KotlinProjectExtension): IdeMultiplatformImport {
+internal fun IdeMultiplatformImport(
+    extension: KotlinProjectExtension,
+): IdeMultiplatformImport {
     return IdeMultiplatformImportImpl(extension).apply {
 
         registerDependencyResolver(
@@ -32,7 +34,7 @@ internal fun IdeMultiplatformImport(extension: KotlinProjectExtension): IdeMulti
 
         registerDependencyResolver(
             resolver = IdeVisibleMultiplatformSourceDependencyResolver,
-            constraint = !SourceSetConstraint.isLeaf,
+            constraint = !SourceSetConstraint.isSingleKotlinTarget,
             phase = IdeMultiplatformImport.DependencyResolutionPhase.SourceDependencyResolution,
             priority = IdeMultiplatformImport.Priority.normal
         )
@@ -67,14 +69,14 @@ internal fun IdeMultiplatformImport(extension: KotlinProjectExtension): IdeMulti
 
         registerDependencyResolver(
             resolver = IdeTransformedMetadataDependencyResolver,
-            constraint = !SourceSetConstraint.isLeaf and !SourceSetConstraint.isJvmAndAndroid,
+            constraint = !SourceSetConstraint.isSingleKotlinTarget and !SourceSetConstraint.isJvmAndAndroid,
             phase = IdeMultiplatformImport.DependencyResolutionPhase.BinaryDependencyResolution,
             priority = IdeMultiplatformImport.Priority.normal
         )
 
         registerDependencyResolver(
             resolver = IdeOriginalMetadataDependencyResolver,
-            constraint = !SourceSetConstraint.isLeaf,
+            constraint = !SourceSetConstraint.isSingleKotlinTarget,
             phase = IdeMultiplatformImport.DependencyResolutionPhase.BinaryDependencyResolution,
             priority = IdeMultiplatformImport.Priority.normal
         )
@@ -125,23 +127,16 @@ internal fun IdeMultiplatformImport(extension: KotlinProjectExtension): IdeMulti
             priority = IdeMultiplatformImport.Priority.normal
         )
 
-        registerDependencyResolver(
-            resolver = IdePlatformSourcesResolver(),
-            constraint = SourceSetConstraint.isSinglePlatformType,
-            phase = IdeMultiplatformImport.DependencyResolutionPhase.SourcesAndDocumentationResolution,
-            priority = IdeMultiplatformImport.Priority.normal
-        )
-
         registerAdditionalArtifactResolver(
-            resolver = IdeMetadataSourcesResolver(),
-            constraint = !SourceSetConstraint.isSinglePlatformType,
+            resolver = IdeSourcesVariantsResolver,
+            constraint = SourceSetConstraint.unconstrained,
             phase = IdeMultiplatformImport.AdditionalArtifactResolutionPhase.SourcesAndDocumentationResolution,
             priority = IdeMultiplatformImport.Priority.normal
         )
 
         if (extension.project.kotlinPropertiesProvider.enableSlowIdeSourcesJarResolver) {
             registerAdditionalArtifactResolver(
-                resolver = IdeArtifactResolutionQuerySourcesAndDocumentationResolver,
+                resolver = IdeArtifactResolutionQuerySourcesResolver,
                 constraint = SourceSetConstraint.unconstrained,
                 phase = IdeMultiplatformImport.AdditionalArtifactResolutionPhase.SourcesAndDocumentationResolution,
                 priority = IdeMultiplatformImport.Priority.normal

@@ -21,6 +21,8 @@ import org.jetbrains.kotlin.konan.file.ZipFileSystemAccessor
 import org.jetbrains.kotlin.konan.properties.Properties
 import org.jetbrains.kotlin.konan.properties.loadProperties
 import org.jetbrains.kotlin.library.*
+import org.jetbrains.kotlin.util.DummyLogger
+import org.jetbrains.kotlin.util.Logger
 
 class BaseKotlinLibraryImpl(
     val access: BaseLibraryAccess<KotlinLibraryLayout>,
@@ -29,21 +31,17 @@ class BaseKotlinLibraryImpl(
     override val libraryFile get() = access.klib
     override val libraryName: String by lazy { access.inPlace { it.libraryName } }
 
-    private val componentListAndHasPre14Manifest by lazy {
+    override val componentList: List<String> by lazy {
         access.inPlace { layout ->
             val listFiles = layout.libFile.listFiles
             listFiles
                 .filter { it.isDirectory }
                 .filter { it.listFiles.map { it.name }.contains(KLIB_MANIFEST_FILE_NAME) }
-                .map { it.name } to listFiles.any { it.absolutePath == layout.pre_1_4_manifest.absolutePath }
+                .map { it.name }
         }
     }
 
-    override val componentList: List<String> get() = componentListAndHasPre14Manifest.first
-
     override fun toString() = "$libraryName[default=$isDefault]"
-
-    override val has_pre_1_4_manifest: Boolean get() = componentListAndHasPre14Manifest.second
 
     override val manifestProperties: Properties by lazy {
         access.inPlace { it.manifestFile.loadProperties() }
@@ -89,9 +87,14 @@ class MetadataLibraryImpl(
 abstract class IrLibraryImpl(
     val access: IrLibraryAccess<IrKotlinLibraryLayout>
 ) : IrLibrary {
-    override val dataFlowGraph by lazy {
+    override val hasIr by lazy {
         access.inPlace { it: IrKotlinLibraryLayout ->
-            it.dataFlowGraphFile.let { if (it.exists) it.readBytes() else null }
+            it.irDir.exists
+        }
+    }
+    override val hasFileEntriesTable: Boolean by lazy {
+        access.inPlace { it: IrKotlinLibraryLayout ->
+            it.irFileEntries.exists
         }
     }
 }
@@ -110,6 +113,8 @@ class IrMonoliticLibraryImpl(_access: IrLibraryAccess<IrKotlinLibraryLayout>) : 
     override fun body(index: Int, fileIndex: Int) = bodies.tableItemBytes(fileIndex, index)
 
     override fun debugInfo(index: Int, fileIndex: Int) = debugInfos?.tableItemBytes(fileIndex, index)
+
+    override fun fileEntry(index: Int, fileIndex: Int) = fileEntries?.tableItemBytes(fileIndex, index)
 
     override fun file(index: Int) = files.tableItemBytes(index)
 
@@ -152,6 +157,12 @@ class IrMonoliticLibraryImpl(_access: IrLibraryAccess<IrKotlinLibraryLayout>) : 
         }
     }
 
+    private val fileEntries: IrMultiArrayFileReader? by lazy {
+        access.realFiles {
+            it.irFileEntries.let { feFile -> if (feFile.exists) IrMultiArrayFileReader(feFile) else null }
+        }
+    }
+
     private val files: IrArrayFileReader by lazy {
         IrArrayFileReader(access.realFiles {
             it.irFiles
@@ -176,6 +187,10 @@ class IrMonoliticLibraryImpl(_access: IrLibraryAccess<IrKotlinLibraryLayout>) : 
 
     override fun bodies(fileIndex: Int): ByteArray {
         return bodies.tableItemBytes(fileIndex)
+    }
+
+    override fun fileEntries(fileIndex: Int): ByteArray? {
+        return fileEntries?.tableItemBytes(fileIndex)
     }
 }
 
@@ -262,6 +277,21 @@ class IrPerFileLibraryImpl(_access: IrLibraryAccess<IrKotlinLibraryLayout>) : Ir
         return dataReader?.tableItemBytes(index)
     }
 
+    private val fileToIrFileEntryMap = mutableMapOf<Int, IrArrayFileReader?>()
+    override fun fileEntry(index: Int, fileIndex: Int): ByteArray? {
+        val dataReader = fileToIrFileEntryMap.getOrPut(fileIndex) {
+            val fileDirectory = directories[fileIndex]
+            access.realFiles {
+                it.irFileEntries(fileDirectory).let { diFile ->
+                    if (diFile.exists) {
+                        IrArrayFileReader(diFile)
+                    } else null
+                }
+            }
+        }
+        return dataReader?.tableItemBytes(index)
+    }
+
     override fun file(index: Int): ByteArray {
         return access.realFiles {
             it.irFile(directories[index]).readBytes()
@@ -291,6 +321,10 @@ class IrPerFileLibraryImpl(_access: IrLibraryAccess<IrKotlinLibraryLayout>) : Ir
     override fun bodies(fileIndex: Int): ByteArray {
         TODO("Not yet implemented")
     }
+
+    override fun fileEntries(fileIndex: Int): ByteArray? {
+        TODO("Not yet implemented")
+    }
 }
 
 class KotlinLibraryImpl(
@@ -310,11 +344,9 @@ class KotlinLibraryImpl(
         append(", ")
         append("version: ")
         append(base.versions)
-        if (isInterop) {
-            append(", interop: true, ")
-            append("native targets: ")
-            nativeTargets.joinTo(this, ", ", "{", "}")
-        }
+        interopFlag?.let { append(", interop: $it") }
+        irProviderName?.let { append(", IR provider: $it") }
+        nativeTargets.takeIf { it.isNotEmpty() }?.joinTo(this, ", ", ", native targets: {", "}")
         append(')')
     }
 }
@@ -350,18 +382,30 @@ fun createKotlinLibraryComponents(
 }
 
 fun isKotlinLibrary(libraryFile: File): Boolean = try {
-    resolveSingleFileKlib(libraryFile)
-    true
+    val libraryPath = libraryFile.absolutePath
+
+    /**
+     * Important: Try to resolve it as a "lenient" library. This will allow to probe a library
+     * without logging any errors to [DummyLogger] and without any side effects such as throwing an
+     * exception from [SingleKlibComponentResolver.resolve] if the library is not found.
+     */
+    SingleKlibComponentResolver(
+        klibFile = libraryPath,
+        logger = object : Logger {
+            override fun log(message: String) = Unit // don't log
+            override fun error(message: String) = Unit // don't log
+            override fun warning(message: String) = Unit // don't log
+
+            @Deprecated(Logger.FATAL_DEPRECATION_MESSAGE, ReplaceWith(Logger.FATAL_REPLACEMENT))
+            override fun fatal(message: String): Nothing = kotlin.error("This function should not be called")
+        },
+        knownIrProviders = emptyList()
+    ).resolve(
+        LenientUnresolvedLibrary(libraryPath)
+    ) != null
 } catch (e: Throwable) {
     false
 }
 
 fun isKotlinLibrary(libraryFile: java.io.File): Boolean =
     isKotlinLibrary(File(libraryFile.absolutePath))
-
-val File.isPre_1_4_Library: Boolean
-    get() {
-        val baseAccess = BaseLibraryAccess<KotlinLibraryLayout>(this, null)
-        val base = BaseKotlinLibraryImpl(baseAccess, false)
-        return base.has_pre_1_4_manifest
-    }

@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // SKIP_TXT
 
 class ExcA : Exception()
@@ -5,7 +6,7 @@ class ExcA : Exception()
 class ExcB : Exception()
 
 fun test2() {
-    val s: String? = <!INITIALIZER_TYPE_MISMATCH, TYPE_MISMATCH!>try {
+    val s: String? = <!INITIALIZER_TYPE_MISMATCH!>try {
         ""
     }
     catch (e: ExcA) {

@@ -552,6 +552,9 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
         if (status.isInline) {
             keyword("inline ")
         }
+        if (status.isValue) {
+            keyword("value ")
+        }
         if (status.isInfix) {
             keyword("infix ")
         }
@@ -671,12 +674,12 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
     }
 
     private fun FlowContent.generate(flexibleType: ConeFlexibleType) {
-        if (flexibleType.lowerBound.nullability == ConeNullability.NOT_NULL &&
-            flexibleType.upperBound.nullability == ConeNullability.NULLABLE &&
+        if (!flexibleType.lowerBound.isMarkedNullable &&
+            flexibleType.upperBound.isMarkedNullable &&
             AbstractStrictEqualityTypeChecker.strictEqualTypes(
                 session.typeContext,
                 flexibleType.lowerBound,
-                flexibleType.upperBound.withNullability(ConeNullability.NOT_NULL, session.typeContext)
+                flexibleType.upperBound.withNullability(nullable = false, session.typeContext)
             )
         ) {
             generate(flexibleType.lowerBound)
@@ -759,7 +762,7 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
         }
     }
 
-    private fun FlowContent.generate(expression: FirConstExpression<*>) {
+    private fun FlowContent.generate(expression: FirLiteralExpression) {
         val value = expression.value
         if (value == null && expression.kind != ConstantValueKind.Null) {
             return error {
@@ -849,7 +852,7 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
                     simpleName(type.lookupTag.name)
                 }
             }
-            is ConeTypeVariableType -> resolved { +type.lookupTag.name.asString() }
+            is ConeTypeVariableType -> resolved { +type.typeConstructor.name.asString() }
             is ConeFlexibleType -> resolved { generate(type) }
             is ConeCapturedType -> inlineUnsupported(type)
             is ConeDefinitelyNotNullType -> resolved {
@@ -898,7 +901,7 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
     private fun FlowContent.generate(typeRef: FirTypeRef) {
         when (typeRef) {
             is FirErrorTypeRef -> error { +typeRef.diagnostic.reason }
-            is FirResolvedTypeRef -> generate(typeRef.type)
+            is FirResolvedTypeRef -> generate(typeRef.coneType)
             is FirImplicitTypeRef -> unresolved {
                 implicits++
                 keyword("<implicit>")
@@ -1204,7 +1207,6 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
                     is FirPropertyAccessor,
                     is FirBackingField,
                     is FirEnumEntry,
-                    is FirErrorProperty,
                     is FirValueParameter -> {}
                 }
             }
@@ -1438,7 +1440,7 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
                 keyword("when")
                 +" ("
                 whenExpression.subjectVariable?.let { generate(it) }
-                    ?: whenExpression.subject?.let { generate(it) }
+                    ?: whenExpression.subjectVariable?.initializer?.let { generate(it) }
                 +") {"
             }
             withIdentLevel {
@@ -1469,7 +1471,7 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
     }
 
     private fun FlowContent.generate(unitExpression: FirUnitExpression) {
-        generate(unitExpression.typeRef)
+        generate(unitExpression.resolvedType)
     }
 
     private fun FlowContent.generate(breakExpression: FirBreakExpression) {
@@ -1530,7 +1532,7 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
     }
 
     private fun FlowContent.generate(expression: FirExpression) {
-        exprType(expression.typeRef) {
+        exprType(expression.resolvedType.toFirResolvedTypeRef()) {
             when (expression) {
                 is FirBlock -> generateBlockIfAny(expression)
                 is FirGetClassCall -> generate(expression)
@@ -1545,7 +1547,7 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
                 is FirElseIfTrueCondition -> generate(expression)
                 is FirWhenExpression -> generate(expression, isStatement = false)
                 is FirTryExpression -> generate(expression, isStatement = false)
-                is FirConstExpression<*> -> generate(expression)
+                is FirLiteralExpression -> generate(expression)
                 is FirReturnExpression -> {
                     span("return-label") {
                         symbolRef(expression.target.labeledElement.symbol) {
@@ -1573,14 +1575,9 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
                     generate(expression.expression)
 
                 }
-                is FirLambdaArgumentExpression -> {
-                    keyword("lambda")
-                    +" = "
-                    generate(expression.expression)
-                }
                 is FirTypeOperatorCall -> generate(expression)
                 is FirEqualityOperatorCall -> generate(expression)
-                is FirBinaryLogicExpression -> generate(expression)
+                is FirBooleanOperatorExpression -> generate(expression)
                 is FirCheckNotNullCall -> generate(expression)
                 is FirElvisExpression -> generate(expression)
                 is FirVarargArgumentsExpression -> generate(expression)
@@ -1637,10 +1634,10 @@ class HtmlFirDump internal constructor(private var linkResolver: FirLinkResolver
         generateList(varargArgumentExpression.arguments, separator = ",") { generate(it) }
     }
 
-    private fun FlowContent.generate(binaryLogicExpression: FirBinaryLogicExpression) {
-        generate(binaryLogicExpression.leftOperand)
-        +" ${binaryLogicExpression.kind.token} "
-        generate(binaryLogicExpression.rightOperand)
+    private fun FlowContent.generate(booleanOperatorExpression: FirBooleanOperatorExpression) {
+        generate(booleanOperatorExpression.leftOperand)
+        +" ${booleanOperatorExpression.kind.token} "
+        generate(booleanOperatorExpression.rightOperand)
     }
 
     private fun FlowContent.generate(qualifiedAccessExpression: FirQualifiedAccessExpression, skipReceiver: Boolean = false) {

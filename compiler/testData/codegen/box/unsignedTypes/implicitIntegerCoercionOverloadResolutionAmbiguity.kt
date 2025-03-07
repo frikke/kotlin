@@ -9,8 +9,9 @@
 //  relies on the ability to check exactly `kotlin.internal.ImplicitIntegerCoercion`.
 
 // ISSUE: KT-57484
-// !LANGUAGE: +ImplicitSignedToUnsignedIntegerConversion
+// LANGUAGE: +ImplicitSignedToUnsignedIntegerConversion
 // WITH_STDLIB
+// JVM_ABI_K1_K2_DIFF: K2 stores annotations in metadata (KT-57919).
 
 // FILE: annotation.kt
 

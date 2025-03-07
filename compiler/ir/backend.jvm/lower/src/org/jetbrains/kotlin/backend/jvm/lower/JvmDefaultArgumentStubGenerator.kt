@@ -7,6 +7,7 @@ package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.lower.DefaultArgumentStubGenerator
 import org.jetbrains.kotlin.backend.common.lower.irNot
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredStatementOrigin
@@ -19,7 +20,11 @@ import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.util.isFinalClass
 import org.jetbrains.kotlin.ir.util.isTopLevelDeclaration
 
-class JvmDefaultArgumentStubGenerator(context: JvmBackendContext) : DefaultArgumentStubGenerator<JvmBackendContext>(
+@PhaseDescription(
+    name = "DefaultArgumentsStubGenerator",
+    prerequisite = [JvmLocalDeclarationsLowering::class]
+)
+internal class JvmDefaultArgumentStubGenerator(context: JvmBackendContext) : DefaultArgumentStubGenerator<JvmBackendContext>(
     context = context,
     factory = JvmDefaultArgumentFunctionFactory(context),
     skipInlineMethods = false,
@@ -37,7 +42,7 @@ class JvmDefaultArgumentStubGenerator(context: JvmBackendContext) : DefaultArgum
         newIrFunction: IrFunction
     ) {
         if (irFunction !is IrSimpleFunction
-            || !this@JvmDefaultArgumentStubGenerator.context.ir.shouldGenerateHandlerParameterForDefaultBodyFun()
+            || !this@JvmDefaultArgumentStubGenerator.context.shouldGenerateHandlerParameterForDefaultBodyFun
             || irFunction.isTopLevelDeclaration
             || (irFunction.parent as? IrClass)?.isFinalClass == true
         )
@@ -47,7 +52,7 @@ class JvmDefaultArgumentStubGenerator(context: JvmBackendContext) : DefaultArgum
         +irIfThen(
             context.irBuiltIns.unitType,
             irNot(irEqualsNull(irGet(handlerDeclaration))),
-            irCall(this@JvmDefaultArgumentStubGenerator.context.ir.symbols.throwUnsupportedOperationException).apply {
+            irCall(this@JvmDefaultArgumentStubGenerator.context.symbols.throwUnsupportedOperationException).apply {
                 putValueArgument(
                     0,
                     irString("Super calls with default arguments not supported in this target, function: ${irFunction.name.asString()}")

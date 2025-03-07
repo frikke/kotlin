@@ -15,11 +15,11 @@ internal val LANGUAGE_VERSION_K1: String = System.getProperty("fir.bench.languag
 
 class FE1FullPipelineModularizedTest : AbstractFullPipelineModularizedTest() {
     override fun configureArguments(args: K2JVMCompilerArguments, moduleData: ModuleData) {
-        args.useK2 = false
         args.languageVersion = LANGUAGE_VERSION_K1
+        args.debugLevelCompilerChecks = ENABLE_SLOW_ASSERTIONS
+
         // TODO: Remove when support for old modularized tests is removed
         if (moduleData.arguments == null) {
-            args.jvmDefault = "compatibility"
             args.apiVersion = API_VERSION
             args.optIn = arrayOf(
                 "kotlin.RequiresOptIn",
@@ -38,7 +38,7 @@ class FE1FullPipelineModularizedTest : AbstractFullPipelineModularizedTest() {
     }
 
     fun testTotalKotlin() {
-        isolate()
+        pinCurrentThreadToIsolatedCpu()
         for (i in 0 until PASSES) {
             println("Pass $i")
             runTestOnce(i)

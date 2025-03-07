@@ -6,52 +6,59 @@
 package org.jetbrains.kotlin.gradle.targets.js.yarn
 
 import org.gradle.api.logging.Logger
+import org.gradle.api.model.ObjectFactory
 import org.gradle.internal.service.ServiceRegistry
+import org.gradle.process.ExecOperations
 import org.jetbrains.kotlin.gradle.targets.js.npm.*
 import org.jetbrains.kotlin.gradle.targets.js.npm.resolved.PreparedKotlinCompilationNpmResolution
+import org.jetbrains.kotlin.gradle.utils.getFile
 import java.io.File
 
-class YarnWorkspaces : YarnBasics() {
-    override fun preparedFiles(nodeJs: NpmEnvironment): Collection<File> {
+class YarnWorkspaces internal constructor(
+    execOps: ExecOperations,
+    objects: ObjectFactory,
+) : YarnBasics(
+    execOps = execOps,
+    objects = objects,
+) {
+    override fun preparedFiles(nodeJs: NodeJsEnvironment): Collection<File> {
         return listOf(
             nodeJs
                 .rootPackageDir
+                .getFile()
                 .resolve(NpmProject.PACKAGE_JSON)
         )
     }
 
     override fun prepareRootProject(
-        nodeJs: NpmEnvironment,
+        nodeJs: NodeJsEnvironment,
+        packageManagerEnvironment: YarnEnvironment,
         rootProjectName: String,
         rootProjectVersion: String,
-        logger: Logger,
         subProjects: Collection<PreparedKotlinCompilationNpmResolution>,
-        resolutions: Map<String, String>,
     ) {
         return prepareRootPackageJson(
             nodeJs,
             rootProjectName,
             rootProjectVersion,
-            logger,
             subProjects,
-            resolutions
+            packageManagerEnvironment.yarnResolutions
+                .associate { it.path to it.toVersionString() },
         )
     }
 
     private fun prepareRootPackageJson(
-        nodeJs: NpmEnvironment,
+        nodeJs: NodeJsEnvironment,
         rootProjectName: String,
         rootProjectVersion: String,
-        logger: Logger,
         npmProjects: Collection<PreparedKotlinCompilationNpmResolution>,
-        resolutions: Map<String, String>
+        resolutions: Map<String, String>,
     ) {
         val rootPackageJsonFile = preparedFiles(nodeJs).single()
 
         saveRootProjectWorkspacesPackageJson(
             rootProjectName,
             rootProjectVersion,
-            logger,
             npmProjects,
             resolutions,
             rootPackageJsonFile
@@ -61,20 +68,18 @@ class YarnWorkspaces : YarnBasics() {
     override fun resolveRootProject(
         services: ServiceRegistry,
         logger: Logger,
-        nodeJs: NpmEnvironment,
-        yarn: YarnEnvironment,
-        npmProjects: Collection<PreparedKotlinCompilationNpmResolution>,
-        cliArgs: List<String>
+        nodeJs: NodeJsEnvironment,
+        packageManagerEnvironment: YarnEnvironment,
+        cliArgs: List<String>,
     ) {
-        val nodeJsWorldDir = nodeJs.rootPackageDir
+        val nodeJsWorldDir = nodeJs.rootPackageDir.getFile()
 
         yarnExec(
-            services,
             logger,
             nodeJs,
-            yarn,
+            packageManagerEnvironment,
             nodeJsWorldDir,
-            NpmApi.resolveOperationDescription("yarn"),
+            NpmApiExecution.resolveOperationDescription("yarn"),
             cliArgs
         )
     }
@@ -82,21 +87,20 @@ class YarnWorkspaces : YarnBasics() {
     private fun saveRootProjectWorkspacesPackageJson(
         rootProjectName: String,
         rootProjectVersion: String,
-        logger: Logger,
         npmProjects: Collection<PreparedKotlinCompilationNpmResolution>,
         resolutions: Map<String, String>,
-        rootPackageJsonFile: File
+        rootPackageJsonFile: File,
     ) {
         val nodeJsWorldDir = rootPackageJsonFile.parentFile
         val rootPackageJson = PackageJson(rootProjectName, rootProjectVersion)
         rootPackageJson.private = true
 
-        val npmProjectWorkspaces = npmProjects.map { it.npmProjectDir.relativeTo(nodeJsWorldDir).path }
+        val npmProjectWorkspaces = npmProjects.map { it.npmProjectDir.getFile().relativeTo(nodeJsWorldDir).path }
         val importedProjectWorkspaces =
-            YarnImportedPackagesVersionResolver(logger, npmProjects, nodeJsWorldDir).resolveAndUpdatePackages()
+            NpmImportedPackagesVersionResolver(npmProjects, nodeJsWorldDir).resolveAndUpdatePackages()
 
         rootPackageJson.workspaces = npmProjectWorkspaces + importedProjectWorkspaces
-        rootPackageJson.resolutions = resolutions
+        rootPackageJson.customField("resolutions", resolutions)
         rootPackageJson.saveTo(
             rootPackageJsonFile
         )

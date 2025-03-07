@@ -164,7 +164,8 @@ internal abstract class KtUltraLightMethod(
     override fun findSuperMethodSignaturesIncludingStatic(checkAccess: Boolean): List<MethodSignatureBackedByPsiMethod> =
         PsiSuperMethodImplUtil.findSuperMethodSignaturesIncludingStatic(this, checkAccess)
 
-    override fun findDeepestSuperMethod() = PsiSuperMethodImplUtil.findDeepestSuperMethod(this)
+    @Deprecated("Deprecated in Java")
+    override fun findDeepestSuperMethod(): PsiMethod? = PsiSuperMethodImplUtil.findDeepestSuperMethod(this)
 
     override fun findDeepestSuperMethods(): Array<out PsiMethod> = PsiSuperMethodImplUtil.findDeepestSuperMethods(this)
 
@@ -320,7 +321,7 @@ internal class KtUltraLightMethodForDescriptor(
 
         val returnType = if (methodDescriptor is ConstructorDescriptor) {
             delegate.isConstructor = true
-            PsiType.VOID
+            PsiTypes.voidType()
         } else {
             support.mapType(methodDescriptor.returnType, this) { typeMapper, signatureWriter ->
                 typeMapper.mapReturnType(methodDescriptor, signatureWriter)

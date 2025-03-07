@@ -1,7 +1,3 @@
-// TARGET_BACKEND: JVM_IR
-// TARGET_BACKEND: NATIVE
-// TARGET_BACKEND: JS_IR
-
 object K : Code("K")
 
 open class Code(val x: String) {

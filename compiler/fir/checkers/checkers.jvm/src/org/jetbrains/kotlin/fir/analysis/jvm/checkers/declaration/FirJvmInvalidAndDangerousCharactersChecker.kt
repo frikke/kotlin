@@ -6,12 +6,13 @@
 package org.jetbrains.kotlin.fir.analysis.jvm.checkers.declaration
 
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.declaration.FirBasicDeclarationChecker
 import org.jetbrains.kotlin.fir.analysis.jvm.FirJvmNamesChecker
 import org.jetbrains.kotlin.fir.declarations.*
 
-object FirJvmInvalidAndDangerousCharactersChecker : FirBasicDeclarationChecker() {
+object FirJvmInvalidAndDangerousCharactersChecker : FirBasicDeclarationChecker(MppCheckerKind.Common) {
     override fun check(declaration: FirDeclaration, context: CheckerContext, reporter: DiagnosticReporter) {
         val source = declaration.source
         when (declaration) {
@@ -21,6 +22,11 @@ object FirJvmInvalidAndDangerousCharactersChecker : FirBasicDeclarationChecker()
             is FirProperty -> FirJvmNamesChecker.checkNameAndReport(declaration.name, source, context, reporter)
             is FirTypeAlias -> FirJvmNamesChecker.checkNameAndReport(declaration.name, source, context, reporter)
             is FirValueParameter -> FirJvmNamesChecker.checkNameAndReport(declaration.name, source, context, reporter)
+            is FirFile -> {
+                declaration.packageDirective.packageFqName.pathSegments().forEach {
+                    FirJvmNamesChecker.checkNameAndReport(it, declaration.packageDirective.source, context, reporter)
+                }
+            }
             else -> return
         }
     }

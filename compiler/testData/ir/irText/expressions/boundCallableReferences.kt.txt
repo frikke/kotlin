@@ -1,4 +1,20 @@
+val test1: KFunction0<Unit>
+  field = A()::foo
+  get
+
+val test2: KProperty0<Int>
+  field = AA()::bar
+  get
+
+val test3: KFunction0<Unit>
+  field = ::qux/*(<this> = A()) */
+  get
+
 class A {
+  val bar: Int
+    field = 0
+    get
+
   constructor() /* primary */ {
     super/*Any*/()
     /* <init>() */
@@ -8,23 +24,8 @@ class A {
   fun foo() {
   }
 
-  val bar: Int
-    field = 0
-    get
-
 }
 
 fun A.qux() {
 }
 
-val test1: KFunction0<Unit>
-  field = A()::foo
-  get
-
-val test2: KProperty0<Int>
-  field = A()::bar
-  get
-
-val test3: KFunction0<Unit>
-  field = A()::qux
-  get

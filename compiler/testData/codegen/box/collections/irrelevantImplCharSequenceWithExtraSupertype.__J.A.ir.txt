@@ -1,0 +1,2 @@
+(Full dump is not available: null)
+CLASS IR_EXTERNAL_JAVA_DECLARATION_STUB CLASS name:A modality:OPEN visibility:public superTypes:[<root>.J.AImpl; kotlin.CharSequence]

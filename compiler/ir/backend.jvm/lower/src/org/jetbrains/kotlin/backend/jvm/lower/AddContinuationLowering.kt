@@ -10,14 +10,11 @@ import org.jetbrains.kotlin.backend.common.ir.moveBodyTo
 import org.jetbrains.kotlin.backend.common.lower.LocalDeclarationsLowering
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.backend.common.peek
-import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
+import org.jetbrains.kotlin.backend.common.phaser.PhaseDescription
 import org.jetbrains.kotlin.backend.common.pop
 import org.jetbrains.kotlin.backend.common.push
-import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
-import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
-import org.jetbrains.kotlin.backend.jvm.JvmLoweredStatementOrigin
+import org.jetbrains.kotlin.backend.jvm.*
 import org.jetbrains.kotlin.backend.jvm.ir.*
-import org.jetbrains.kotlin.backend.jvm.localDeclarationsPhase
 import org.jetbrains.kotlin.codegen.coroutines.*
 import org.jetbrains.kotlin.codegen.inline.coroutines.FOR_INLINE_SUFFIX
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
@@ -30,6 +27,7 @@ import org.jetbrains.kotlin.ir.builders.declarations.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
+import org.jetbrains.kotlin.ir.originalBeforeInline
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.types.IrType
@@ -41,16 +39,18 @@ import org.jetbrains.kotlin.ir.visitors.*
 import org.jetbrains.kotlin.load.java.JavaDescriptorVisibilities
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.util.OperatorNameConventions
+import org.jetbrains.kotlin.utils.addToStdlib.assignFrom
+import org.jetbrains.kotlin.utils.addToStdlib.getOrSetIfNull
 import org.jetbrains.org.objectweb.asm.Type
 
-internal val addContinuationPhase = makeIrFilePhase(
-    ::AddContinuationLowering,
-    "AddContinuation",
-    "Add continuation classes and parameters to suspend functions",
-    prerequisite = setOf(suspendLambdaPhase, localDeclarationsPhase, tailCallOptimizationPhase)
+/**
+ * Adds continuation classes and parameters to suspend functions.
+ */
+@PhaseDescription(
+    name = "AddContinuation",
+    prerequisite = [SuspendLambdaLowering::class, JvmLocalDeclarationsLowering::class, TailCallOptimizationLowering::class]
 )
-
-private class AddContinuationLowering(context: JvmBackendContext) : SuspendLoweringUtils(context), FileLoweringPass {
+internal class AddContinuationLowering(context: JvmBackendContext) : SuspendLoweringUtils(context), FileLoweringPass {
     override fun lower(irFile: IrFile) {
         addContinuationObjectAndContinuationParameterToSuspendFunctions(irFile)
         addContinuationParameterToSuspendCalls(irFile)
@@ -70,7 +70,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
                 // The only references not yet transformed into objects are inline lambdas; the continuation
                 // for those will be taken from the inline functions they are passed to, not the enclosing scope.
                 return transformed.retargetToSuspendView(context, null) {
-                    IrFunctionReferenceImpl.fromSymbolOwner(startOffset, endOffset, type, it, typeArgumentsCount, reflectionTarget, origin)
+                    IrFunctionReferenceImpl.fromSymbolOwner(startOffset, endOffset, type, it, typeArguments.size, reflectionTarget, origin)
                 }
             }
 
@@ -89,7 +89,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
     private fun generateContinuationClassForNamedFunction(
         irFunction: IrFunction,
         dispatchReceiverParameter: IrValueParameter?,
-        attributeContainer: IrAttributeContainer,
+        attributeContainer: IrElement,
         capturesCrossinline: Boolean
     ): IrClass =
         context.irFactory.buildClass {
@@ -97,15 +97,15 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
             origin = JvmLoweredDeclarationOrigin.CONTINUATION_CLASS
             visibility = if (capturesCrossinline) DescriptorVisibilities.PUBLIC else JavaDescriptorVisibilities.PACKAGE_VISIBILITY
         }.apply {
-            createImplicitParameterDeclarationWithWrappedDescriptor()
-            superTypes += context.ir.symbols.continuationImplClass.owner.defaultType
+            createThisReceiverParameter()
+            superTypes += context.symbols.continuationImplClass.owner.defaultType
             parent = irFunction
 
             copyTypeParametersFrom(irFunction)
             val resultField = addField {
                 origin = JvmLoweredDeclarationOrigin.CONTINUATION_CLASS_RESULT_FIELD
                 name = Name.identifier(CONTINUATION_RESULT_FIELD_NAME)
-                type = context.ir.symbols.resultOfAnyType
+                type = context.symbols.resultOfAnyType
                 visibility = JavaDescriptorVisibilities.PACKAGE_VISIBILITY
             }
             val capturedThisField = dispatchReceiverParameter?.let {
@@ -138,13 +138,15 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
             val capturedThisParameter = capturedThisField?.let { constructor.addValueParameter(it.name.asString(), it.type) }
             val completionParameterSymbol = constructor.addCompletionValueParameter()
 
-            val superClassConstructor = context.ir.symbols.continuationImplClass.owner.constructors.single { it.valueParameters.size == 1 }
+            val superClassConstructor = context.symbols.continuationImplClass.owner.constructors.single {
+                it.hasShape(regularParameters = 1)
+            }
             constructor.body = context.createIrBuilder(constructor.symbol).irBlockBody {
                 if (capturedThisField != null) {
                     +irSetField(irGet(thisReceiver!!), capturedThisField, irGet(capturedThisParameter!!))
                 }
                 +irDelegatingConstructorCall(superClassConstructor).also {
-                    it.putValueArgument(0, irGet(completionParameterSymbol))
+                    it.arguments[0] = irGet(completionParameterSymbol)
                 }
             }
         }
@@ -157,10 +159,10 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
         isStaticSuspendImpl: Boolean
     ) {
         val backendContext = context
-        val invokeSuspend = context.ir.symbols.continuationImplClass.owner.functions
+        val invokeSuspend = context.symbols.continuationImplClass.owner.functions
             .single { it.name == Name.identifier(INVOKE_SUSPEND_METHOD_NAME) }
         addFunctionOverride(invokeSuspend, irFunction.startOffset, irFunction.endOffset) { function ->
-            +irSetField(irGet(function.dispatchReceiverParameter!!), resultField, irGet(function.valueParameters[0]))
+            +irSetField(irGet(function.dispatchReceiverParameter!!), resultField, irGet(function.nonDispatchParameters.first()))
             // There can be three kinds of suspend function call:
             // 1) direct call from another suspend function/lambda
             // 2) resume of coroutines via resumeWith call on continuation object
@@ -182,28 +184,22 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
 
             +irReturn(irCall(irFunction).also {
                 for (i in irFunction.typeParameters.indices) {
-                    it.putTypeArgument(i, typeParameters[i].defaultType)
+                    it.typeArguments[i] = typeParameters[i].defaultType
                 }
                 val capturedThisValue = capturedThisField?.let { irField ->
                     irGetField(irGet(function.dispatchReceiverParameter!!), irField)
                 }
-                if (irFunction.dispatchReceiverParameter != null) {
-                    it.dispatchReceiver = capturedThisValue
-                }
-                irFunction.extensionReceiverParameter?.let { extensionReceiverParameter ->
-                    it.extensionReceiver = extensionReceiverParameter.type.defaultValue(
-                        UNDEFINED_OFFSET, UNDEFINED_OFFSET, backendContext
-                    )
-                }
-                for ((i, parameter) in irFunction.valueParameters.dropLast(1).withIndex()) {
-                    it.putValueArgument(i, parameter.type.defaultValue(UNDEFINED_OFFSET, UNDEFINED_OFFSET, backendContext))
-                }
-                it.putValueArgument(
-                    irFunction.valueParameters.size - 1,
-                    IrGetValueImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, function.dispatchReceiverParameter!!.symbol)
-                )
-                if (isStaticSuspendImpl) {
-                    it.putValueArgument(0, capturedThisValue)
+                for (parameter in irFunction.parameters) {
+                    it.arguments[parameter] = when (parameter.kind) {
+                        IrParameterKind.DispatchReceiver -> capturedThisValue
+                        IrParameterKind.Context, IrParameterKind.ExtensionReceiver, IrParameterKind.Regular -> when (parameter) {
+                            irFunction.parameters.first() if isStaticSuspendImpl -> capturedThisValue
+                            irFunction.parameters.last() -> {
+                                IrGetValueImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, function.dispatchReceiverParameter!!.symbol)
+                            }
+                            else -> parameter.type.defaultValue(UNDEFINED_OFFSET, UNDEFINED_OFFSET, backendContext)
+                        }
+                    }
                 }
             })
         }
@@ -232,7 +228,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
         static.body = irFunction.moveBodyTo(static)
         // Fixup dispatch parameter to outer class
         if (irFunction.parentAsClass.isInner) {
-            val movedDispatchParameter = static.valueParameters[0]
+            val movedDispatchParameter = static.parameters[0]
             assert(movedDispatchParameter.origin == IrDeclarationOrigin.MOVED_DISPATCH_RECEIVER) {
                 "MOVED_DISPATCH_RECEIVER should be the first parameter in ${static.render()}"
             }
@@ -262,7 +258,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
                     var cursor = irFunction.parentAsClass.parent
                     while (cursor is IrClass) {
                         if (cursor == param.parent) return true
-                        cursor = (cursor as IrClass).parent
+                        cursor = cursor.parent
                     }
                     return false
                 }
@@ -273,18 +269,9 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
         irFunction.body = context.createIrBuilder(irFunction.symbol).irBlockBody {
             +irReturn(irCall(static).also {
                 for (i in irFunction.typeParameters.indices) {
-                    it.putTypeArgument(i, context.irBuiltIns.anyNType)
+                    it.typeArguments[i] = context.irBuiltIns.anyNType
                 }
-                var i = 0
-                if (irFunction.dispatchReceiverParameter != null) {
-                    it.putValueArgument(i++, irGet(irFunction.dispatchReceiverParameter!!))
-                }
-                if (irFunction.extensionReceiverParameter != null) {
-                    it.putValueArgument(i++, irGet(irFunction.extensionReceiverParameter!!))
-                }
-                for (parameter in irFunction.valueParameters) {
-                    it.putValueArgument(i++, irGet(parameter))
-                }
+                it.arguments.assignFrom(irFunction.parameters, ::irGet)
             })
         }
         return static
@@ -308,7 +295,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
                 val capturesCrossinline = function.isCapturingCrossinline()
                 val view = function.suspendFunctionViewOrStub(context)
                 val continuationParameter = view.continuationParameter()
-                val parameterMap = function.explicitParameters.zip(view.explicitParameters.filter { it != continuationParameter }).toMap()
+                val parameterMap = function.parameters.zip(view.parameters.filter { it != continuationParameter }).toMap()
                 view.body = function.moveBodyTo(view, parameterMap)
 
                 val result = mutableListOf(view)
@@ -320,10 +307,8 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
                 if (function.parentAsClass.origin == JvmLoweredDeclarationOrigin.LAMBDA_IMPL ||
                     function.parentAsClass.origin == JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
                 ) {
-                    context.putLocalClassType(
-                        function.attributeOwnerId,
-                        Type.getObjectType("${context.getLocalClassType(function.parentAsClass)!!.internalName}$${function.name}$1")
-                    )
+                    val newType = Type.getObjectType("${function.parentAsClass.localClassType!!.internalName}$${function.name}$1")
+                    function.localClassType = newType
                 }
 
                 if (capturesCrossinline || function.isInline) {
@@ -340,7 +325,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
                             else JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE_CAPTURES_CROSSINLINE
                     }.apply {
                         copyAnnotationsFrom(view)
-                        copyParameterDeclarationsFrom(view)
+                        copyValueAndTypeParametersFrom(view)
                         context.remapMultiFieldValueClassStructure(view, this, parametersMappingOrNull = null)
                         copyAttributes(view)
                         generateErrorForInlineBody()
@@ -357,7 +342,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
                     +generateContinuationClassForNamedFunction(
                         newFunction,
                         view.dispatchReceiverParameter,
-                        function as IrAttributeContainer,
+                        function,
                         capturesCrossinline
                     )
                     if (newFunction.body is IrExpressionBody) {
@@ -373,7 +358,7 @@ private class AddContinuationLowering(context: JvmBackendContext) : SuspendLower
 
             private fun IrSimpleFunction.isCapturingCrossinline(): Boolean {
                 var capturesCrossinline = false
-                (this.originalBeforeInline ?: this).acceptVoid(object : IrElementVisitorVoid {
+                (this.originalBeforeInline ?: this).acceptVoid(object : IrVisitorVoid() {
                     override fun visitElement(element: IrElement) {
                         element.acceptChildrenVoid(this)
                     }
@@ -403,11 +388,11 @@ private fun IrSimpleFunction.suspendFunctionViewOrStub(context: JvmBackendContex
     // If superinterface is in another file, the bridge to default method will already have continuation parameter,
     // so skip it. See KT-47549.
     if (origin == JvmLoweredDeclarationOrigin.SUPER_INTERFACE_METHOD_BRIDGE &&
-        valueParameters.lastOrNull()?.origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS
+        overriddenSymbols.singleOrNull()?.owner?.parameters?.lastOrNull()?.origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS
     ) return this
     // We need to use suspend function originals here, since if we use 'this' here,
     // turing FlowCollector into 'fun interface' leads to AbstractMethodError. See KT-49294.
-    return context.suspendFunctionOriginalToView.getOrPut(suspendFunctionOriginal()) { createSuspendFunctionStub(context) }
+    return suspendFunctionOriginal()::viewOfOriginalSuspendFunction.getOrSetIfNull { createSuspendFunctionStub(context) }
 }
 
 private fun IrSimpleFunction.createSuspendFunctionStub(context: JvmBackendContext): IrSimpleFunction {
@@ -422,34 +407,33 @@ private fun IrSimpleFunction.createSuspendFunctionStub(context: JvmBackendContex
 
         function.annotations += annotations
         function.metadata = metadata
-        function.contextReceiverParametersCount = contextReceiverParametersCount
 
         function.copyAttributes(this)
         function.copyTypeParametersFrom(this)
+
         val substitutionMap = makeTypeParameterSubstitutionMap(this, function)
-        function.copyReceiverParametersFrom(this, substitutionMap)
+        function.copyParametersFrom(this, substitutionMap)
 
-        function.overriddenSymbols += overriddenSymbols.map { it.owner.suspendFunctionViewOrStub(context).symbol }
-
+        val continuationParameter = buildValueParameter(function) {
+            kind = IrParameterKind.Regular
+            name = Name.identifier(SUSPEND_FUNCTION_COMPLETION_PARAMETER_NAME)
+            type = continuationType(context).substitute(substitutionMap)
+            origin = JvmLoweredDeclarationOrigin.CONTINUATION_CLASS
+        }
         // The continuation parameter goes before the default argument mask(s) and handler for default argument stubs.
         // TODO: It would be nice if AddContinuationLowering could insert the continuation argument before default stub generation.
-        val index = valueParameters.firstOrNull { it.origin == IrDeclarationOrigin.MASK_FOR_DEFAULT_FUNCTION }?.index
-            ?: valueParameters.size
-        function.valueParameters += valueParameters.take(index).map {
-            it.copyTo(function, index = it.index, type = it.type.substitute(substitutionMap))
-        }
-        val continuationParameter = function.addValueParameter(
-            SUSPEND_FUNCTION_COMPLETION_PARAMETER_NAME,
-            continuationType(context).substitute(substitutionMap),
-            JvmLoweredDeclarationOrigin.CONTINUATION_CLASS
-        )
-        function.valueParameters += valueParameters.drop(index).map {
-            it.copyTo(function, index = it.index + 1, type = it.type.substitute(substitutionMap))
-        }
+        val index = parameters.firstOrNull { it.origin == IrDeclarationOrigin.MASK_FOR_DEFAULT_FUNCTION }?.indexInParameters
+            ?: parameters.size
+        function.parameters = function.parameters.take(index) +
+                continuationParameter +
+                function.parameters.drop(index)
+
         context.remapMultiFieldValueClassStructure(
             this, function,
-            parametersMappingOrNull = explicitParameters.zip(function.explicitParameters.filter { it != continuationParameter }).toMap()
+            parametersMappingOrNull = parameters.zip(function.parameters.filter { it != continuationParameter }).toMap()
         )
+
+        function.overriddenSymbols += overriddenSymbols.map { it.owner.suspendFunctionViewOrStub(context).symbol }
     }
 }
 
@@ -463,7 +447,7 @@ private fun IrFunction.continuationType(context: JvmBackendContext): IrType {
     return if (isInvokeOfNumberedSuspendFunction || isInvokeOfNumberedFunction)
         context.irBuiltIns.anyNType
     else
-        context.ir.symbols.continuationClass.typeWith(returnType)
+        context.symbols.continuationClass.typeWith(returnType)
 }
 
 private fun <T : IrMemberAccessExpression<IrFunctionSymbol>> T.retargetToSuspendView(
@@ -485,21 +469,19 @@ private fun <T : IrMemberAccessExpression<IrFunctionSymbol>> T.retargetToSuspend
     return copyWithTargetSymbol(view.symbol).also {
         it.copyAttributes(this)
         it.copyTypeArgumentsFrom(this)
-        it.dispatchReceiver = dispatchReceiver
-        it.extensionReceiver = extensionReceiver
         val continuationParameter = view.continuationParameter()!!
-        for (i in 0 until valueArgumentsCount) {
-            it.putValueArgument(i + if (i >= continuationParameter.index) 1 else 0, getValueArgument(i))
+        for (i in arguments.indices) {
+            it.arguments[i + if (i >= continuationParameter.indexInParameters) 1 else 0] = arguments[i]
         }
         if (caller != null) {
-            val continuation = if (caller.origin == JvmLoweredDeclarationOrigin.INLINE_LAMBDA)
+            val continuation = if (caller.origin == IrDeclarationOrigin.INLINE_LAMBDA)
                 IrCompositeImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, continuationParameter.type, JvmLoweredStatementOrigin.FAKE_CONTINUATION)
             else
                 IrGetValueImpl(
                     UNDEFINED_OFFSET, UNDEFINED_OFFSET, caller.continuationParameter()?.symbol
                         ?: throw AssertionError("${caller.render()} has no continuation; can't call ${owner.render()}")
                 )
-            it.putValueArgument(continuationParameter.index, continuation)
+            it.arguments[continuationParameter.indexInParameters] = continuation
         }
     }
 }

@@ -12,21 +12,28 @@ import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.ProviderFactory
+import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.*
-import org.gradle.process.ExecOperations
+import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporter
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildPerformanceMetric
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildTime
 import org.jetbrains.kotlin.commonizer.*
-import org.jetbrains.kotlin.compilerRunner.GradleCliCommonizer
-import org.jetbrains.kotlin.compilerRunner.KotlinNativeCommonizerToolRunner
-import org.jetbrains.kotlin.compilerRunner.KotlinToolRunner
-import org.jetbrains.kotlin.compilerRunner.konanHome
+import org.jetbrains.kotlin.compilerRunner.*
+import org.jetbrains.kotlin.internal.compilerRunner.native.KotlinNativeToolRunner
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtensionOrNull
+import org.jetbrains.kotlin.gradle.internal.UsesClassLoadersCachingBuildService
+import org.jetbrains.kotlin.gradle.internal.properties.nativeProperties
 import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSharedNativeCompilation
 import org.jetbrains.kotlin.gradle.plugin.sources.DefaultKotlinSourceSet
 import org.jetbrains.kotlin.gradle.plugin.sources.withDependsOnClosure
+import org.jetbrains.kotlin.gradle.report.GradleBuildMetricsReporter
 import org.jetbrains.kotlin.gradle.targets.native.internal.CInteropCommonizerTask.CInteropCommonizerDependencies
 import org.jetbrains.kotlin.gradle.targets.native.internal.CInteropCommonizerTask.CInteropGist
+import org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeFromToolchainProvider
+import org.jetbrains.kotlin.gradle.targets.native.toolchain.NoopKotlinNativeProvider
+import org.jetbrains.kotlin.gradle.targets.native.toolchain.UsesKotlinNativeBundleBuildService
 import org.jetbrains.kotlin.gradle.tasks.CInteropProcess
 import org.jetbrains.kotlin.gradle.utils.*
 import org.jetbrains.kotlin.konan.target.KonanTarget
@@ -37,12 +44,14 @@ private typealias GroupedCommonizerDependencies = Map<CInteropCommonizerGroup, L
 
 
 @CacheableTask
-internal open class CInteropCommonizerTask
+internal abstract class CInteropCommonizerTask
 @Inject constructor(
     private val objectFactory: ObjectFactory,
-    private val execOperations: ExecOperations,
-    private val projectLayout: ProjectLayout
-) : AbstractCInteropCommonizerTask() {
+    private val projectLayout: ProjectLayout,
+    providerFactory: ProviderFactory,
+) : AbstractCInteropCommonizerTask(),
+    UsesClassLoadersCachingBuildService,
+    UsesKotlinNativeBundleBuildService {
 
     internal class CInteropGist(
         @get:Input val identifier: CInteropIdentifier,
@@ -53,7 +62,7 @@ internal open class CInteropCommonizerTask
         val libraryFile: Provider<File>,
 
         @get:Classpath
-        val dependencies: FileCollection
+        val dependencies: FileCollection,
     ) {
         @Suppress("unused") // Used for UP-TO-DATE check
         @get:Input
@@ -91,9 +100,9 @@ internal open class CInteropCommonizerTask
     override val outputDirectory: File get() = projectLayout.buildDirectory.get().asFile.resolve("classes/kotlin/commonizer")
 
     @get:Internal
-    internal val kotlinPluginVersion: Property<String> = objectFactory
-        .property<String>()
-        .chainedFinalizeValueOnRead()
+    internal val metrics: Provider<BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric>> = objectFactory
+        .property<BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric>>(GradleBuildMetricsReporter())
+        .chainedDisallowChanges()
 
     @get:Classpath
     internal val commonizerClasspath: ConfigurableFileCollection = objectFactory.fileCollection()
@@ -103,22 +112,26 @@ internal open class CInteropCommonizerTask
         .listProperty<String>()
         .chainedFinalizeValueOnRead()
 
-    private val runnerSettings: Provider<KotlinNativeCommonizerToolRunner.Settings> = kotlinPluginVersion
-        .zip(customJvmArgs) { pluginVersion, customJvmArgs ->
-            KotlinNativeCommonizerToolRunner.Settings(
-                pluginVersion,
-                commonizerClasspath.files,
-                customJvmArgs
-            )
-        }
+    @get:Internal
+    internal val commonizerToolRunner: Provider<KotlinNativeToolRunner> = providerFactory.provider {
+        objectFactory.KotlinNativeCommonizerToolRunner(
+            metrics,
+            classLoadersCachingService,
+            commonizerClasspath,
+            customJvmArgs
+        )
+    }
 
-    private val konanHome = project.file(project.konanHome)
+    @get:Internal
+    internal abstract val kotlinCompilerArgumentsLogLevel: Property<KotlinCompilerArgumentsLogLevel>
+
+    private val konanHome = project.nativeProperties.actualNativeHomeDirectory
     private val commonizerLogLevel = project.commonizerLogLevel
     private val additionalCommonizerSettings = project.additionalCommonizerSettings
 
     data class CInteropCommonizerDependencies(
         val commonizerTarget: CommonizerTarget,
-        val dependencies: FileCollection
+        val dependencies: FileCollection,
     )
 
     /**
@@ -130,13 +143,14 @@ internal open class CInteropCommonizerTask
 
         val sourceSetsByTarget = multiplatformExtension.sourceSets.groupBy { sourceSet -> sourceSet.commonizerTarget.getOrThrow() }
         val sourceSetsByGroup = multiplatformExtension.sourceSets.groupBy { sourceSet ->
-            CInteropCommonizerDependent.from(sourceSet)?.let { findInteropsGroup(it) }
+            CInteropCommonizerDependent.from(sourceSet)?.let { findCInteropCommonizerGroup(it) }
         }
+
         allInteropGroups.await().associateWith { group ->
             (group.targets + group.targets.allLeaves()).map { target ->
                 val externalDependencyFiles: List<FileCollection> = when (target) {
                     is LeafCommonizerTarget -> {
-                        cinterops
+                        cinterops.get()
                             .filter { cinterop -> cinterop.identifier in group.interops && cinterop.konanTarget == target.konanTarget }
                             .map { cinterop -> cinterop.dependencies }
                     }
@@ -152,12 +166,23 @@ internal open class CInteropCommonizerTask
                             will provide the same dependencies (since cinterops are just based upon KonanTarget)
                              */
                             .take(1)
-                            .map { sourceSet -> project.createCInteropMetadataDependencyClasspath(sourceSet) }
+                            .map { sourceSet -> project.createCommonizedCInteropDependencyConfigurationView(sourceSet) }
                     }
                 }
 
                 CInteropCommonizerDependencies(
-                    target, project.files(externalDependencyFiles, project.getNativeDistributionDependencies(target))
+                    target,
+                    project.files(
+                        externalDependencyFiles,
+                        project.getNativeDistributionDependencies(
+                            KotlinNativeFromToolchainProvider(
+                                project,
+                                target.konanTargets,
+                                kotlinNativeBundleBuildService
+                            ).bundleDirectory.map { KonanDistribution(it) },
+                            target
+                        )
+                    )
                 )
             }
         }
@@ -170,48 +195,41 @@ internal open class CInteropCommonizerTask
     }
 
     @get:Nested
-    internal var cinterops = setOf<CInteropGist>()
-        private set
+    internal val cinterops: SetProperty<CInteropGist> = objectFactory.setProperty<CInteropGist>()
 
     @get:OutputDirectories
     val allOutputDirectories: Set<File>
         get() = allInteropGroups.getOrThrow().map { outputDirectory(it) }.toSet()
 
-    fun from(vararg tasks: CInteropProcess) = from(
-        tasks.toList()
-            .onEach { task -> this.dependsOn(task) }
-            .map { task -> task.toGist() }
-    )
+    internal fun from(task: TaskProvider<CInteropProcess>) {
+        dependsOn(task)
+        cinterops.add(task.map { it.toGist() })
 
-    internal fun from(vararg cinterop: CInteropGist) {
-        from(cinterop.toList())
-    }
-
-    internal fun from(cinterops: List<CInteropGist>) {
-        this.cinterops += cinterops
     }
 
     @TaskAction
     protected fun commonizeCInteropLibraries() {
-        allInteropGroups.getOrThrow().forEach(::commonize)
+        val metricReporter = metrics.get()
+        addBuildMetricsForTaskAction(metricsReporter = metricReporter, languageVersion = null) {
+            allInteropGroups.getOrThrow().forEach(::commonize)
+        }
     }
 
     private fun commonize(group: CInteropCommonizerGroup) {
-        val cinteropsForTarget = cinterops.filter { cinterop -> cinterop.identifier in group.interops }
-        outputDirectory(group).deleteRecursively()
+        val cinteropsForTarget = cinterops.get().filter { cinterop -> cinterop.identifier in group.interops }
+        val outputDirectory = outputDirectory(group)
+        outputDirectory.deleteRecursively()
         if (cinteropsForTarget.isEmpty()) return
 
-        val commonizerRunner = KotlinNativeCommonizerToolRunner(
-            context = KotlinToolRunner.GradleExecutionContext.fromTaskContext(objectFactory, execOperations, logger),
-            settings = runnerSettings.get()
-        )
-
-        GradleCliCommonizer(commonizerRunner).commonizeLibraries(
-            konanHome = konanHome,
+        GradleCliCommonizer(
+            commonizerToolRunner.get(),
+            kotlinCompilerArgumentsLogLevel.get(),
+        ).commonizeLibraries(
+            konanHome = konanHome.get(),
             outputTargets = group.targets,
             inputLibraries = cinteropsForTarget.map { it.libraryFile.get() }.filter { it.exists() }.toSet(),
             dependencyLibraries = getCInteropCommonizerGroupDependencies(group),
-            outputDirectory = outputDirectory(group),
+            outputDirectory = outputDirectory,
             logLevel = commonizerLogLevel,
             additionalSettings = additionalCommonizerSettings,
         )
@@ -231,60 +249,11 @@ internal open class CInteropCommonizerTask
     }
 
     @get:Internal
-    internal val allInteropGroups: Future<Set<CInteropCommonizerGroup>> = project.lazyFuture {
-        val dependents = allDependents.await()
-        val allScopeSets = dependents.map { it.scopes }.toSet()
-        val rootScopeSets = allScopeSets.filter { scopeSet ->
-            allScopeSets.none { otherScopeSet -> otherScopeSet != scopeSet && otherScopeSet.containsAll(scopeSet) }
-        }
+    internal val allInteropGroups: Future<Set<CInteropCommonizerGroup>> = project.kotlinCInteropGroups
 
-        rootScopeSets.map { scopeSet ->
-            val dependentsForScopes = dependents.filter { dependent ->
-                scopeSet.containsAll(dependent.scopes)
-            }
-
-            CInteropCommonizerGroup(
-                targets = dependentsForScopes.map { it.target }.toSet(),
-                interops = dependentsForScopes.flatMap { it.interops }.toSet()
-            )
-        }.toSet()
-    }
-
-    @get:Nested
+    @Nested
     @Suppress("unused") // UP-TO-DATE check
-    protected val allInteropGroupsOrThrow get() = allInteropGroups.getOrThrow()
-
-    override suspend fun findInteropsGroup(dependent: CInteropCommonizerDependent): CInteropCommonizerGroup? {
-        val suitableGroups = allInteropGroups.await().filter { group ->
-            group.interops.containsAll(dependent.interops) && group.targets.contains(dependent.target)
-        }
-
-        assert(suitableGroups.size <= 1) {
-            "CInteropCommonizerTask: Unnecessary work detected: More than one suitable group found for cinterop dependent."
-        }
-
-        return suitableGroups.firstOrNull()
-    }
-
-    private val allDependents: Future<Set<CInteropCommonizerDependent>> = project.lazyFuture {
-        val multiplatformExtension = project.multiplatformExtensionOrNull ?: return@lazyFuture emptySet()
-
-        val fromSharedNativeCompilations = multiplatformExtension
-            .targets.flatMap { target -> target.compilations }
-            .filterIsInstance<KotlinSharedNativeCompilation>()
-            .mapNotNull { compilation -> CInteropCommonizerDependent.from(compilation) }
-            .toSet()
-
-        val fromSourceSets = multiplatformExtension.awaitSourceSets()
-            .mapNotNull { sourceSet -> CInteropCommonizerDependent.from(sourceSet) }
-            .toSet()
-
-        val fromSourceSetsAssociateCompilations = multiplatformExtension.awaitSourceSets()
-            .mapNotNull { sourceSet -> CInteropCommonizerDependent.fromAssociateCompilations(sourceSet) }
-            .toSet()
-
-        (fromSharedNativeCompilations + fromSourceSets + fromSourceSetsAssociateCompilations)
-    }
+    protected fun getAllInteropGroupsForUpToDateCheck() = allInteropGroups.getOrThrow()
 }
 
 private fun CInteropProcess.toGist(): CInteropGist {

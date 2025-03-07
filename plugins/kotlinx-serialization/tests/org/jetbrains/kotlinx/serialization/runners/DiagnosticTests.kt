@@ -10,7 +10,7 @@ import org.jetbrains.kotlin.test.directives.DiagnosticsDirectives.DIAGNOSTICS
 import org.jetbrains.kotlin.test.directives.FirDiagnosticsDirectives.FIR_DUMP
 import org.jetbrains.kotlin.test.runners.AbstractDiagnosticTest
 import org.jetbrains.kotlin.test.runners.AbstractFirPsiDiagnosticTest
-import org.jetbrains.kotlin.test.runners.configurationForClassicAndFirTestsAlongside
+import org.jetbrains.kotlin.test.configuration.configurationForClassicAndFirTestsAlongside
 import org.jetbrains.kotlinx.serialization.configureForKotlinxSerialization
 
 abstract class AbstractSerializationPluginDiagnosticTest : AbstractDiagnosticTest() {
@@ -26,25 +26,27 @@ abstract class AbstractSerializationPluginDiagnosticTest : AbstractDiagnosticTes
 abstract class AbstractSerializationFirPsiDiagnosticTest : AbstractFirPsiDiagnosticTest() {
     override fun configure(builder: TestConfigurationBuilder) {
         super.configure(builder)
-        with(builder) {
-            configureForKotlinxSerialization()
-            disableOptInErrors()
+        builder.configureSerializationFirPsiDiagnosticTest()
+    }
+}
 
-            forTestsMatching("*/diagnostics/*") {
-                configurationForClassicAndFirTestsAlongside()
-            }
+fun TestConfigurationBuilder.configureSerializationFirPsiDiagnosticTest() {
+    configureForKotlinxSerialization()
+    disableOptInErrors()
 
-            forTestsMatching("*/firMembers/*") {
-                defaultDirectives {
-                    +FIR_DUMP
-                }
-            }
+    forTestsMatching("*/diagnostics/*") {
+        configurationForClassicAndFirTestsAlongside()
+    }
+
+    forTestsMatching("*/firMembers/*") {
+        defaultDirectives {
+            +FIR_DUMP
         }
     }
 }
 
 private fun TestConfigurationBuilder.disableOptInErrors() {
     defaultDirectives {
-        DIAGNOSTICS with listOf("-OPT_IN_USAGE", "-OPT_IN_USAGE_ERROR")
+        DIAGNOSTICS with listOf("-OPT_IN_USAGE", "-OPT_IN_USAGE_ERROR", "-OPT_IN_TO_INHERITANCE", "-OPT_IN_TO_INHERITANCE_ERROR")
     }
 }

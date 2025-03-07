@@ -9,11 +9,12 @@ import org.jetbrains.kotlin.checkers.ENABLE_JVM_PREVIEW
 import org.jetbrains.kotlin.checkers.parseLanguageVersionSettings
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.config.*
+import org.jetbrains.kotlin.test.testFramework.FrontendBackendConfiguration
 import org.jetbrains.kotlin.test.testFramework.KtUsefulTestCase
 import org.jetbrains.kotlin.test.util.KtTestUtil
 import java.io.File
 
-abstract class KotlinBaseTest<F : KotlinBaseTest.TestFile> : KtUsefulTestCase() {
+abstract class KotlinBaseTest<F : KotlinBaseTest.TestFile> : KtUsefulTestCase(), FrontendBackendConfiguration {
     @Throws(Exception::class)
     override fun setUp() {
         super.setUp()
@@ -51,26 +52,25 @@ abstract class KotlinBaseTest<F : KotlinBaseTest.TestFile> : KtUsefulTestCase() 
         return Companion.extractConfigurationKind(files)
     }
 
-    protected open fun updateConfiguration(configuration: CompilerConfiguration) {}
+    protected open fun updateConfiguration(configuration: CompilerConfiguration) {
+        configureIrFir(configuration)
+    }
 
     protected open fun setupEnvironment(environment: KotlinCoreEnvironment) {}
 
     protected open fun parseDirectivesPerFiles() = false
 
-    protected open val backend = TargetBackend.ANY
 
     protected open fun configureTestSpecific(configuration: CompilerConfiguration, testFiles: List<TestFile>) {}
 
     protected fun createConfiguration(
         kind: ConfigurationKind,
         jdkKind: TestJdkKind,
-        backend: TargetBackend,
         classpath: List<File?>,
         javaSource: List<File?>,
         testFilesWithConfigurationDirectives: List<TestFile>
     ): CompilerConfiguration {
         val configuration = KotlinTestUtils.newConfiguration(kind, jdkKind, classpath, javaSource)
-        configuration.put(JVMConfigurationKeys.IR, backend.isIR)
         updateConfigurationByDirectivesInTestFiles(
             testFilesWithConfigurationDirectives,
             configuration,
@@ -121,29 +121,15 @@ abstract class KotlinBaseTest<F : KotlinBaseTest.TestFile> : KtUsefulTestCase() 
     }
 
     companion object {
-        @JvmStatic
-        fun updateConfigurationByDirectivesInTestFiles(
-            testFilesWithConfigurationDirectives: List<TestFile>,
-            configuration: CompilerConfiguration
-        ) {
-            updateConfigurationByDirectivesInTestFiles(testFilesWithConfigurationDirectives, configuration, false)
-        }
-
-
         private fun updateConfigurationByDirectivesInTestFiles(
             testFilesWithConfigurationDirectives: List<TestFile>,
             configuration: CompilerConfiguration,
             usePreparsedDirectives: Boolean
         ) {
             var explicitLanguageVersionSettings: LanguageVersionSettings? = null
-            val kotlinConfigurationFlags: MutableList<String> = ArrayList(0)
             for (testFile in testFilesWithConfigurationDirectives) {
                 val content = testFile.content
                 val directives = if (usePreparsedDirectives) testFile.directives else KotlinTestUtils.parseDirectives(content)
-                val flags = directives.listValues("KOTLIN_CONFIGURATION_FLAGS")
-                if (flags != null) {
-                    kotlinConfigurationFlags.addAll(flags)
-                }
                 val targetString = directives["JVM_TARGET"]
                 if (targetString != null) {
                     val jvmTarget = JvmTarget.fromString(targetString)
@@ -161,7 +147,7 @@ abstract class KotlinBaseTest<F : KotlinBaseTest.TestFile> : KtUsefulTestCase() 
                         """
                     Do not use LANGUAGE_VERSION directive in compiler tests because it's prone to limiting the test
                     to a specific language version, which will become obsolete at some point and the test won't check
-                    things like feature intersection with newer releases. Use `// !LANGUAGE: [+-]FeatureName` directive instead,
+                    things like feature intersection with newer releases. Use `// LANGUAGE: [+-]FeatureName` directive instead,
                     where FeatureName is an entry of the enum `LanguageFeature`
                     
                     """.trimIndent()
@@ -183,15 +169,6 @@ abstract class KotlinBaseTest<F : KotlinBaseTest.TestFile> : KtUsefulTestCase() 
             if (explicitLanguageVersionSettings != null) {
                 configuration.languageVersionSettings = explicitLanguageVersionSettings
             }
-            updateConfigurationWithFlags(configuration, kotlinConfigurationFlags)
-        }
-
-        private fun updateConfigurationWithFlags(configuration: CompilerConfiguration, flags: List<String>) {
-            val configurationFlags = parseAnalysisFlags(flags)
-            configurationFlags.entries.forEach { (key, value) ->
-                @Suppress("UNCHECKED_CAST")
-                configuration.put(key as CompilerConfigurationKey<Any>, value)
-            }
         }
 
         fun extractConfigurationKind(files: List<TestFile>): ConfigurationKind {
@@ -206,15 +183,6 @@ abstract class KotlinBaseTest<F : KotlinBaseTest.TestFile> : KtUsefulTestCase() 
                 }
             }
             return if (addReflect) ConfigurationKind.ALL else if (addRuntime) ConfigurationKind.NO_KOTLIN_REFLECT else ConfigurationKind.JDK_ONLY
-        }
-
-        fun getTestJdkKind(files: List<TestFile>): TestJdkKind {
-            for (file in files) {
-                if (InTextDirectivesUtils.isDirectiveDefined(file.content, "FULL_JDK")) {
-                    return TestJdkKind.FULL_JDK
-                }
-            }
-            return TestJdkKind.MOCK_JDK
         }
     }
 }

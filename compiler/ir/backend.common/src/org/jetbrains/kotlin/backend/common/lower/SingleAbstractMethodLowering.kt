@@ -27,12 +27,16 @@ import org.jetbrains.kotlin.ir.expressions.impl.IrInstanceInitializerCallImpl
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.*
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.findIsInstanceAnd
 import org.jetbrains.kotlin.utils.memoryOptimizedMap
 import org.jetbrains.kotlin.utils.memoryOptimizedPlus
 
+/**
+ * Replaces SAM conversions with instances of interface-implementing classes.
+ */
 abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) : FileLoweringPass, IrElementTransformerVoidWithContext() {
     // SAM wrappers are cached, either in the file class (if it exists), or in a top-level enclosing class.
     // In the latter case, the names of SAM wrappers depend on the order of classes in the file. For example:
@@ -78,6 +82,8 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
     abstract val IrType.needEqualsHashCodeMethods: Boolean
 
     open val inInlineFunctionScope get() = allScopes.any { scope -> (scope.irElement as? IrFunction)?.isInline ?: false }
+
+    protected open fun postprocessCreatedObjectProxy(klass: IrClass) {}
 
     override fun lower(irFile: IrFile) {
         cachedImplementations.clear()
@@ -127,7 +133,7 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
                 irBlock(invokable, null, superType) {
                     val invokableVariable = createTmpVariable(invokable)
                     val instance = irCall(implementation.constructors.single()).apply {
-                        putValueArgument(0, irGet(invokableVariable))
+                        arguments[0] = irGet(invokableVariable)
                     }
                     +irIfNull(superType, irGet(invokableVariable), irNull(), instance)
                 }
@@ -138,10 +144,10 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
                 // (See KT-21781 for a similar problem with anonymous object constructor arguments.)
                 irBlock(invokable, null, superType) {
                     val invokableVariable = createTmpVariable(invokable)
-                    +irCall(implementation.constructors.single()).apply { putValueArgument(0, irGet(invokableVariable)) }
+                    +irCall(implementation.constructors.single()).apply { arguments[0] = irGet(invokableVariable) }
                 }
             } else {
-                irCall(implementation.constructors.single()).apply { putValueArgument(0, invokable) }
+                irCall(implementation.constructors.single()).apply { arguments[0] = invokable }
             }
         }
     }
@@ -162,14 +168,13 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
         val wrapperName = Name.identifier("sam$inlinePrefix\$$superFqName$SAM_WRAPPER_SUFFIX")
         val transformedSuperMethod = superClass.functions.single { it.modality == Modality.ABSTRACT }
         val originalSuperMethod = getSuspendFunctionWithoutContinuation(transformedSuperMethod)
-        val extensionReceiversCount = if (originalSuperMethod.extensionReceiverParameter == null) 0 else 1
         // TODO: have psi2ir cast the argument to the correct function type. Also see the TODO
         //       about type parameters in `visitTypeOperator`.
         val wrappedFunctionClass =
             if (originalSuperMethod.isSuspend)
-                context.ir.symbols.suspendFunctionN(originalSuperMethod.valueParameters.size + extensionReceiversCount).owner
+                context.symbols.suspendFunctionN(originalSuperMethod.nonDispatchParameters.size).owner
             else
-                context.ir.symbols.functionN(originalSuperMethod.valueParameters.size + extensionReceiversCount).owner
+                context.symbols.functionN(originalSuperMethod.nonDispatchParameters.size).owner
         val wrappedFunctionType = getWrappedFunctionType(wrappedFunctionClass)
 
         val subclass = context.irFactory.buildClass {
@@ -178,7 +183,7 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
             visibility = wrapperVisibility
             setSourceRange(createFor)
         }.apply {
-            createImplicitParameterDeclarationWithWrappedDescriptor()
+            createThisReceiverParameter()
             superTypes = listOf(superType) memoryOptimizedPlus getAdditionalSupertypes(superType)
             parent = enclosingContainer!!
         }
@@ -221,9 +226,8 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
             setSourceRange(createFor)
         }.apply {
             overriddenSymbols = listOf(originalSuperMethod.symbol)
-            dispatchReceiverParameter = subclass.thisReceiver!!.copyTo(this)
-            extensionReceiverParameter = originalSuperMethod.extensionReceiverParameter?.copyTo(this)
-            valueParameters = originalSuperMethod.valueParameters.memoryOptimizedMap { it.copyTo(this) }
+            parameters = (listOf(subclass.thisReceiver!!) + originalSuperMethod.nonDispatchParameters)
+                .memoryOptimizedMap { it.copyTo(this) }
             body = context.createIrBuilder(symbol).irBlockBody {
                 +irReturn(
                     irCall(
@@ -231,8 +235,9 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
                         originalSuperMethod.returnType
                     ).apply {
                         dispatchReceiver = irGetField(irGet(dispatchReceiverParameter!!), field)
-                        extensionReceiverParameter?.let { putValueArgument(0, irGet(it)) }
-                        valueParameters.forEachIndexed { i, parameter -> putValueArgument(extensionReceiversCount + i, irGet(parameter)) }
+                        nonDispatchParameters.forEachIndexed { index, parameter ->
+                            arguments[parameter.indexInParameters] = irGet(parameter)
+                        }
                     })
             }
         }
@@ -248,6 +253,8 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
             ignoredParentSymbols = listOf(transformedSuperMethod.symbol)
         )
 
+        postprocessCreatedObjectProxy(subclass)
+
         return subclass
     }
 
@@ -258,7 +265,7 @@ abstract class SingleAbstractMethodLowering(val context: CommonBackendContext) :
 
     private fun getAdditionalSupertypes(supertype: IrType) =
         if (supertype.needEqualsHashCodeMethods)
-            listOf(context.ir.symbols.functionAdapter.typeWith())
+            listOf(context.symbols.functionAdapter.typeWith())
         else emptyList()
 }
 
@@ -279,7 +286,7 @@ class SamEqualsHashCodeMethodsGenerator(
     private val samSuperType: IrType,
     private val obtainFunctionDelegate: IrBuilderWithScope.(receiver: IrExpression) -> IrExpression,
 ) {
-    private val functionAdapterClass = context.ir.symbols.functionAdapter.owner
+    private val functionAdapterClass = context.symbols.functionAdapter.owner
 
     private val builtIns: IrBuiltIns get() = context.irBuiltIns
     private val getFunctionDelegate = functionAdapterClass.functions.single { it.name.asString() == "getFunctionDelegate" }
@@ -295,35 +302,39 @@ class SamEqualsHashCodeMethodsGenerator(
         klass.addFunction(getFunctionDelegate.name.asString(), getFunctionDelegate.returnType).apply {
             overriddenSymbols = listOf(getFunctionDelegate.symbol)
             body = context.createIrBuilder(symbol).run {
-                irExprBody(obtainFunctionDelegate(irGet(dispatchReceiverParameter!!)))
+                irBlockBody {
+                    +irReturn(obtainFunctionDelegate(irGet(dispatchReceiverParameter!!)))
+                }
             }
         }
     }
 
     private fun generateEquals(anyGenerator: MethodsFromAnyGeneratorForLowerings) {
         anyGenerator.createEqualsMethodDeclaration().apply {
-            val other = valueParameters[0]
+            val other = parameters[1]
             body = context.createIrBuilder(symbol).run {
-                irExprBody(
-                    irIfThenElse(
-                        builtIns.booleanType,
-                        irIs(irGet(other), samSuperType),
+                irBlockBody {
+                    +irReturn(
                         irIfThenElse(
                             builtIns.booleanType,
-                            irIs(irGet(other), functionAdapterClass.typeWith()),
-                            irEquals(
-                                irCall(getFunctionDelegate).also {
-                                    it.dispatchReceiver = irGet(dispatchReceiverParameter!!)
-                                },
-                                irCall(getFunctionDelegate).also {
-                                    it.dispatchReceiver = irImplicitCast(irGet(other), functionAdapterClass.typeWith())
-                                }
+                            irIs(irGet(other), samSuperType),
+                            irIfThenElse(
+                                builtIns.booleanType,
+                                irIs(irGet(other), functionAdapterClass.typeWith()),
+                                irEquals(
+                                    irCall(getFunctionDelegate).also {
+                                        it.arguments[0] = irGet(parameters[0])
+                                    },
+                                    irCall(getFunctionDelegate).also {
+                                        it.dispatchReceiver = irImplicitCast(irGet(other), functionAdapterClass.typeWith())
+                                    }
+                                ),
+                                irFalse()
                             ),
                             irFalse()
-                        ),
-                        irFalse()
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -332,13 +343,15 @@ class SamEqualsHashCodeMethodsGenerator(
         anyGenerator.createHashCodeMethodDeclaration().apply {
             val hashCode = context.irBuiltIns.functionClass.owner.functions.single { it.isHashCode() }.symbol
             body = context.createIrBuilder(symbol).run {
-                irExprBody(
-                    irCall(hashCode).also {
-                        it.dispatchReceiver = irCall(getFunctionDelegate).also {
-                            it.dispatchReceiver = irGet(dispatchReceiverParameter!!)
+                irBlockBody {
+                    +irReturn(
+                        irCall(hashCode).also {
+                            it.dispatchReceiver = irCall(getFunctionDelegate).also {
+                                it.dispatchReceiver = irGet(dispatchReceiverParameter!!)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
         }
     }

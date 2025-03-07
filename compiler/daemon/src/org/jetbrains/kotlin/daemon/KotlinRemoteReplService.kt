@@ -19,7 +19,6 @@
 package org.jetbrains.kotlin.daemon
 
 import com.intellij.openapi.Disposable
-import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
 import org.jetbrains.kotlin.cli.common.extensions.ReplFactoryExtension
 import org.jetbrains.kotlin.cli.common.messages.*
 import org.jetbrains.kotlin.cli.common.repl.*
@@ -36,7 +35,6 @@ import org.jetbrains.kotlin.daemon.common.RemoteOperationsTracer
 import org.jetbrains.kotlin.util.ServiceLoaderLite
 import org.jetbrains.kotlin.utils.PathUtil
 import java.io.File
-import java.io.PrintStream
 import java.net.URLClassLoader
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
@@ -56,7 +54,7 @@ abstract class KotlinJvmReplServiceBase(
     private val log by lazy { Logger.getLogger("replService") }
 
     protected val configuration = CompilerConfiguration().apply {
-        put(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, messageCollector)
+        this.messageCollector = messageCollector
         addJvmClasspathRoots(PathUtil.kotlinPathsForCompiler.let { listOf(it.stdlibPath, it.reflectPath, it.scriptRuntimePath) })
         addJvmClasspathRoots(templateClasspath)
         configureJdkHomeFromSystemProperty() // needed for IdeaJsr223Test in Kotlin plugin
@@ -170,27 +168,6 @@ open class KotlinJvmReplService(
             CompileService.CallResult.Good(body(it.state))
         }
             ?: CompileService.CallResult.Error("No REPL state with id $stateId found")
-    }
-}
-
-internal class KeepFirstErrorMessageCollector(compilerMessagesStream: PrintStream) : MessageCollector {
-
-    private val innerCollector = PrintingMessageCollector(compilerMessagesStream, MessageRenderer.WITHOUT_PATHS, false)
-
-    internal var firstErrorMessage: String? = null
-    internal var firstErrorLocation: CompilerMessageSourceLocation? = null
-
-    override fun report(severity: CompilerMessageSeverity, message: String, location: CompilerMessageSourceLocation?) {
-        if (firstErrorMessage == null && severity.isError) {
-            firstErrorMessage = message
-            firstErrorLocation = location
-        }
-        innerCollector.report(severity, message, location)
-    }
-
-    override fun hasErrors(): Boolean = innerCollector.hasErrors()
-    override fun clear() {
-        innerCollector.clear()
     }
 }
 

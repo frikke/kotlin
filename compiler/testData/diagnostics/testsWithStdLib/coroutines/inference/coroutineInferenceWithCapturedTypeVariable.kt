@@ -1,6 +1,7 @@
+// RUN_PIPELINE_TILL: BACKEND
 // FIR_IDENTICAL
-// !DIAGNOSTICS: -UNUSED_PARAMETER
-// !OPT_IN: kotlin.RequiresOptIn
+// DIAGNOSTICS: -UNUSED_PARAMETER
+// OPT_IN: kotlin.RequiresOptIn
 
 import kotlin.experimental.ExperimentalTypeInference
 

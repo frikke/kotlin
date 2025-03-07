@@ -1,0 +1,2 @@
+(Full dump is not available: null)
+CLASS IR_EXTERNAL_JAVA_DECLARATION_STUB CLASS name:X1 modality:OPEN visibility:public/*package*/ superTypes:[<root>.J1<@[FlexibleNullability] kotlin.String?>]

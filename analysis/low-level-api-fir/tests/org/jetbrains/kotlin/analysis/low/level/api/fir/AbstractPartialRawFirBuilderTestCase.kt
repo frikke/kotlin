@@ -1,25 +1,28 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.analysis.low.level.api.fir
 
 import junit.framework.TestCase
+import org.jetbrains.kotlin.ObsoleteTestInfrastructure
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.FirDesignation
 import org.jetbrains.kotlin.analysis.low.level.api.fir.lazy.resolve.RawFirNonLocalDeclarationBuilder
-import org.jetbrains.kotlin.analysis.low.level.api.fir.test.base.AbstractLowLevelApiSingleFileTest
 import org.jetbrains.kotlin.analysis.low.level.api.fir.test.configurators.AnalysisApiFirOutOfContentRootTestConfigurator
 import org.jetbrains.kotlin.analysis.low.level.api.fir.test.configurators.AnalysisApiFirSourceTestConfigurator
+import org.jetbrains.kotlin.analysis.test.framework.base.AbstractAnalysisApiBasedTest
+import org.jetbrains.kotlin.analysis.test.framework.projectStructure.KtTestModule
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.FirSession
-import org.jetbrains.kotlin.fir.builder.RawFirBuilder
+import org.jetbrains.kotlin.fir.builder.PsiRawFirBuilder
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.psi
 import org.jetbrains.kotlin.fir.renderer.ConeIdFullRenderer
 import org.jetbrains.kotlin.fir.renderer.FirRenderer
 import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.scopes.FirContainingNamesAwareScope
+import org.jetbrains.kotlin.fir.scopes.FirScope
 import org.jetbrains.kotlin.fir.scopes.FirScopeProvider
 import org.jetbrains.kotlin.fir.scopes.FirTypeScope
 import org.jetbrains.kotlin.fir.session.FirSessionFactoryHelper
@@ -28,20 +31,21 @@ import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.findDescendantOfType
 import org.jetbrains.kotlin.test.InTextDirectivesUtils
 import org.jetbrains.kotlin.test.services.JUnit5Assertions
-import org.jetbrains.kotlin.test.services.TestModuleStructure
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.assertions
+import org.jetbrains.kotlin.utils.addToStdlib.shouldNotBeCalled
 import kotlin.io.path.readText
 
-abstract class AbstractPartialRawFirBuilderTestCase : AbstractLowLevelApiSingleFileTest() {
-    override fun doTestByFileStructure(ktFile: KtFile, moduleStructure: TestModuleStructure, testServices: TestServices) {
+@OptIn(ObsoleteTestInfrastructure::class)
+abstract class AbstractPartialRawFirBuilderTestCase : AbstractAnalysisApiBasedTest() {
+    override fun doTestByMainFile(mainFile: KtFile, mainModule: KtTestModule, testServices: TestServices) {
         val fileText = testDataPath.readText()
         val functionName = InTextDirectivesUtils.findStringWithPrefixes(fileText, FUNCTION_DIRECTIVE)
         val propertyName = InTextDirectivesUtils.findStringWithPrefixes(fileText, PROPERTY_DIRECTIVE)
 
         when {
-            functionName != null -> testFunctionPartialBuilding(ktFile, functionName)
-            propertyName != null -> testPropertyPartialBuilding(ktFile, propertyName)
+            functionName != null -> testFunctionPartialBuilding(mainFile, functionName)
+            propertyName != null -> testPropertyPartialBuilding(mainFile, propertyName)
             else -> testServices.assertions.fail { "No '$FUNCTION_DIRECTIVE' or '$PROPERTY_DIRECTIVE' directives found!" }
         }
     }
@@ -91,7 +95,7 @@ abstract class AbstractPartialRawFirBuilderTestCase : AbstractLowLevelApiSingleF
 
     private fun <T : KtElement> testPartialBuilding(
         file: KtFile,
-        findPsiElement: (KtFile) -> T
+        findPsiElement: (KtFile) -> T,
     ) {
         val elementToBuild = findPsiElement(file) as KtDeclaration
 
@@ -101,23 +105,35 @@ abstract class AbstractPartialRawFirBuilderTestCase : AbstractLowLevelApiSingleF
                 useSiteSession: FirSession,
                 scopeSession: ScopeSession,
                 memberRequiredPhase: FirResolvePhase?,
-            ): FirTypeScope = error("Should not be called")
+            ): FirTypeScope = shouldNotBeCalled()
 
-            override fun getStaticMemberScopeForCallables(
+            override fun getTypealiasConstructorScope(
+                typeAlias: FirTypeAlias,
+                useSiteSession: FirSession,
+                scopeSession: ScopeSession,
+            ): FirScope = shouldNotBeCalled()
+
+            override fun getStaticCallableMemberScope(
                 klass: FirClass,
                 useSiteSession: FirSession,
                 scopeSession: ScopeSession,
-            ): FirContainingNamesAwareScope? = error("Should not be called")
+            ): FirContainingNamesAwareScope = shouldNotBeCalled()
+
+            override fun getStaticCallableMemberScopeForBackend(
+                klass: FirClass,
+                useSiteSession: FirSession,
+                scopeSession: ScopeSession,
+            ): FirContainingNamesAwareScope = shouldNotBeCalled()
 
             override fun getNestedClassifierScope(
                 klass: FirClass,
                 useSiteSession: FirSession,
                 scopeSession: ScopeSession,
-            ): FirContainingNamesAwareScope? = error("Should not be called")
+            ): FirContainingNamesAwareScope = shouldNotBeCalled()
         }
 
         val session = FirSessionFactoryHelper.createEmptySession()
-        val firBuilder = RawFirBuilder(session, scopeProvider)
+        val firBuilder = PsiRawFirBuilder(session, scopeProvider)
         val original = firBuilder.buildFirFile(file)
 
         val designationBuilder = DesignationBuilder(elementToBuild)
@@ -125,12 +141,11 @@ abstract class AbstractPartialRawFirBuilderTestCase : AbstractLowLevelApiSingleF
         val designation = designationBuilder.resultDesignation
         TestCase.assertTrue(designation != null)
 
-        val firElement = RawFirNonLocalDeclarationBuilder.buildWithReplacement(
+        val firElement = RawFirNonLocalDeclarationBuilder.buildWithFunctionSymbolRebind(
             session = session,
             scopeProvider = scopeProvider,
             designation!!,
             elementToBuild,
-            null
         )
 
         val firDump = FirRenderer(idRenderer = ConeIdFullRenderer()).renderElementAsString(firElement)

@@ -25,7 +25,7 @@ import org.jetbrains.kotlin.load.kotlin.FileBasedKotlinClass
 import org.jetbrains.kotlin.load.kotlin.KotlinJvmBinaryClass
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMemberSignature
-import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMetadataVersion
+import org.jetbrains.kotlin.metadata.deserialization.MetadataVersion
 import org.jetbrains.org.objectweb.asm.*
 import org.jetbrains.org.objectweb.asm.tree.MethodNode
 
@@ -215,7 +215,7 @@ object InlineTestUtil {
 
     private fun loadBinaryClass(file: OutputFile): KotlinJvmBinaryClass =
         FileBasedKotlinClass.create<FileBasedKotlinClass>(
-            file.asByteArray(), JvmMetadataVersion.INSTANCE
+            file.asByteArray(), MetadataVersion.INSTANCE
         ) { className, classVersion, classHeader, innerClasses ->
             object : FileBasedKotlinClass(className, classVersion, classHeader, innerClasses) {
                 override val location: String
@@ -226,7 +226,7 @@ object InlineTestUtil {
                 override fun equals(other: Any?): Boolean = throw UnsupportedOperationException()
                 override fun toString(): String = throw UnsupportedOperationException()
             }
-        }!!
+        } ?: error("Generated class file has no @Metadata annotation: $file")
 
     private class InlineInfo(val inlineMethods: Set<MethodInfo>, val binaryClasses: Map<String, KotlinJvmBinaryClass>)
 

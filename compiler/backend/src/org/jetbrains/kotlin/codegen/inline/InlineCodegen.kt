@@ -9,12 +9,9 @@ import com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.codegen.*
 import org.jetbrains.kotlin.codegen.AsmUtil.isPrimitive
 import org.jetbrains.kotlin.codegen.state.GenerationState
-import org.jetbrains.kotlin.descriptors.PackageFragmentDescriptor
-import org.jetbrains.kotlin.descriptors.ParameterDescriptor
-import org.jetbrains.kotlin.resolve.DescriptorUtils
-import org.jetbrains.kotlin.resolve.inline.InlineUtil
 import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmMethodSignature
 import org.jetbrains.kotlin.types.KotlinType
+import org.jetbrains.kotlin.utils.exceptions.rethrowIntellijPlatformExceptionIfNeeded
 import org.jetbrains.org.objectweb.asm.Label
 import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.Type
@@ -64,6 +61,7 @@ abstract class InlineCodegen<out T : BaseExpressionCodegen>(
                 e, sourceCompiler.callElement as? PsiElement
             )
         } catch (e: Exception) {
+            rethrowIntellijPlatformExceptionIfNeeded(e)
             throw CompilationException(
                 "Couldn't inline method call: ${sourceCompiler.callElementText}\nMethod: ${nodeAndSmap?.node?.nodeText}",
                 e, sourceCompiler.callElement as? PsiElement
@@ -88,7 +86,7 @@ abstract class InlineCodegen<out T : BaseExpressionCodegen>(
                 }
                 for (captured in lambda.capturedVars) {
                     val param = invocationParamBuilder.addCapturedParam(captured, captured.fieldName, false)
-                    param.remapValue = StackValue.local(codegen.frameMap.enterTemp(param.type), param.type)
+                    param.remapValue = StackValue.Local(codegen.frameMap.enterTemp(param.type), param.type, null)
                     param.isSynthetic = true
                 }
             }
@@ -100,17 +98,24 @@ abstract class InlineCodegen<out T : BaseExpressionCodegen>(
 
         val info = RootInliningContext(
             state, codegen.inlineNameGenerator.subGenerator(jvmSignature.asmMethod.name),
-            sourceCompiler, sourceCompiler.inlineCallSiteInfo, reifiedTypeInliner, typeParameterMappings
+            sourceCompiler, sourceCompiler.inlineCallSiteInfo, reifiedTypeInliner, typeParameterMappings,
+            codegen.inlineScopesGenerator
         )
 
         val sourceMapper = sourceCompiler.sourceMapper
         val sourceInfo = sourceMapper.sourceInfo!!
-        val callSite = SourcePosition(codegen.lastLineNumber, sourceInfo.sourceFileName!!, sourceInfo.pathOrCleanFQN)
+        val lastLineNumber = codegen.lastLineNumber
+        val callSite = SourcePosition(lastLineNumber, sourceInfo.sourceFileName!!, sourceInfo.pathOrCleanFQN)
+        info.inlineScopesGenerator?.apply { currentCallSiteLineNumber = lastLineNumber }
         val inliner = MethodInliner(
             node, parameters, info, FieldRemapper(null, null, parameters), sourceCompiler.isCallInsideSameModuleAsCallee,
-            "Method inlining " + sourceCompiler.callElementText,
+            { "Method inlining " + sourceCompiler.callElementText },
             SourceMapCopier(sourceMapper, nodeAndSmap.classSMAP, callSite),
-            info.callSiteInfo, isInlineOnly, !isInlinedToInlineFunInKotlinRuntime(), maskStartIndex, maskStartIndex + maskValues.size,
+            info.callSiteInfo,
+            isInlineOnlyMethod = isInlineOnly,
+            !isInlinedToInlineFunInKotlinRuntime(),
+            maskStartIndex,
+            maskStartIndex + maskValues.size,
         ) //with captured
 
         val remapper = LocalVarRemapper(parameters, initialFrameSize)
@@ -201,16 +206,7 @@ abstract class InlineCodegen<out T : BaseExpressionCodegen>(
 
     protected abstract fun generateAssertField()
 
-    private fun isInlinedToInlineFunInKotlinRuntime(): Boolean {
-        val codegen = this.codegen as? ExpressionCodegen ?: return false
-        val caller = codegen.context.functionDescriptor
-        if (!caller.isInline) return false
-        val callerPackage = DescriptorUtils.getParentOfType(caller, PackageFragmentDescriptor::class.java) ?: return false
-        return callerPackage.fqName.asString().let {
-            // package either equals to 'kotlin' or starts with 'kotlin.'
-            it.startsWith("kotlin") && (it.length <= 6 || it[6] == '.')
-        }
-    }
+    protected abstract fun isInlinedToInlineFunInKotlinRuntime(): Boolean
 
     protected fun rememberClosure(parameterType: Type, index: Int, lambdaInfo: LambdaInfo) {
         invocationParamBuilder.addNextValueParameter(parameterType, true, null, index).functionalArgument = lambdaInfo
@@ -218,13 +214,14 @@ abstract class InlineCodegen<out T : BaseExpressionCodegen>(
 
     protected fun putCapturedToLocalVal(stackValue: StackValue, capturedParam: CapturedParamDesc, kotlinType: KotlinType?) {
         val info = invocationParamBuilder.addCapturedParam(capturedParam, capturedParam.fieldName, false)
-        if (stackValue.isLocalWithNoBoxing(JvmKotlinType(info.type, kotlinType))) {
+        val asmType = info.type
+        if (stackValue.isLocalWithNoBoxing(JvmKotlinType(asmType, kotlinType))) {
             info.remapValue = stackValue
         } else {
-            stackValue.put(info.type, kotlinType, codegen.visitor)
-            val local = StackValue.local(codegen.frameMap.enterTemp(info.type), info.type)
-            local.store(StackValue.onStack(info.type), codegen.visitor)
-            info.remapValue = local
+            stackValue.put(asmType, kotlinType, codegen.visitor)
+            val index = codegen.frameMap.enterTemp(asmType)
+            codegen.visitor.store(index, asmType)
+            info.remapValue = StackValue.Local(index, asmType, null)
             info.isSynthetic = true
         }
     }
@@ -286,16 +283,9 @@ abstract class InlineCodegen<out T : BaseExpressionCodegen>(
 
     companion object {
         private fun StackValue.isLocalWithNoBoxing(expected: JvmKotlinType): Boolean =
-            isPrimitive(expected.type) == isPrimitive(type) &&
-                    !StackValue.requiresInlineClassBoxingOrUnboxing(type, kotlinType, expected.type, expected.kotlinType) &&
-                    (this is StackValue.Local || isCapturedInlineParameter())
-
-        private fun StackValue.isCapturedInlineParameter(): Boolean {
-            val field = if (this is StackValue.FieldForSharedVar) receiver else this
-            return field is StackValue.Field && field.descriptor is ParameterDescriptor &&
-                    InlineUtil.isInlineParameter(field.descriptor) &&
-                    InlineUtil.isInline(field.descriptor.containingDeclaration)
-        }
+            this is StackValue.Local &&
+                    isPrimitive(expected.type) == isPrimitive(type) &&
+                    !StackValue.requiresInlineClassBoxingOrUnboxing(type, kotlinType, expected.type, expected.kotlinType)
 
         // Stack spilling before inline function call is required if the inlined bytecode has:
         //   1. try-catch blocks - otherwise the stack spilling before and after them will not be correct;
@@ -304,7 +294,7 @@ abstract class InlineCodegen<out T : BaseExpressionCodegen>(
         // Instead of checking for loops precisely, we just check if there are any backward jumps -
         // that is, a jump from instruction #i to instruction #j where j < i.
         private fun MethodNode.requiresEmptyStackOnEntry(): Boolean = tryCatchBlocks.isNotEmpty() ||
-                instructions.toArray().any { isBeforeSuspendMarker(it) || isBeforeInlineSuspendMarker(it) || isBackwardsJump(it) }
+                instructions.any { isBeforeSuspendMarker(it) || isBeforeInlineSuspendMarker(it) || isBackwardsJump(it) }
 
         private fun MethodNode.isBackwardsJump(insn: AbstractInsnNode): Boolean = when (insn) {
             is JumpInsnNode -> isBackwardsJump(insn, insn.label)

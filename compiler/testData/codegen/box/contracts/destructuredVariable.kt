@@ -1,5 +1,4 @@
-// !OPT_IN: kotlin.contracts.ExperimentalContracts
-// IGNORE_BACKEND: JS
+// OPT_IN: kotlin.contracts.ExperimentalContracts
 // WITH_STDLIB
 
 import kotlin.contracts.*

@@ -19,15 +19,13 @@ import org.jetbrains.kotlin.backend.common.lower.ExpectDeclarationRemover
 import org.jetbrains.kotlin.backend.common.overrides.FakeOverrideChecker
 import org.jetbrains.kotlin.backend.common.serialization.DescriptorByIdSignatureFinderImpl
 import org.jetbrains.kotlin.backend.common.serialization.ICData
-import org.jetbrains.kotlin.backend.common.serialization.mangle.ManglerChecker
-import org.jetbrains.kotlin.backend.common.serialization.mangle.descriptor.Ir2DescriptorManglerAdapter
+import org.jetbrains.kotlin.backend.common.serialization.KotlinFileSerializedData
 import org.jetbrains.kotlin.backend.common.serialization.signature.IdSignatureDescriptor
-import org.jetbrains.kotlin.config.CommonConfigurationKeys
+import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.languageVersionSettings
-import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
+import org.jetbrains.kotlin.config.messageCollector
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
-import org.jetbrains.kotlin.ir.backend.js.KotlinFileSerializedData
 import org.jetbrains.kotlin.ir.backend.js.generateModuleFragmentWithPlugins
 import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsIrLinker
 import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsManglerDesc
@@ -35,17 +33,14 @@ import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsManglerIr
 import org.jetbrains.kotlin.ir.declarations.IrFactory
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.linkage.partial.partialLinkageConfig
-import org.jetbrains.kotlin.ir.symbols.IrSymbol
-import org.jetbrains.kotlin.ir.util.IrMessageLogger
 import org.jetbrains.kotlin.ir.util.SymbolTable
-import org.jetbrains.kotlin.ir.visitors.acceptVoid
-import org.jetbrains.kotlin.js.config.ErrorTolerancePolicy
 import org.jetbrains.kotlin.js.config.JSConfigurationKeys
 import org.jetbrains.kotlin.library.KotlinLibrary
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi2ir.Psi2IrConfiguration
 import org.jetbrains.kotlin.psi2ir.Psi2IrTranslator
 import org.jetbrains.kotlin.psi2ir.generators.DeclarationStubGeneratorImpl
+import org.jetbrains.kotlin.util.PhaseType
 
 fun generateIrForKlibSerialization(
     project: Project,
@@ -54,44 +49,38 @@ fun generateIrForKlibSerialization(
     analysisResult: AnalysisResult,
     sortedDependencies: Collection<KotlinLibrary>,
     icData: List<KotlinFileSerializedData>,
-    expectDescriptorToSymbol: MutableMap<DeclarationDescriptor, IrSymbol>,
     irFactory: IrFactory,
-    verifySignatures: Boolean = true,
     getDescriptorByLibrary: (KotlinLibrary) -> ModuleDescriptor,
 ): Pair<IrModuleFragment, IrPluginContext> {
-    val errorPolicy = configuration.get(JSConfigurationKeys.ERROR_TOLERANCE_POLICY) ?: ErrorTolerancePolicy.DEFAULT
-    val messageLogger = configuration.get(IrMessageLogger.IR_MESSAGE_LOGGER) ?: IrMessageLogger.None
+    val performanceManager = configuration[CLIConfigurationKeys.PERF_MANAGER]
+    performanceManager?.notifyPhaseStarted(PhaseType.TranslationToIr)
+
+    val messageCollector = configuration.messageCollector
     val symbolTable = SymbolTable(IdSignatureDescriptor(JsManglerDesc), irFactory)
     val psi2Ir = Psi2IrTranslator(
         configuration.languageVersionSettings,
-        Psi2IrConfiguration(errorPolicy.allowErrors, configuration.partialLinkageConfig.isEnabled),
-        messageLogger::checkNoUnboundSymbols
+        Psi2IrConfiguration(ignoreErrors = false, configuration.partialLinkageConfig.isEnabled),
+        messageCollector::checkNoUnboundSymbols
     )
     val psi2IrContext = psi2Ir.createGeneratorContext(analysisResult.moduleDescriptor, analysisResult.bindingContext, symbolTable)
-    val irBuiltIns = psi2IrContext.irBuiltIns
 
-    val feContext = psi2IrContext.run {
-        JsIrLinker.JsFePluginContext(moduleDescriptor, symbolTable, typeTranslator, irBuiltIns)
-    }
     val stubGenerator = DeclarationStubGeneratorImpl(
         psi2IrContext.moduleDescriptor,
         symbolTable,
-        irBuiltIns,
+        psi2IrContext.irBuiltIns,
         DescriptorByIdSignatureFinderImpl(psi2IrContext.moduleDescriptor, JsManglerDesc),
     )
     val irLinker = JsIrLinker(
         psi2IrContext.moduleDescriptor,
-        messageLogger,
+        messageCollector,
         psi2IrContext.irBuiltIns,
         psi2IrContext.symbolTable,
         partialLinkageSupport = createPartialLinkageSupportForLinker(
             partialLinkageConfig = configuration.partialLinkageConfig,
-            allowErrorTypes = errorPolicy.allowErrors,
             builtIns = psi2IrContext.irBuiltIns,
-            messageLogger = messageLogger
+            messageCollector = messageCollector
         ),
-        feContext,
-        ICData(icData.map { it.irData }, errorPolicy.allowErrors),
+        ICData(icData.map { it.irData!! }, containsErrorCode = false),
         stubGenerator = stubGenerator
     )
 
@@ -101,23 +90,16 @@ fun generateIrForKlibSerialization(
         project,
         files,
         irLinker,
-        messageLogger,
-        expectDescriptorToSymbol,
+        messageCollector,
         stubGenerator
     )
 
-    if (verifySignatures) {
-        moduleFragment.acceptVoid(ManglerChecker(JsManglerIr, Ir2DescriptorManglerAdapter(JsManglerDesc)))
-    }
     if (configuration.getBoolean(JSConfigurationKeys.FAKE_OVERRIDE_VALIDATOR)) {
         val fakeOverrideChecker = FakeOverrideChecker(JsManglerIr, JsManglerDesc)
         irLinker.modules.forEach { fakeOverrideChecker.check(it) }
     }
 
-    if (configuration.get(CommonConfigurationKeys.EXPECT_ACTUAL_LINKER) != true) {
-        moduleFragment.transform(ExpectDeclarationRemover(psi2IrContext.symbolTable, false), null)
-    }
+    moduleFragment.accept(ExpectDeclarationRemover(psi2IrContext.symbolTable, false), null)
 
     return moduleFragment to pluginContext
 }
-

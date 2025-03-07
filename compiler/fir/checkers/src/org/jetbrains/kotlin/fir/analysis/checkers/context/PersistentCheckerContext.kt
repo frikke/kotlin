@@ -11,24 +11,24 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import org.jetbrains.kotlin.fir.FirAnnotationContainer
 import org.jetbrains.kotlin.fir.FirElement
+import org.jetbrains.kotlin.fir.analysis.checkers.declaration.FirInlineDeclarationChecker
+import org.jetbrains.kotlin.fir.analysis.checkers.extra.FirAnonymousUnusedParamChecker
 import org.jetbrains.kotlin.fir.declarations.FirDeclaration
 import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.expressions.FirGetClassCall
 import org.jetbrains.kotlin.fir.expressions.FirStatement
-import org.jetbrains.kotlin.fir.resolve.PersistentImplicitReceiverStack
 import org.jetbrains.kotlin.fir.resolve.SessionHolder
-import org.jetbrains.kotlin.fir.resolve.calls.ImplicitReceiverValue
 import org.jetbrains.kotlin.fir.resolve.transformers.ReturnTypeCalculator
-import org.jetbrains.kotlin.name.Name
 
 class PersistentCheckerContext private constructor(
-    override val implicitReceiverStack: PersistentImplicitReceiverStack,
     override val containingDeclarations: PersistentList<FirDeclaration>,
-    override val qualifiedAccessOrAssignmentsOrAnnotationCalls: PersistentList<FirStatement>,
+    override val callsOrAssignments: PersistentList<FirStatement>,
     override val getClassCalls: PersistentList<FirGetClassCall>,
     override val annotationContainers: PersistentList<FirAnnotationContainer>,
     override val containingElements: PersistentList<FirElement>,
     override val isContractBody: Boolean,
+    override val inlineFunctionBodyContext: FirInlineDeclarationChecker.InlineFunctionBodyContext?,
+    override val lambdaBodyContext: FirAnonymousUnusedParamChecker.LambdaBodyContext?,
     sessionHolder: SessionHolder,
     returnTypeCalculator: ReturnTypeCalculator,
     override val suppressedDiagnostics: PersistentSet<String>,
@@ -38,37 +38,35 @@ class PersistentCheckerContext private constructor(
     override val containingFile: FirFile?,
 ) : CheckerContextForProvider(sessionHolder, returnTypeCalculator, allInfosSuppressed, allWarningsSuppressed, allErrorsSuppressed) {
     constructor(sessionHolder: SessionHolder, returnTypeCalculator: ReturnTypeCalculator) : this(
-        PersistentImplicitReceiverStack(),
-        persistentListOf(),
-        persistentListOf(),
-        persistentListOf(),
-        persistentListOf(),
-        persistentListOf(),
+        containingDeclarations = persistentListOf(),
+        callsOrAssignments = persistentListOf(),
+        getClassCalls = persistentListOf(),
+        annotationContainers = persistentListOf(),
+        containingElements = persistentListOf(),
         isContractBody = false,
+        inlineFunctionBodyContext = null,
+        lambdaBodyContext = null,
         sessionHolder,
         returnTypeCalculator,
-        persistentSetOf(),
+        suppressedDiagnostics = persistentSetOf(),
         allInfosSuppressed = false,
         allWarningsSuppressed = false,
         allErrorsSuppressed = false,
         containingFile = null,
     )
 
-    override fun addImplicitReceiver(name: Name?, value: ImplicitReceiverValue<*>): PersistentCheckerContext =
-        copy(implicitReceiverStack = implicitReceiverStack.add(name, value))
-
     override fun addDeclaration(declaration: FirDeclaration): PersistentCheckerContext =
         copy(containingDeclarations = containingDeclarations.add(declaration))
 
     override fun dropDeclaration() {}
 
-    override fun addQualifiedAccessOrAnnotationCall(qualifiedAccessOrAnnotationCall: FirStatement): PersistentCheckerContext =
+    override fun addCallOrAssignment(qualifiedAccessOrAnnotationCall: FirStatement): PersistentCheckerContext =
         copy(
             qualifiedAccessOrAssignmentsOrAnnotationCalls =
-            qualifiedAccessOrAssignmentsOrAnnotationCalls.add(qualifiedAccessOrAnnotationCall)
+            callsOrAssignments.add(qualifiedAccessOrAnnotationCall)
         )
 
-    override fun dropQualifiedAccessOrAnnotationCall() {}
+    override fun dropCallOrAssignment() {}
 
     override fun addGetClassCall(getClassCall: FirGetClassCall): PersistentCheckerContext =
         copy(getClassCalls = getClassCalls.add(getClassCall))
@@ -101,13 +99,14 @@ class PersistentCheckerContext private constructor(
     }
 
     private fun copy(
-        implicitReceiverStack: PersistentImplicitReceiverStack = this.implicitReceiverStack,
-        qualifiedAccessOrAssignmentsOrAnnotationCalls: PersistentList<FirStatement> = this.qualifiedAccessOrAssignmentsOrAnnotationCalls,
+        qualifiedAccessOrAssignmentsOrAnnotationCalls: PersistentList<FirStatement> = this.callsOrAssignments,
         getClassCalls: PersistentList<FirGetClassCall> = this.getClassCalls,
         annotationContainers: PersistentList<FirAnnotationContainer> = this.annotationContainers,
         containingElements: PersistentList<FirElement> = this.containingElements,
         containingDeclarations: PersistentList<FirDeclaration> = this.containingDeclarations,
         isContractBody: Boolean = this.isContractBody,
+        inlineFunctionBodyContext: FirInlineDeclarationChecker.InlineFunctionBodyContext? = this.inlineFunctionBodyContext,
+        lambdaBodyContext: FirAnonymousUnusedParamChecker.LambdaBodyContext? = this.lambdaBodyContext,
         allInfosSuppressed: Boolean = this.allInfosSuppressed,
         allWarningsSuppressed: Boolean = this.allWarningsSuppressed,
         allErrorsSuppressed: Boolean = this.allErrorsSuppressed,
@@ -115,13 +114,14 @@ class PersistentCheckerContext private constructor(
         containingFile: FirFile? = this.containingFile,
     ): PersistentCheckerContext {
         return PersistentCheckerContext(
-            implicitReceiverStack,
             containingDeclarations,
             qualifiedAccessOrAssignmentsOrAnnotationCalls,
             getClassCalls,
             annotationContainers,
             containingElements,
             isContractBody,
+            inlineFunctionBodyContext,
+            lambdaBodyContext,
             sessionHolder,
             returnTypeCalculator,
             suppressedDiagnostics,
@@ -138,6 +138,16 @@ class PersistentCheckerContext private constructor(
     override fun enterContractBody(): CheckerContextForProvider = toggleContractBody(newValue = true)
 
     override fun exitContractBody(): CheckerContextForProvider = toggleContractBody(newValue = false)
+
+    override fun setInlineFunctionBodyContext(context: FirInlineDeclarationChecker.InlineFunctionBodyContext): PersistentCheckerContext =
+        copy(inlineFunctionBodyContext = context)
+
+    override fun unsetInlineFunctionBodyContext(): CheckerContextForProvider = copy(inlineFunctionBodyContext = null)
+
+    override fun setLambdaBodyContext(context: FirAnonymousUnusedParamChecker.LambdaBodyContext): CheckerContextForProvider =
+        copy(lambdaBodyContext = context)
+
+    override fun unsetLambdaBodyContext(): CheckerContextForProvider = copy(lambdaBodyContext = null)
 
     override fun enterFile(file: FirFile): CheckerContextForProvider = copy(containingFile = file)
 

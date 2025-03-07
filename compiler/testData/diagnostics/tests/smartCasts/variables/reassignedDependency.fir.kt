@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // SKIP_TXT
 
 class C(val x: String?)
@@ -74,4 +75,13 @@ fun test5() {
     x.length // ok
     c.x<!UNSAFE_CALL!>.<!>length // bad
     d.x.length // ok
+}
+
+fun test6() {
+    var c: C? = null
+    var maybeC: C? = C("")
+    if (c == null) {
+        c = maybeC ?: throw Exception()
+    }
+    c.x
 }

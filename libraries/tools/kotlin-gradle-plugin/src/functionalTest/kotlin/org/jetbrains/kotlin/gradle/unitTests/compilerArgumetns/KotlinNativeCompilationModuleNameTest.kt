@@ -25,6 +25,7 @@ class KotlinNativeCompilationModuleNameTest {
 
         project.evaluate()
 
+        @Suppress("DEPRECATION")
         assertEquals(
             PROJECT_NAME,
             linuxX64Target.compilations.main.compilerOptions.options.moduleName.get(),
@@ -43,6 +44,7 @@ class KotlinNativeCompilationModuleNameTest {
 
         project.evaluate()
 
+        @Suppress("DEPRECATION")
         assertEquals(
             "${PROJECT_NAME}_test",
             linuxX64Target.compilations.test.compilerOptions.options.moduleName.get(),
@@ -58,7 +60,7 @@ class KotlinNativeCompilationModuleNameTest {
             }
         ) {
             with(multiplatformExtension) {
-                targetHierarchy.default()
+                applyDefaultHierarchyTemplate()
                 linuxX64()
                 linuxArm64()
             }
@@ -66,7 +68,7 @@ class KotlinNativeCompilationModuleNameTest {
 
         project.evaluate()
 
-        val compilerOptions = project
+        @Suppress("DEPRECATION") val compilerOptions = project
             .multiplatformExtension
             .metadata()
             .compilations

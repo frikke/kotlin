@@ -84,7 +84,7 @@ fun decodeCDPResponse(
 sealed interface CDPMethodCallEncodingInfo
 
 private class CDPMethodCallEncodingInfoImpl(
-    val serializer: DeserializationStrategy<out CDPMethodInvocationResult>
+    val serializer: DeserializationStrategy<CDPMethodInvocationResult>
 ) : CDPMethodCallEncodingInfo
 
 /**
@@ -932,6 +932,9 @@ class Debugger(private val requestEvaluator: CDPRequestEvaluator) {
 
         @SerialName("XHR")
         XHR,
+
+        @SerialName("step")
+        STEP,
 
         @SerialName("Break on start")
         BREAK_ON_START,

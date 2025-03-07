@@ -6,7 +6,6 @@
 package org.jetbrains.kotlin.test.frontend.fir
 
 import org.jetbrains.kotlin.config.CompilerConfiguration
-import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.fir.FirModuleData
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.deserialization.ModuleDataProvider
@@ -14,7 +13,6 @@ import org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar
 import org.jetbrains.kotlin.fir.java.FirProjectSessionProvider
 import org.jetbrains.kotlin.fir.session.FirJsSessionFactory
 import org.jetbrains.kotlin.fir.session.FirSessionConfigurator
-import org.jetbrains.kotlin.incremental.components.LookupTracker
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.TestServices
@@ -29,39 +27,44 @@ object TestFirJsSessionFactory {
         testServices: TestServices,
         configuration: CompilerConfiguration,
         extensionRegistrars: List<FirExtensionRegistrar>,
-        languageVersionSettings: LanguageVersionSettings,
-        registerExtraComponents: ((FirSession) -> Unit),
     ): FirSession {
         val resolvedLibraries = resolveLibraries(configuration, getAllJsDependenciesPaths(module, testServices))
 
-        return FirJsSessionFactory.createLibrarySession(
+        val sharedLibrarySession = FirJsSessionFactory.createSharedLibrarySession(
             mainModuleName,
-            resolvedLibraries.map { it.library },
             sessionProvider,
             moduleDataProvider,
+            configuration,
             extensionRegistrars,
-            languageVersionSettings,
-            registerExtraComponents,
+        )
+
+        return FirJsSessionFactory.createLibrarySession(
+            resolvedLibraries.map { it.library },
+            sessionProvider,
+            sharedLibrarySession,
+            moduleDataProvider,
+            extensionRegistrars,
+            configuration,
         )
     }
 
     fun createModuleBasedSession(
-        mainModuleData: FirModuleData, sessionProvider: FirProjectSessionProvider, extensionRegistrars: List<FirExtensionRegistrar>,
-        languageVersionSettings: LanguageVersionSettings, lookupTracker: LookupTracker?,
-        registerExtraComponents: ((FirSession) -> Unit),
+        mainModuleData: FirModuleData,
+        sessionProvider: FirProjectSessionProvider,
+        extensionRegistrars: List<FirExtensionRegistrar>,
+        configuration: CompilerConfiguration,
         sessionConfigurator: FirSessionConfigurator.() -> Unit,
     ): FirSession =
-        FirJsSessionFactory.createModuleBasedSession(
+        FirJsSessionFactory.createSourceSession(
             mainModuleData,
             sessionProvider,
             extensionRegistrars,
-            languageVersionSettings,
-            lookupTracker,
+            configuration,
             icData = null,
-            registerExtraComponents,
             sessionConfigurator
         )
 }
 
-fun getAllJsDependenciesPaths(module: TestModule, testServices: TestServices) =
-    JsEnvironmentConfigurator.getRuntimePathsForModule(module, testServices) + getTransitivesAndFriendsPaths(module, testServices)
+fun getAllJsDependenciesPaths(module: TestModule, testServices: TestServices): List<String> {
+    return JsEnvironmentConfigurator.getRuntimePathsForModule(module, testServices) + getTransitivesAndFriendsPaths(module, testServices)
+}

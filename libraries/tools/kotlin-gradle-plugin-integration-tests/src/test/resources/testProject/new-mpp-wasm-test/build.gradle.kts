@@ -1,5 +1,5 @@
 plugins {
-    kotlin("multiplatform").version("<pluginMarkerVersion>")
+    kotlin("multiplatform")
 }
 
 repositories {
@@ -7,29 +7,8 @@ repositories {
     mavenCentral()
 }
 
-with(org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin.apply(rootProject)) {
-    nodeVersion = "20.2.0"
-}
-
-with(org.jetbrains.kotlin.gradle.targets.js.d8.D8RootPlugin.apply(rootProject)) {
-    // Test that we can set the version and it is a String.
-    // But use the default version since update this place every time anyway.
-    version = (version as String)
-}
-
-allprojects.forEach {
-    it.tasks.withType<org.jetbrains.kotlin.gradle.targets.js.npm.tasks.KotlinNpmInstallTask>().configureEach {
-        args.add("--ignore-engines")
-    }
-}
-
-tasks.named<org.jetbrains.kotlin.gradle.targets.js.yarn.YarnLockCopyTask>("kotlinStoreYarnLock") {
-    //A little hacky way to make yarn results
-    inputFile.fileValue(projectDir.resolve("yarnLockStub"))
-}
-
 kotlin {
-    wasm {
+    wasmJs {
         <JsEngine> {
             testTask {
                 filter.apply {
@@ -37,7 +16,6 @@ kotlin {
                 }
             }
         }
-        <ApplyBinaryen>
     }
 
     sourceSets {
@@ -47,4 +25,16 @@ kotlin {
             }
         }
     }
+}
+
+plugins.apply(org.jetbrains.kotlin.gradle.targets.wasm.d8.D8Plugin::class.java)
+the<org.jetbrains.kotlin.gradle.targets.wasm.d8.D8EnvSpec>().apply {
+    // Test that we can set the version and it is a String.
+    // But use the default version since update this place every time anyway.
+    version.set(version.get())
+}
+
+tasks.named<org.jetbrains.kotlin.gradle.targets.js.npm.LockCopyTask>("wasmKotlinStorePackageLock") {
+    //A little hacky way to make yarn results
+    inputFile.fileValue(projectDir.resolve("packageLockStub"))
 }

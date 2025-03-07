@@ -1,5 +1,14 @@
-// !DIAGNOSTICS: -UNUSED_EXPRESSION -UNUSED_VARIABLE -UNUSED_VALUE
+// DIAGNOSTICS: -UNUSED_EXPRESSION -UNUSED_VARIABLE -UNUSED_VALUE
 // SKIP_TXT
+
+/*
+ * KOTLIN DIAGNOSTICS NOT LINKED SPEC TEST (NEGATIVE)
+ *
+ * SECTIONS: dfa
+ * NUMBER: 24
+ * DESCRIPTION: Raw data flow analysis test
+ * HELPERS: classes, objects, typealiases, functions, enumClasses, interfaces, sealedClasses
+ */
 
 /*
  * TESTCASE NUMBER: 1
@@ -14,8 +23,8 @@ fun case_1() {
         } catch (e: Exception) {
             x = null
         }
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Boolean? & kotlin.Nothing?")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Boolean? & kotlin.Nothing?")!>x<!><!UNSAFE_CALL!>.<!>not()
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Nothing?")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Nothing?")!>x<!><!UNSAFE_CALL!>.<!>not()
     }
 }
 
@@ -30,8 +39,8 @@ fun case_2() {
         try {
             x = null
         } finally { }
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Boolean?")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Boolean?")!>x<!><!UNSAFE_CALL!>.<!>not()
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Nothing?")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Nothing?")!>x<!><!UNSAFE_CALL!>.<!>not()
     }
 }
 

@@ -1,3 +1,5 @@
+// RUN_PIPELINE_TILL: FRONTEND
+
 fun foo(a: Any?): Int {
     <!SYNTAX!>@<!>{ ->
         return<!SYNTAX!>@<!>

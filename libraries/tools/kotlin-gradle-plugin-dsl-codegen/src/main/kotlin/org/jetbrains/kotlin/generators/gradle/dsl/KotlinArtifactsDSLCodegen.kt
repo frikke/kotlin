@@ -5,17 +5,18 @@
 
 package org.jetbrains.kotlin.generators.gradle.dsl
 
-import org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode
+import org.jetbrains.kotlin.generators.arguments.getPrinterToFile
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 import org.jetbrains.kotlin.konan.target.KonanTarget
+import org.jetbrains.kotlin.utils.Printer
 import java.io.File
 import java.util.*
 
 fun main() {
-    generateAbstractKotlinArtifactsExtensionImplementation()
+    generateAbstractKotlinArtifactsExtensionImplementation(::getPrinterToFile)
 }
 
-private fun generateAbstractKotlinArtifactsExtensionImplementation() {
+internal fun generateAbstractKotlinArtifactsExtensionImplementation(withPrinterToFile: (targetFile: File, Printer.() -> Unit) -> Unit) {
     val className = typeName("org.jetbrains.kotlin.gradle.targets.native.tasks.artifact.KotlinArtifactsExtensionImpl")
 
     val imports = """
@@ -23,7 +24,7 @@ private fun generateAbstractKotlinArtifactsExtensionImplementation() {
         import org.jetbrains.kotlin.gradle.dsl.KotlinArtifact
         import org.jetbrains.kotlin.gradle.dsl.KotlinArtifactConfig
         import org.jetbrains.kotlin.gradle.dsl.KotlinArtifactsExtension
-        import org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode
+        import org.jetbrains.kotlin.gradle.plugin.mpp.BITCODE_EMBEDDING_DEPRECATION_MESSAGE
         import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
         import org.jetbrains.kotlin.konan.target.DEPRECATED_TARGET_MESSAGE
         import org.jetbrains.kotlin.konan.target.KonanTarget
@@ -38,19 +39,27 @@ private fun generateAbstractKotlinArtifactsExtensionImplementation() {
         "override val Native = project.objects.newInstance(KotlinNativeArtifactDSLImpl::class.java, project)"
     ).joinToString("\n").indented(4)
 
-    val buildTypeConstants = NativeBuildType.values().joinToString("\n") {
+    val buildTypeConstants = NativeBuildType.entries.joinToString("\n") {
         "val ${it.name} = NativeBuildType.${it.name}"
     }.indented(4)
 
-    val bitcodeModeConstants = BitcodeEmbeddingMode.values().joinToString(
+    @Suppress("DEPRECATION_ERROR")
+    val bitcodeModeConstants = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.entries.joinToString(
         separator = "\n",
-        prefix = "class BitcodeEmbeddingModeDsl {\n",
+        prefix = """
+            @Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE, level = DeprecationLevel.ERROR)
+            @Suppress("DEPRECATION_ERROR")
+            class BitcodeEmbeddingModeDsl {
+
+        """.trimIndent(),
         postfix = "\n}"
     ) {
-        "val ${it.name} = BitcodeEmbeddingMode.${it.name}".indented(4)
+        "val ${it.name} = org.jetbrains.kotlin.gradle.plugin.mpp.BitcodeEmbeddingMode.${it.name}".indented(4)
     }.indented(4)
 
     val bitcodeMode = listOf(
+        "@Suppress(\"DEPRECATION_ERROR\")",
+        "@Deprecated(BITCODE_EMBEDDING_DEPRECATION_MESSAGE, level = DeprecationLevel.ERROR)",
         "@JvmField",
         "val EmbedBitcodeMode = BitcodeEmbeddingModeDsl()"
     ).joinToString("\n").indented(4)
@@ -79,8 +88,11 @@ private fun generateAbstractKotlinArtifactsExtensionImplementation() {
         "}"
     ).joinToString(separator = "\n\n")
 
-    val targetFile = File("$outputSourceRoot/${className.fqName.replace(".", "/")}.kt")
+    val targetFile = File("$kotlinGradlePluginSourceRoot/${className.fqName.replace(".", "/")}.kt")
     targetFile.writeText(code)
+    withPrinterToFile(targetFile) {
+        println(code)
+    }
 }
 
 private fun KonanTarget.generateKonanTargetVal(): String {

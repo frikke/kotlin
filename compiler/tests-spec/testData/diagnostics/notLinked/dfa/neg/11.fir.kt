@@ -1,5 +1,16 @@
-// !DIAGNOSTICS: -UNUSED_EXPRESSION
+// DIAGNOSTICS: -UNUSED_EXPRESSION
 // SKIP_TXT
+
+/*
+ * KOTLIN DIAGNOSTICS NOT LINKED SPEC TEST (NEGATIVE)
+ *
+ * SECTIONS: dfa
+ * NUMBER: 11
+ * DESCRIPTION: Raw data flow analysis test
+ * HELPERS: classes, objects, typealiases, functions, enumClasses, interfaces, sealedClasses
+ * UNEXPECTED BEHAVIOUR
+ * ISSUES: KT-28369
+ */
 
 // TESTCASE NUMBER: 1
 fun case_1() {
@@ -34,8 +45,8 @@ fun case_4() {
     var x: Boolean? = true
     if (<!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Boolean?")!>x<!> != null) {
         false || when { else -> {x = null; true} }
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Boolean? & kotlin.Nothing?")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Boolean? & kotlin.Nothing?")!>x<!><!UNSAFE_CALL!>.<!>not()
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Nothing?")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Nothing?")!>x<!><!UNSAFE_CALL!>.<!>not()
     }
 }
 
@@ -45,9 +56,9 @@ fun case_4() {
  */
 fun case_5() {
     var x: Int? = null
-    if (<!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int?")!>x<!> == try { x = 10; null } finally {} && x != null) {
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int? & kotlin.Int")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int? & kotlin.Int")!>x<!>.inv()
+    if (<!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int?")!>x<!> == try { x = 10; null } finally {} && <!SENSELESS_COMPARISON!>x != null<!>) {
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Int")!>x<!>.inv()
     }
 }
 

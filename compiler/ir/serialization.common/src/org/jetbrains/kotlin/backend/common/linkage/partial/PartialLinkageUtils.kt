@@ -5,6 +5,8 @@
 
 package org.jetbrains.kotlin.backend.common.linkage.partial
 
+import org.jetbrains.kotlin.backend.common.serialization.mangle.MangleConstant.Companion.TYPE_PARAMETER_MARKER_NAME
+import org.jetbrains.kotlin.backend.common.serialization.mangle.MangleConstant.Companion.TYPE_PARAMETER_MARKER_NAME_SETTER
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.lazy.IrLazyDeclarationBase
@@ -25,6 +27,11 @@ internal object PartialLinkageUtils {
 
         is IdSignature.CompositeSignature -> inner.guessName(nameSegmentsToPickUp)
         is IdSignature.AccessorSignature -> accessorSignature.guessName(nameSegmentsToPickUp)
+
+        is IdSignature.LocalSignature -> if (localFqn == TYPE_PARAMETER_MARKER_NAME || localFqn == TYPE_PARAMETER_MARKER_NAME_SETTER)
+            "#${index()}"
+        else
+            null
 
         else -> null
     }
@@ -79,21 +86,28 @@ internal object PartialLinkageUtils {
 }
 
 /** An optimization to avoid re-computing file for every visited declaration */
-internal abstract class FileAwareIrElementTransformerVoid(startingFile: PLFile?) : IrElementTransformerVoid() {
-    private var _currentFile: PLFile? = startingFile
-    val currentFile: PLFile get() = _currentFile ?: error("No information about current file")
+internal abstract class FileAwareIrElementTransformerVoid(startingFile: PLFile) : IrElementTransformerVoid() {
+    var currentFile: PLFile = startingFile
 
     protected fun <T> runInFile(file: PLFile, block: () -> T): T {
-        val previousFile = _currentFile
-        _currentFile = file
+        val previousFile = currentFile
+        currentFile = file
         try {
             return block()
         } finally {
-            _currentFile = previousFile
+            currentFile = previousFile
         }
     }
 
     final override fun visitFile(declaration: IrFile) = runInFile(PLFile.IrBased(declaration)) {
         super.visitFile(declaration)
     }
+}
+
+internal fun <T> MutableCollection<T>.getCopyAndClear(): Collection<T> {
+    if (isEmpty()) return emptyList()
+
+    val result = ArrayList(this)
+    this.clear()
+    return result
 }

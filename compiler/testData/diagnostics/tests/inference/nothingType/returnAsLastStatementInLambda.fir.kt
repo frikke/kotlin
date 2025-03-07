@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // WITH_STDLIB
 // ISSUE: KT-58149
 
@@ -32,8 +33,8 @@ fun foo() {
     // Doesn't work both in K1 and K2, but probably should (KT-58232 for tracking)
     val dates3 = <!NEW_INFERENCE_ERROR!>myRun {
         when {
-            else -> return@myRun buildList {
-                add(4)
+            else -> return@myRun <!CANNOT_INFER_PARAMETER_TYPE!>buildList<!> {
+                add(<!ARGUMENT_TYPE_MISMATCH!>4<!>)
             }
         }
     }<!>

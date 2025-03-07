@@ -1,3 +1,4 @@
+// FIR_IDENTICAL
 // TARGET_BACKEND: JVM
 // FILE: typeParameterWithMultipleNullableBounds.kt
 fun <T> f(x: T): Int? where T : CharSequence?, T : Comparable<T>? {
@@ -12,6 +13,6 @@ fun test() {
 
 // FILE: J.java
 public class J {
-    public static String STRING = s()
+    public static String STRING = s();
     public static String s() { return null; }
 }

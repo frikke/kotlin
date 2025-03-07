@@ -17,11 +17,11 @@ android {
 }
 
 kotlin {
-    android()
+    androidTarget()
     jvm()
     linuxX64()
     linuxArm64()
-    targetHierarchy.default()
+    applyDefaultHierarchyTemplate()
 }
 
 group = "org.jetbrains.sample"

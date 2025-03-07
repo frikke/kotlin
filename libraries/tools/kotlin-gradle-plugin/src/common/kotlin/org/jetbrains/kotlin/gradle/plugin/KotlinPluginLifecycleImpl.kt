@@ -6,7 +6,10 @@
 package org.jetbrains.kotlin.gradle.plugin
 
 import org.gradle.api.Project
+import org.jetbrains.kotlin.gradle.plugin.KotlinPluginLifecycle.CoroutineStart.Default
+import org.jetbrains.kotlin.gradle.plugin.KotlinPluginLifecycle.CoroutineStart.Undispatched
 import org.jetbrains.kotlin.gradle.plugin.KotlinPluginLifecycle.ProjectConfigurationResult
+import org.jetbrains.kotlin.gradle.utils.whenEvaluated
 import org.jetbrains.kotlin.gradle.utils.CompletableFuture
 import org.jetbrains.kotlin.gradle.utils.failures
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,15 +27,21 @@ internal class KotlinPluginLifecycleImpl(override val project: Project) : Kotlin
         KotlinPluginLifecycle.Stage.values().associateWith { ArrayDeque() }
 
     private val loopRunning = AtomicBoolean(false)
-    private val isStarted = AtomicBoolean(false)
+    private val isStartedImpl = AtomicBoolean(false)
     private val isFinishedSuccessfully = AtomicBoolean(false)
     private val isFinishedWithFailures = AtomicBoolean(false)
 
 
     override var stage: KotlinPluginLifecycle.Stage = KotlinPluginLifecycle.Stage.values.first()
 
+    override val isStarted: Boolean
+        get() = isStartedImpl.get()
+
+    override val isFinished: Boolean
+        get() = isFinishedSuccessfully.get() || isFinishedWithFailures.get()
+
     fun start() {
-        check(!isStarted.getAndSet(true)) {
+        check(!isStartedImpl.getAndSet(true)) {
             "${KotlinPluginLifecycle::class.java.name} already started"
         }
 
@@ -103,13 +112,13 @@ internal class KotlinPluginLifecycleImpl(override val project: Project) : Kotlin
 
     private fun finishWithFailures(failures: List<Throwable>) {
         assert(failures.isNotEmpty())
-        assert(isStarted.get())
+        assert(isStartedImpl.get())
         assert(!isFinishedWithFailures.getAndSet(true))
         configurationResult.complete(ProjectConfigurationResult.Failure(failures))
     }
 
     private fun finishSuccessfully() {
-        assert(isStarted.get())
+        assert(isStartedImpl.get())
         assert(!isFinishedSuccessfully.getAndSet(true))
         configurationResult.complete(ProjectConfigurationResult.Success)
     }
@@ -140,12 +149,15 @@ internal class KotlinPluginLifecycleImpl(override val project: Project) : Kotlin
 
         enqueuedActions.getValue(stage).addLast(action)
 
-        if (stage == KotlinPluginLifecycle.Stage.EvaluateBuildscript && isStarted.get()) {
+        if (stage == KotlinPluginLifecycle.Stage.EvaluateBuildscript && isStartedImpl.get()) {
             loopIfNecessary()
         }
     }
 
-    override fun launch(block: suspend KotlinPluginLifecycle.() -> Unit) {
+    override fun launch(
+        start: KotlinPluginLifecycle.CoroutineStart,
+        block: suspend KotlinPluginLifecycle.() -> Unit,
+    ) {
         val lifecycle = this
 
         val coroutine = block.createCoroutine(this, object : Continuation<Unit> {
@@ -155,8 +167,9 @@ internal class KotlinPluginLifecycleImpl(override val project: Project) : Kotlin
             override fun resumeWith(result: Result<Unit>) = result.getOrThrow()
         })
 
-        enqueue(stage) {
-            coroutine.resume(Unit)
+        when (start) {
+            Default -> enqueue(stage) { coroutine.resume(Unit) }
+            Undispatched -> coroutine.resume(Unit)
         }
     }
 
@@ -167,6 +180,14 @@ internal class KotlinPluginLifecycleImpl(override val project: Project) : Kotlin
                 continuation.resume(Unit)
             }
         }
+    }
+
+    override fun toString(): String = buildString {
+        append("Kotlin Plugin Lifecycle: (${project.displayName})")
+        if (!isStarted) append(" *not started*")
+        else append(" stage '$stage'")
+        if (isFinishedSuccessfully.get()) append(" *finished successfully*")
+        if (isFinishedWithFailures.get()) append(" *finished with failures*")
     }
 }
 

@@ -39,19 +39,21 @@ sealed class WasmNamedModuleField {
 
 sealed class WasmFunction(
     override val name: String,
-    val type: WasmSymbolReadOnly<WasmFunctionType>
+    val type: WasmSymbolReadOnly<WasmFunctionType>,
 ) : WasmNamedModuleField() {
     class Defined(
         name: String,
         type: WasmSymbolReadOnly<WasmFunctionType>,
         val locals: MutableList<WasmLocal> = mutableListOf(),
-        val instructions: MutableList<WasmInstr> = mutableListOf()
+        val instructions: MutableList<WasmInstr> = mutableListOf(),
+        val startLocation: SourceLocation = SourceLocation.IgnoredLocation,
+        val endLocation: SourceLocation = SourceLocation.IgnoredLocation,
     ) : WasmFunction(name, type)
 
     class Imported(
         name: String,
         type: WasmSymbolReadOnly<WasmFunctionType>,
-        val importPair: WasmImportDescriptor
+        val importPair: WasmImportDescriptor,
     ) : WasmFunction(name, type)
 }
 
@@ -66,7 +68,7 @@ sealed class WasmDataMode {
         val offset: MutableList<WasmInstr>
     ) : WasmDataMode() {
         constructor(memoryIdx: Int, offset: Int) : this(memoryIdx, mutableListOf<WasmInstr>().also<MutableList<WasmInstr>> {
-            WasmIrExpressionBuilder(it).buildConstI32(offset, SourceLocation.NoLocation("Offset value for WasmDataMode.Active "))
+            WasmExpressionBuilder(it).buildConstI32(offset, SourceLocation.NoLocation("Offset value for WasmDataMode.Active "))
         })
     }
 
@@ -155,7 +157,8 @@ data class WasmFunctionType(
 class WasmStructDeclaration(
     name: String,
     val fields: List<WasmStructFieldDeclaration>,
-    val superType: WasmSymbolReadOnly<WasmTypeDeclaration>?
+    val superType: WasmSymbolReadOnly<WasmTypeDeclaration>?,
+    val isFinal: Boolean
 ) : WasmTypeDeclaration(name)
 
 class WasmArrayDeclaration(
@@ -201,5 +204,5 @@ data class WasmLimits(
 
 data class WasmImportDescriptor(
     val moduleName: String,
-    val declarationName: String
+    val declarationName: WasmSymbolReadOnly<String>
 )

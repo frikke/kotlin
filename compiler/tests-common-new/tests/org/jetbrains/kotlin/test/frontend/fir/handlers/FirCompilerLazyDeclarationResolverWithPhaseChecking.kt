@@ -1,15 +1,17 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.test.frontend.fir.handlers
 
+import org.jetbrains.kotlin.fir.FirElementWithResolveState
+import org.jetbrains.kotlin.fir.declarations.FirClass
 import org.jetbrains.kotlin.fir.declarations.FirResolvePhase
-import org.jetbrains.kotlin.fir.symbols.FirBasedSymbol
+import org.jetbrains.kotlin.fir.declarations.isItAllowedToCallLazyResolveTo
+import org.jetbrains.kotlin.fir.declarations.resolvePhase
 import org.jetbrains.kotlin.fir.symbols.FirLazyDeclarationResolver
 import org.jetbrains.kotlin.fir.symbols.FirLazyResolveContractViolationException
-import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
 
 
 class FirCompilerLazyDeclarationResolverWithPhaseChecking : FirLazyDeclarationResolver() {
@@ -20,12 +22,16 @@ class FirCompilerLazyDeclarationResolverWithPhaseChecking : FirLazyDeclarationRe
     fun getContractViolationExceptions(): List<FirLazyResolveContractViolationException> =
         exceptions
 
-    override fun lazyResolveToPhase(symbol: FirBasedSymbol<*>, toPhase: FirResolvePhase) {
-        checkIfCanLazyResolveToPhase(toPhase)
+    override fun lazyResolveToPhase(element: FirElementWithResolveState, toPhase: FirResolvePhase) {
+        checkIfCanLazyResolveToPhase(toPhase, element.resolvePhase)
     }
 
-    override fun lazyResolveToPhaseWithCallableMembers(symbol: FirClassSymbol<*>, toPhase: FirResolvePhase) {
-        checkIfCanLazyResolveToPhase(toPhase)
+    override fun lazyResolveToPhaseWithCallableMembers(clazz: FirClass, toPhase: FirResolvePhase) {
+        checkIfCanLazyResolveToPhase(toPhase, clazz.resolvePhase)
+    }
+
+    override fun lazyResolveToPhaseRecursively(element: FirElementWithResolveState, toPhase: FirResolvePhase) {
+        checkIfCanLazyResolveToPhase(toPhase, element.resolvePhase)
     }
 
     override fun startResolvingPhase(phase: FirResolvePhase) {
@@ -38,18 +44,17 @@ class FirCompilerLazyDeclarationResolverWithPhaseChecking : FirLazyDeclarationRe
         currentTransformerPhase = null
     }
 
-    private fun checkIfCanLazyResolveToPhase(requestedPhase: FirResolvePhase) {
-        if (!lazyResolveContractChecksEnabled) return
+    private fun checkIfCanLazyResolveToPhase(requestedPhase: FirResolvePhase, elementPhase: FirResolvePhase) {
+        if (!lazyResolveContractChecksEnabled || elementPhase >= requestedPhase) return
 
         val currentPhase = currentTransformerPhase
             ?: error("Current phase is not set, please call ${this::startResolvingPhase.name} before starting transforming the file")
 
-        // TODO: symbol current phase can already be requestedPhase or more.
         // This case is not a violation of any contract
         // However, now we keep more strict invariant here,
         // because we don't want to hide some cases when transformers violate phase contract directly
         // but due to usage of already resolved stdlib classes we don't see it
-        if (requestedPhase >= currentPhase) {
+        if (!currentPhase.isItAllowedToCallLazyResolveTo(requestedPhase)) {
             exceptions += FirLazyResolveContractViolationException(
                 currentPhase = currentPhase,
                 requestedPhase = requestedPhase,

@@ -20,7 +20,13 @@ import org.gradle.api.logging.LogLevel
 import org.gradle.util.GradleVersion
 import org.jetbrains.kotlin.gradle.report.BuildReportType
 import org.jetbrains.kotlin.gradle.testbase.*
+import org.jetbrains.kotlin.gradle.util.capitalize
+import org.jetbrains.kotlin.gradle.util.replaceText
+import org.jetbrains.kotlin.konan.target.HostManager
+import org.jetbrains.kotlin.konan.target.presetName
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
@@ -144,11 +150,38 @@ class BuildCacheIT : KGPBaseTest() {
         }
     }
 
-    //doesn't work for build history files approach
+    @DisplayName("Changing native toolchain location should not break build cache")
+    @GradleTest
+    fun testNativeToolchainWithBuildCache(gradleVersion: GradleVersion, @TempDir customNativeHomePath: Path) {
+        nativeProject("native-simple-project", gradleVersion) {
+            enableLocalBuildCache(localBuildCacheDir)
+
+            val buildOptionsBeforeCaching = defaultBuildOptions.copy(
+                nativeOptions = super.defaultBuildOptions.nativeOptions.copy(
+                    version = TestVersions.Kotlin.STABLE_RELEASE,
+                    distributionDownloadFromMaven = true
+                )
+            )
+            val nativeCompileTask = ":compileKotlin${HostManager.host.presetName.capitalize()}"
+            build(nativeCompileTask, buildOptions = buildOptionsBeforeCaching) {
+                assertTasksPackedToCache(nativeCompileTask)
+            }
+
+            val buildOptionsAfterCaching = buildOptionsBeforeCaching.copy(
+                konanDataDir = customNativeHomePath,
+            )
+
+            build("clean", nativeCompileTask, buildOptions = buildOptionsAfterCaching) {
+                assertTasksFromCache(nativeCompileTask)
+            }
+        }
+    }
+
     @DisplayName("Restore from build cache should not break incremental compilation")
     @GradleTest
+    @BrokenOnMacosTest
     fun testIncrementalCompilationAfterCacheHit(gradleVersion: GradleVersion) {
-        project("incrementalMultiproject", gradleVersion, buildOptions = defaultBuildOptions.copy(useICClasspathSnapshot = true, useGradleClasspathSnapshot = false)) {
+        project("incrementalMultiproject", gradleVersion) {
             enableLocalBuildCache(localBuildCacheDir)
             build("assemble")
             build("clean", "assemble") {
@@ -158,16 +191,19 @@ class BuildCacheIT : KGPBaseTest() {
             val bKtSourceFile = projectPath.resolve("lib/src/main/kotlin/bar/B.kt")
 
             bKtSourceFile.modify { it.replace("fun b() {}", "fun b() {}\nfun b2() {}") }
+            val affectedAppSourceFile = projectPath.resolve("app/src/main/kotlin/foo/BB.kt")
 
-            build("assemble", buildOptions = defaultBuildOptions.copy(useICClasspathSnapshot = true, useGradleClasspathSnapshot = false, logLevel = LogLevel.DEBUG)) {
-                assertIncrementalCompilation(expectedCompiledKotlinFiles = setOf(bKtSourceFile).map { it.relativeTo(projectPath)})
-                assertOutputContains("Incremental compilation with ABI snapshot enabled")
+            build("assemble", buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)) {
+                assertIncrementalCompilation(
+                    expectedCompiledKotlinFiles = relativeToProject(listOf(bKtSourceFile, affectedAppSourceFile))
+                )
             }
         }
     }
 
     @DisplayName("Restore from build cache and consequent compilation error should not break incremental compilation")
     @GradleTest
+    @BrokenOnMacosTest
     fun testIncrementalCompilationAfterCacheHitAndCompilationError(gradleVersion: GradleVersion) {
         project("incrementalMultiproject", gradleVersion) {
             enableLocalBuildCache(localBuildCacheDir)
@@ -197,6 +233,96 @@ class BuildCacheIT : KGPBaseTest() {
                     subProject("app").kotlinSourcesDir().resolve("foo/BB.kt"),
                 )
                 assertIncrementalCompilation(expectedCompiledKotlinFiles = affectedFiles.relativizeTo(projectPath))
+            }
+        }
+    }
+
+    @DisplayName("A compilation error doesn't break kapt incremental compilation after restoring from build cache")
+    @GradleTest
+    @BrokenOnMacosTest
+    fun testKaptIncrementalCompilationAfterCacheHitAndCompilationError(gradleVersion: GradleVersion) {
+        project("kapt2/kaptAvoidance", gradleVersion) {
+            enableLocalBuildCache(localBuildCacheDir)
+            build("assemble")
+            build("clean", "assemble") {
+                assertTasksFromCache(
+                    ":app:kaptGenerateStubsKotlin",
+                    ":app:kaptKotlin",
+                    ":app:compileKotlin",
+                    ":lib:compileKotlin"
+                )
+            }
+
+            val fileToEdit = projectPath.resolve("app/src/main/kotlin/AppClass.kt")
+            fileToEdit.modify { current ->
+                val lastBrace = current.lastIndexOf("}")
+                current.substring(0, lastBrace) +
+                        """
+                            internal class InternalAppClass {
+                                @example.ExampleAnnotation
+                                fun intFunGen() : InternalAppClass {
+                                    return 
+                                }
+                            }
+                        }  
+                        """.trimIndent()
+            }
+
+            buildAndFail("assemble", buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)) {
+                assertTasksFailed(":app:compileKotlin")
+                assertOutputDoesNotContain("On recompilation full rebuild will be performed")
+                assertCompiledKotlinSources(listOf(projectPath.relativize(fileToEdit)), output)
+            }
+
+            fileToEdit.replaceText("return", "return this")
+
+            build("assemble", buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)) {
+                assertIncrementalCompilation(expectedCompiledKotlinFiles = listOf(projectPath.relativize(fileToEdit)))
+                assertCompiledKotlinSourcesHandleKapt(
+                    listOf(projectPath.relativize(fileToEdit)),
+                    ":app"
+                )
+            }
+        }
+    }
+
+    @DisplayName("A compilation error doesn't break kapt incremental compilation in test sources after restoring from build cache")
+    @GradleTest
+    fun testKaptIncrementalCompilationInTestSourcesAfterCacheHit(gradleVersion: GradleVersion) {
+        project("kapt2/kaptAvoidance", gradleVersion) {
+            enableLocalBuildCache(localBuildCacheDir)
+            build("build")
+            build("clean", "build") {
+                assertTasksFromCache(
+                    ":app:kaptGenerateStubsTestKotlin",
+                    ":app:kaptTestKotlin",
+                    ":app:compileTestKotlin"
+                )
+            }
+
+            val fileToEdit = projectPath.resolve("app/src/main/kotlin/AppClass.kt")
+            val testFileToEdit = projectPath.resolve("app/src/test/kotlin/AppClassTest.kt")
+            fileToEdit.modify {
+                it.replace(
+                    "val testVal: String = \"text\"",
+                    "var testVal: String = \"text\".plus()"
+                )
+            }
+
+            buildAndFail("build", buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)) {
+                assertTasksFailed(":app:compileKotlin")
+                assertCompiledKotlinSources(listOf(projectPath.relativize(fileToEdit)), output)
+            }
+
+            fileToEdit.modify { it.replace("\"text\".plus()", "\"text\".plus(\"+\")") }
+            testFileToEdit.replaceText("\"text\"", "\"text+\"")
+
+            build("build", buildOptions = defaultBuildOptions.copy(logLevel = LogLevel.DEBUG)) {
+
+                assertCompiledKotlinTestSourcesAreHandledByKapt(
+                    listOf(projectPath.relativize(testFileToEdit)),
+                    ":app"
+                )
             }
         }
     }

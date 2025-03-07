@@ -5,19 +5,16 @@
 
 package kotlin.native
 
-import kotlin.annotation.AnnotationTarget.*
-
 /**
  * This annotation marks the Kotlin/Native standard library API that is considered obsolete and is being phased out.
  *
  * An obsolete API is not recommended to use, and users should migrate from it.
- * In the future the opt-in level of the annotation might be raised to [ERROR][RequiresOptIn.Level.ERROR].
  *
  * Any usage of a declaration annotated with `@ObsoleteNativeApi` must be accepted either by
  * annotating that usage with the [OptIn] annotation, e.g. `@OptIn(ObsoleteNativeApi::class)`,
  * or by using the compiler argument `-opt-in=kotlin.native.ObsoleteNativeApi`.
  */
-@RequiresOptIn(message = "This API is obsolete and subject to removal in a future release.", level = RequiresOptIn.Level.WARNING)
+@RequiresOptIn(message = "This API is obsolete and subject to removal in a future release.", level = RequiresOptIn.Level.ERROR)
 @Retention(AnnotationRetention.BINARY)
 @Target(
         AnnotationTarget.CLASS,
@@ -34,4 +31,5 @@ import kotlin.annotation.AnnotationTarget.*
 )
 @MustBeDocumented
 @SinceKotlin("1.9")
-public annotation class ObsoleteNativeApi
+@Suppress("ACTUAL_WITHOUT_EXPECT") // actual visibility mismatch
+public actual annotation class ObsoleteNativeApi

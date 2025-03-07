@@ -8,8 +8,11 @@ package org.jetbrains.kotlin.fir.backend
 import org.jetbrains.kotlin.constant.ConstantValue
 import org.jetbrains.kotlin.constant.EvaluatedConstTracker
 import org.jetbrains.kotlin.fir.FirSession
+import org.jetbrains.kotlin.fir.backend.utils.shouldUseCalleeReferenceAsItsSourceInIr
+import org.jetbrains.kotlin.fir.backend.utils.startOffsetSkippingComments
 import org.jetbrains.kotlin.fir.expressions.FirExpression
 import org.jetbrains.kotlin.fir.expressions.FirQualifiedAccessExpression
+import org.jetbrains.kotlin.fir.expressions.FirVarargArgumentsExpression
 import org.jetbrains.kotlin.fir.packageFqName
 import org.jetbrains.kotlin.fir.serialization.constant.ConstValueProvider
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
@@ -25,17 +28,27 @@ class ConstValueProviderImpl(
         val firFile = processingFirFile
         if (firExpression == null || firFile == null) return null
 
+        // We can't evaluate vararg expression, only its arguments. We can accidentally find a const result for vararg
+        // when there is only one argument, they both are going to have the same offset.
+        if (firExpression is FirVarargArgumentsExpression) return null
+
         val fileName = firFile.packageFqName.child(Name.identifier(firFile.name)).asString()
-        return if (firExpression is FirQualifiedAccessExpression) {
-            // TODO check that this behavior is expected in ConversionUtils and if not fix it
-            val calleeReference = firExpression.calleeReference
-            val start = calleeReference.source?.startOffsetSkippingComments() ?: calleeReference.source?.startOffset ?: UNDEFINED_OFFSET
-            val end = firExpression.source?.endOffset ?: return null
-            evaluatedConstTracker.load(start, end, fileName)
-        } else {
-            val start = firExpression.source?.startOffset ?: return null
-            val end = firExpression.source?.endOffset ?: return null
-            evaluatedConstTracker.load(start, end, fileName)
+        val (start, end) = firExpression.getCorrespondingIrOffset() ?: return null
+        return evaluatedConstTracker.load(start, end, fileName)
+    }
+
+    companion object {
+        fun FirExpression.getCorrespondingIrOffset(): Pair<Int, Int>? {
+            return if (this is FirQualifiedAccessExpression && this.shouldUseCalleeReferenceAsItsSourceInIr()) {
+                val calleeReference = this.calleeReference
+                val start = calleeReference.source?.startOffsetSkippingComments() ?: calleeReference.source?.startOffset ?: UNDEFINED_OFFSET
+                val end = this.source?.endOffset ?: return null
+                start to end
+            } else {
+                val start = this.source?.startOffset ?: return null
+                val end = this.source?.endOffset ?: return null
+                start to end
+            }
         }
     }
 }

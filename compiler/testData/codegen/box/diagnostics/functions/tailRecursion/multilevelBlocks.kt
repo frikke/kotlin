@@ -1,8 +1,3 @@
-// IGNORE_BACKEND: WASM
-// WASM_MUTE_REASON: IGNORED_IN_JS
-// TODO: muted automatically, investigate should it be ran for JS or not
-// IGNORE_BACKEND: JS
-
 tailrec fun test(x : Int) : Int {
     if (x == 1) {
         if (x != 1) {

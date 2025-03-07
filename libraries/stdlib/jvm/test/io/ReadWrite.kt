@@ -47,9 +47,13 @@ class ReadWriteTest {
 
         assertEquals(listOf("Hello", "World"), sample().readLines())
 
-        sample().useLines {
-            assertEquals(listOf("Hello", "World"), it.toList())
+        val lines: List<String>
+        val linesResult = sample().useLines {
+            lines = it.toList()
+            lines
         }
+        assertEquals(listOf("Hello", "World"), lines)
+        assertEquals(lines, linesResult)
 
 
         var reader = StringReader("")
@@ -94,9 +98,13 @@ class ReadWriteTest {
 
         assertEquals(arrayListOf("Hello", "World"), file.readLines())
 
-        file.useLines {
-            assertEquals(arrayListOf("Hello", "World"), it.toList())
+        val lines: List<String>
+        val linesResult = file.useLines {
+            lines = it.toList()
+            lines
         }
+        assertEquals(listOf("Hello", "World"), lines)
+        assertEquals(lines, linesResult)
 
         val text = file.inputStream().reader().readText()
         assertTrue(text.contains("Hello"))
@@ -125,11 +133,16 @@ class ReadWriteTest {
     }
 
     @Test fun testURL() {
-        val url = URL("http://kotlinlang.org")
-        val text = url.readText()
-        assertFalse(text.isEmpty())
-        val text2 = url.readText(charset("UTF8"))
-        assertFalse(text2.isEmpty())
+        val file = File.createTempFile("temp", System.nanoTime().toString())
+        file.deleteOnExit()
+        val fileText = "Test Text"
+        file.writeText(fileText)
+
+        val url: URL = file.toURI().toURL()
+        val textDefault = url.readText()
+        assertEquals(fileText, textDefault)
+        val textUTF8 = url.readText(charset("UTF8"))
+        assertEquals(fileText, textUTF8)
     }
 }
 

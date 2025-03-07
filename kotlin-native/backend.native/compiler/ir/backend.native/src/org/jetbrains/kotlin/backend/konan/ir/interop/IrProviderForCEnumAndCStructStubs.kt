@@ -14,6 +14,7 @@ import org.jetbrains.kotlin.backend.konan.ir.interop.cenum.CEnumVarClassGenerato
 import org.jetbrains.kotlin.backend.konan.ir.interop.cstruct.CStructVarClassGenerator
 import org.jetbrains.kotlin.backend.konan.ir.interop.cstruct.CStructVarCompanionGenerator
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.util.*
@@ -31,6 +32,7 @@ import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
  * 2. It is an easier and more obvious approach. Since implementation of metadata-based
  *  libraries generation already took too much time we take an easier approach here.
  */
+@OptIn(ObsoleteDescriptorBasedAPI::class)
 internal class IrProviderForCEnumAndCStructStubs(
         context: GeneratorContext,
         symbols: KonanSymbols
@@ -61,7 +63,7 @@ internal class IrProviderForCEnumAndCStructStubs(
             .flatMap { it.getMemberScope().getContributedDescriptors(DescriptorKindFilter.CLASSIFIERS) }
             .filterIsInstance<ClassDescriptor>()
             .filter { it.implementsCEnum() || it.inheritsFromCStructVar() }
-            .forEach { symbolTable.referenceClass(it) }
+            .forEach { symbolTable.descriptorExtension.referenceClass(it) }
 
     private fun generateIrIfNeeded(symbol: IrSymbol, file: IrFile) {
         // TODO: These `findOrGenerate` calls generate a whole subtree.
@@ -90,23 +92,23 @@ internal class IrProviderForCEnumAndCStructStubs(
     fun getDeclaration(descriptor: DeclarationDescriptor, idSignature: IdSignature, file: IrFile, symbolKind: BinarySymbolData.SymbolKind): IrSymbolOwner {
         return symbolTable.run {
             when (symbolKind) {
-                BinarySymbolData.SymbolKind.CONSTRUCTOR_SYMBOL -> declareConstructorFromLinker(descriptor as ClassConstructorDescriptor, idSignature) { s ->
+                BinarySymbolData.SymbolKind.CONSTRUCTOR_SYMBOL -> descriptorExtension.declareConstructorFromLinker(descriptor as ClassConstructorDescriptor, idSignature) { s: IrConstructorSymbol ->
                     generateIrIfNeeded(s, file)
                     s.owner
                 }
-                BinarySymbolData.SymbolKind.CLASS_SYMBOL -> declareClassFromLinker(descriptor as ClassDescriptor, idSignature) { s ->
+                BinarySymbolData.SymbolKind.CLASS_SYMBOL -> descriptorExtension.declareClassFromLinker(descriptor as ClassDescriptor, idSignature) { s ->
                     generateIrIfNeeded(s, file)
                     s.owner
                 }
-                BinarySymbolData.SymbolKind.ENUM_ENTRY_SYMBOL -> declareEnumEntryFromLinker(descriptor as ClassDescriptor, idSignature) { s ->
+                BinarySymbolData.SymbolKind.ENUM_ENTRY_SYMBOL -> descriptorExtension.declareEnumEntryFromLinker(descriptor as ClassDescriptor, idSignature) { s: IrEnumEntrySymbol ->
                     generateIrIfNeeded(s, file)
                     s.owner
                 }
-                BinarySymbolData.SymbolKind.FUNCTION_SYMBOL -> declareSimpleFunctionFromLinker(descriptor as FunctionDescriptor, idSignature) { s ->
+                BinarySymbolData.SymbolKind.FUNCTION_SYMBOL -> descriptorExtension.declareSimpleFunctionFromLinker(descriptor as FunctionDescriptor, idSignature) { s: IrSimpleFunctionSymbol ->
                     generateIrIfNeeded(s, file)
                     s.owner
                 }
-                BinarySymbolData.SymbolKind.PROPERTY_SYMBOL -> declarePropertyFromLinker(descriptor as PropertyDescriptor, idSignature) { s ->
+                BinarySymbolData.SymbolKind.PROPERTY_SYMBOL -> descriptorExtension.declarePropertyFromLinker(descriptor as PropertyDescriptor, idSignature) { s: IrPropertySymbol ->
                     generateIrIfNeeded(s, file)
                     s.owner
                 }
@@ -114,9 +116,5 @@ internal class IrProviderForCEnumAndCStructStubs(
                 else -> error("Unexpected symbol kind $symbolKind for sig $idSignature")
             }
         }
-    }
-
-    companion object {
-        const val cTypeDefinitionsFileName = "CTypeDefinitions"
     }
 }

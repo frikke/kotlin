@@ -45,7 +45,6 @@ public final class AnnotationsUtils {
     private static final FqName JS_EXPORT_IGNORE = Annotations.JsExportIgnore.asSingleFqName();
     private static final FqName JS_MODULE_ANNOTATION = Annotations.JsModule.asSingleFqName();
     private static final FqName JS_NON_MODULE_ANNOTATION = Annotations.JsNonModule.asSingleFqName();
-    private static final FqName JS_QUALIFIER_ANNOTATION = Annotations.JsQualifier.asSingleFqName();
     private static final FqName JS_EXTERNAL_INHERITORS_ONLY = Annotations.JsExternalInheritorsOnly.asSingleFqName();
     private static final FqName JS_EXTERNAL_ARGUMENT = Annotations.JsExternalArgument.asSingleFqName();
 
@@ -128,6 +127,12 @@ public final class AnnotationsUtils {
         }
 
         if (hasAnnotationOrInsideAnnotatedClass(descriptor, JS_EXPORT_IGNORE)) return false;
+
+        if (descriptor instanceof PropertyAccessorDescriptor) {
+            PropertyAccessorDescriptor propertyAccessor = (PropertyAccessorDescriptor) descriptor;
+            if (propertyAccessor.getCorrespondingProperty().getAnnotations().hasAnnotation(JS_EXPORT_IGNORE)) return false;
+        }
+
         if (hasAnnotationOrInsideAnnotatedClass(descriptor, JS_EXPORT)) return true;
 
         if (CollectionsKt.any(getContainingFileAnnotations(bindingContext, descriptor), annotation ->
@@ -229,11 +234,6 @@ public final class AnnotationsUtils {
     @Nullable
     public static String getFileModuleName(@NotNull BindingContext bindingContext, @NotNull DeclarationDescriptor declaration) {
         return getSingleStringAnnotationArgument(bindingContext, declaration, JS_MODULE_ANNOTATION);
-    }
-
-    @Nullable
-    public static String getFileQualifier(@NotNull BindingContext bindingContext, @NotNull DeclarationDescriptor declaration) {
-        return getSingleStringAnnotationArgument(bindingContext, declaration, JS_QUALIFIER_ANNOTATION);
     }
 
     @Nullable

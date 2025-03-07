@@ -5,11 +5,12 @@
 
 package org.jetbrains.kotlin.backend.jvm.lower
 
-import org.jetbrains.kotlin.backend.common.*
-import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
+import org.jetbrains.kotlin.backend.common.FileLoweringPass
+import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
+import org.jetbrains.kotlin.backend.common.pop
+import org.jetbrains.kotlin.backend.common.push
 import org.jetbrains.kotlin.backend.jvm.*
 import org.jetbrains.kotlin.ir.IrStatement
-import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.transformStatement
@@ -19,11 +20,10 @@ import org.jetbrains.kotlin.name.Name
 
 internal abstract class JvmValueClassAbstractLowering(
     val context: JvmBackendContext,
-    override val scopeStack: MutableList<ScopeWithIr>,
 ) : FileLoweringPass, IrElementTransformerVoidWithContext() {
     abstract val replacements: MemoizedValueClassAbstractReplacements
 
-    final override fun lower(irFile: IrFile) = withinScope(irFile) {
+    override fun lower(irFile: IrFile) = withinScope(irFile) {
         irFile.transformChildrenVoid()
     }
 
@@ -73,12 +73,11 @@ internal abstract class JvmValueClassAbstractLowering(
         return when (function) {
             is IrSimpleFunction -> transformSimpleFunctionFlat(function, replacement)
             is IrConstructor -> transformSecondaryConstructorFlat(function, replacement)
-            else -> throw IllegalStateException()
         }
     }
 
     private fun transformFlattenedConstructor(function: IrConstructor, replacement: IrConstructor): List<IrDeclaration> {
-        replacement.valueParameters.forEach {
+        replacement.parameters.forEach {
             it.defaultValue?.patchDeclarationParents(replacement)
             visitParameter(it)
         }
@@ -90,8 +89,8 @@ internal abstract class JvmValueClassAbstractLowering(
 
     private fun IrFunction.hashSuffix(): String? = InlineClassAbi.hashSuffix(
         this,
-        context.state.functionsWithInlineClassReturnTypesMangled,
-        context.state.useOldManglingSchemeForFunctionsWithInlineClassesInSignatures
+        context.config.functionsWithInlineClassReturnTypesMangled,
+        context.config.useOldManglingSchemeForFunctionsWithInlineClassesInSignatures
     )
 
     protected abstract fun transformSecondaryConstructorFlat(constructor: IrConstructor, replacement: IrSimpleFunction): List<IrDeclaration>
@@ -106,7 +105,7 @@ internal abstract class JvmValueClassAbstractLowering(
     }
 
     private fun transformSimpleFunctionFlat(function: IrSimpleFunction, replacement: IrSimpleFunction): List<IrDeclaration> {
-        replacement.valueParameters.forEach {
+        replacement.parameters.forEach {
             it.defaultValue?.patchDeclarationParents(replacement)
             visitParameter(it)
         }
@@ -125,23 +124,21 @@ internal abstract class JvmValueClassAbstractLowering(
     }
 
     final override fun visitReturn(expression: IrReturn): IrExpression {
-        (expression.returnTargetSymbol.owner as? IrFunction)?.let { target ->
+        val target = expression.returnTargetSymbol.owner
+        if (target is IrFunction) {
             val suffix = target.hashSuffix()
-            if (suffix != null && target.name.asString().endsWith(suffix))
-                return super.visitReturn(expression)
-
-            replacements.run {
-                getReplacementFunction(target) ?: if (target is IrConstructor) getReplacementForRegularClassConstructor(target) else null
-            }?.let {
-                return context.createIrBuilder(it.symbol, expression.startOffset, expression.endOffset).irReturn(
-                    expression.value.transform(this, null)
-                )
+            if (suffix == null || !target.name.asString().endsWith(suffix)) {
+                val replacement = replacements.getReplacementFunction(target)
+                    ?: if (target is IrConstructor) replacements.getReplacementForRegularClassConstructor(target) else null
+                if (replacement != null) {
+                    expression.returnTargetSymbol = replacement.symbol
+                }
             }
         }
         return super.visitReturn(expression)
     }
 
-    internal fun visitStatementContainer(container: IrStatementContainer) {
+    private fun visitStatementContainer(container: IrStatementContainer) {
         container.statements.transformFlat { statement ->
             val newStatements =
                 if (statement is IrFunction) withinScope(statement) { transformFunctionFlat(statement) }
@@ -177,6 +174,7 @@ internal abstract class JvmValueClassAbstractLowering(
     protected enum class SpecificMangle { Inline, MultiField }
 
     protected abstract val specificMangle: SpecificMangle
+
     private fun createBridgeFunction(
         function: IrSimpleFunction,
         replacement: IrSimpleFunction
@@ -192,10 +190,10 @@ internal abstract class JvmValueClassAbstractLowering(
                     useOldMangleRules = false
                 )
                 // If the original function has signature which need mangling we still need to replace it with a mangled version.
-                (!function.isFakeOverride || function.findInterfaceImplementation(context.state.jvmDefaultMode) != null) && when (specificMangle) {
-                    SpecificMangle.Inline -> function.signatureRequiresMangling(includeInline = true, includeMFVC = false)
-                    SpecificMangle.MultiField -> function.signatureRequiresMangling(includeInline = false, includeMFVC = true)
-                } -> replacement.name
+                (!function.isFakeOverride ||
+                        context.cachedDeclarations.getClassFakeOverrideReplacement(function) != ClassFakeOverrideReplacement.None) &&
+                        function.signatureRequiresMangling()
+                    -> replacement.name
                 // Since we remove the corresponding property symbol from the bridge we need to resolve getter/setter
                 // names at this point.
                 replacement.isGetter ->
@@ -222,15 +220,13 @@ internal abstract class JvmValueClassAbstractLowering(
         return bridgeFunction
     }
 
-    private fun IrSimpleFunction.signatureRequiresMangling(includeInline: Boolean = true, includeMFVC: Boolean = true) =
-        fullValueParameterList.any { it.type.getRequiresMangling(includeInline, includeMFVC) } ||
-                context.state.functionsWithInlineClassReturnTypesMangled &&
-                returnType.getRequiresMangling(includeInline = includeInline, includeMFVC = false)
-
-    protected fun typedArgumentList(function: IrFunction, expression: IrMemberAccessExpression<*>) = listOfNotNull(
-        function.dispatchReceiverParameter?.let { it to expression.dispatchReceiver },
-        function.extensionReceiverParameter?.let { it to expression.extensionReceiver }
-    ) + function.valueParameters.map { it to expression.getValueArgument(it.index) }
+    private fun IrSimpleFunction.signatureRequiresMangling(): Boolean {
+        val includeInline = specificMangle == SpecificMangle.Inline
+        val includeMFVC = specificMangle == SpecificMangle.MultiField
+        return nonDispatchParameters.any { it.type.getRequiresMangling(includeInline, includeMFVC) } ||
+                context.config.functionsWithInlineClassReturnTypesMangled &&
+                returnType.getRequiresMangling(includeInline, includeMFVC = false)
+    }
 
 
     // We may need to add a bridge method for inline class methods with static replacements. Ideally, we'd do this in BridgeLowering,
@@ -263,7 +259,7 @@ internal abstract class JvmValueClassAbstractLowering(
     final override fun visitSuspendableExpression(expression: IrSuspendableExpression) = super.visitSuspendableExpression(expression)
     final override fun visitSuspensionPoint(expression: IrSuspensionPoint) = super.visitSuspensionPoint(expression)
     final override fun visitExpression(expression: IrExpression): IrExpression = super.visitExpression(expression)
-    final override fun visitConst(expression: IrConst<*>) = super.visitConst(expression)
+    final override fun visitConst(expression: IrConst) = super.visitConst(expression)
     final override fun visitConstantValue(expression: IrConstantValue): IrConstantValue = super.visitConstantValue(expression)
     final override fun visitConstantObject(expression: IrConstantObject) = super.visitConstantObject(expression)
     final override fun visitConstantPrimitive(expression: IrConstantPrimitive) = super.visitConstantPrimitive(expression)
@@ -312,7 +308,6 @@ internal abstract class JvmValueClassAbstractLowering(
         super.visitDynamicOperatorExpression(expression)
 
     final override fun visitDynamicMemberExpression(expression: IrDynamicMemberExpression) = super.visitDynamicMemberExpression(expression)
-    final override fun visitErrorDeclaration(declaration: IrErrorDeclaration) = super.visitErrorDeclaration(declaration)
     final override fun visitErrorExpression(expression: IrErrorExpression) = super.visitErrorExpression(expression)
     final override fun visitErrorCallExpression(expression: IrErrorCallExpression) = super.visitErrorCallExpression(expression)
 

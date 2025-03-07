@@ -37,6 +37,7 @@ object ImportType {
     const val ALL = 0
     const val ITEMS = 1
     const val DEFAULT = 2
+    const val EFFECT = 3
 }
 
 object ExportType {
@@ -69,4 +70,5 @@ object ExpressionIds {
     const val NEW = 21
     const val CLASS = 22
     const val SUPER_REF = 23
+    const val YIELD = 24
 }

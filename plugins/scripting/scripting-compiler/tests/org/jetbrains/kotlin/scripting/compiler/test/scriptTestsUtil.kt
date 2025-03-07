@@ -6,14 +6,13 @@
 package org.jetbrains.kotlin.scripting.compiler.test
 
 import kotlinx.coroutines.runBlocking
-import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
+import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.scripting.compiler.plugin.impl.ScriptJvmCompilerFromEnvironment
 import org.jetbrains.kotlin.scripting.compiler.plugin.toCompilerMessageSeverity
 import org.jetbrains.kotlin.scripting.definitions.ScriptDefinitionProvider
 import org.jetbrains.kotlin.utils.tryConstructClassFromStringArgs
-import org.junit.Assert
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import kotlin.reflect.KClass
@@ -24,6 +23,7 @@ import kotlin.script.experimental.api.with
 import kotlin.script.experimental.jvm.baseClassLoader
 import kotlin.script.experimental.jvm.dependenciesFromCurrentContext
 import kotlin.script.experimental.jvm.jvm
+import kotlin.test.*
 
 internal const val NUM_4_LINE = "num: 4"
 
@@ -57,7 +57,7 @@ internal fun String.linesSplitTrim() =
     split('\n', '\r').map(String::trim).filter(String::isNotBlank)
 
 internal fun assertEqualsTrimmed(expected: String, actual: String) =
-    Assert.assertEquals(expected.linesSplitTrim(), actual.linesSplitTrim())
+    assertEquals(expected.linesSplitTrim(), actual.linesSplitTrim())
 
 // TODO: rewrite tests to avoid emulated old behavior
 internal fun compileScript(
@@ -66,7 +66,7 @@ internal fun compileScript(
     parentClassLoader: ClassLoader?
 ): Pair<KClass<*>?, ExitCode> {
     val scriptCompiler = ScriptJvmCompilerFromEnvironment(environment)
-    val messageCollector = environment.configuration[CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY]!!
+    val messageCollector = environment.configuration.getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY)
     val scriptDefinition = ScriptDefinitionProvider.getInstance(environment.project)!!.findDefinition(script)!!
 
     val scriptCompilationConfiguration = scriptDefinition.compilationConfiguration.with {

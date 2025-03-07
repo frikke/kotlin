@@ -24,7 +24,6 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
-import org.apache.maven.project.MavenProject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments;
 
@@ -86,18 +85,12 @@ public class KotlinTestJSCompilerMojo extends K2JSCompilerMojo {
 
         super.configureSpecificCompilerArguments(arguments, sourceRoots);
 
-        arguments.setOutputFile(outputFile);
-        arguments.setMetaInfo(metaInfo);
+        arguments.setOutputDir(new File(outputFile).getParent());
     }
 
     @Override
     protected List<String> getClassPathElements() throws DependencyResolutionRequiredException {
         return project.getTestClasspathElements();
-    }
-
-    @Override
-    protected List<String> getRelatedSourceRoots(MavenProject project) {
-        return project.getTestCompileSourceRoots();
     }
 
     @Override

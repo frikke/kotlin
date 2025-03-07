@@ -11,9 +11,11 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.vfs.VirtualFile
 import org.jetbrains.kotlin.load.kotlin.KotlinClassFinder.Result.KotlinClass
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
-import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMetadataVersion
+import org.jetbrains.kotlin.metadata.deserialization.MetadataVersion
 import org.jetbrains.kotlin.name.ClassId
-import org.jetbrains.kotlin.util.PerformanceCounter
+import org.jetbrains.kotlin.util.PerformanceManager
+import org.jetbrains.kotlin.util.PhaseSideType
+import org.jetbrains.kotlin.util.tryMeasureSideTime
 import java.io.FileNotFoundException
 import java.io.IOException
 
@@ -45,20 +47,24 @@ class VirtualFileKotlinClass private constructor(
 
     companion object Factory {
         private val LOG = Logger.getInstance(VirtualFileKotlinClass::class.java)
-        private val perfCounter = PerformanceCounter.create("Binary class from Kotlin file")
 
-        internal fun create(file: VirtualFile, jvmMetadataVersion: JvmMetadataVersion, fileContent: ByteArray?): KotlinClassFinder.Result? {
-            return perfCounter.time {
+        internal fun create(
+            file: VirtualFile,
+            metadataVersion: MetadataVersion,
+            fileContent: ByteArray?,
+            perfManager: PerformanceManager?,
+        ): KotlinClassFinder.Result? {
+            return perfManager.tryMeasureSideTime(PhaseSideType.BinaryClassFromKotlinFile) {
                 assert(file.extension == JavaClassFileType.INSTANCE.defaultExtension || file.fileType == JavaClassFileType.INSTANCE) { "Trying to read binary data from a non-class file $file" }
 
                 try {
                     val byteContent = fileContent ?: file.contentsToByteArray(false)
                     if (byteContent.isNotEmpty()) {
-                        val kotlinJvmBinaryClass = create(byteContent, jvmMetadataVersion) { name, classVersion, header, innerClasses ->
+                        val kotlinJvmBinaryClass = create(byteContent, metadataVersion) { name, classVersion, header, innerClasses ->
                             VirtualFileKotlinClass(file, name, classVersion, header, innerClasses)
                         }
 
-                        return@time kotlinJvmBinaryClass?.let { KotlinClass(it, byteContent) }
+                        return@tryMeasureSideTime kotlinJvmBinaryClass?.let { KotlinClass(it, byteContent) }
                             ?: KotlinClassFinder.Result.ClassFileContent(byteContent)
                     }
                 } catch (e: FileNotFoundException) {

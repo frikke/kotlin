@@ -5,10 +5,10 @@
 
 package org.jetbrains.kotlin.commonizer.utils
 
-import kotlinx.metadata.Flag
-import kotlinx.metadata.KmFunction
-import kotlinx.metadata.KmProperty
-import kotlinx.metadata.klib.annotations
+import kotlin.metadata.KmFunction
+import kotlin.metadata.KmProperty
+import kotlin.metadata.MemberKind
+import kotlin.metadata.kind
 
 internal const val KNI_BRIDGE_FUNCTION_PREFIX = "kniBridge"
 
@@ -21,9 +21,7 @@ internal inline fun KmFunction.isTopLevelDeprecatedFunction(isTopLevel: Boolean)
     isTopLevel && annotations.any { it.className == DEPRECATED_ANNOTATION_FULL_NAME }
 
 @Suppress("NOTHING_TO_INLINE")
-internal inline fun KmProperty.isFakeOverride() =
-    Flag.Property.IS_FAKE_OVERRIDE(flags)
+internal inline fun KmProperty.isFakeOverride() = this.kind == MemberKind.FAKE_OVERRIDE
 
 @Suppress("NOTHING_TO_INLINE")
-internal inline fun KmFunction.isFakeOverride() =
-    Flag.Function.IS_FAKE_OVERRIDE(flags)
+internal inline fun KmFunction.isFakeOverride() = this.kind == MemberKind.FAKE_OVERRIDE

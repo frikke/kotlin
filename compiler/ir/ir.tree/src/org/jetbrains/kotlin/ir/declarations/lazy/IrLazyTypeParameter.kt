@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.ir.declarations.lazy
 
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
+import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
@@ -18,8 +19,8 @@ import org.jetbrains.kotlin.types.Variance
 
 @OptIn(ObsoleteDescriptorBasedAPI::class)
 class IrLazyTypeParameter(
-    override val startOffset: Int,
-    override val endOffset: Int,
+    override var startOffset: Int,
+    override var endOffset: Int,
     override var origin: IrDeclarationOrigin,
     override val symbol: IrTypeParameterSymbol,
     override val descriptor: TypeParameterDescriptor,
@@ -34,8 +35,6 @@ class IrLazyTypeParameter(
         symbol.bind(this)
     }
 
-    override var parent: IrDeclarationParent by createLazyParent()
-
     override var annotations: List<IrConstructorCall> by createLazyAnnotations()
 
     override var superTypes: List<IrType> by lazyVar(stubGenerator.lock) {
@@ -43,4 +42,6 @@ class IrLazyTypeParameter(
             descriptor.upperBounds.mapTo(arrayListOf()) { it.toIrType() }
         }
     }
+
+    override var attributeOwnerId: IrElement = this
 }

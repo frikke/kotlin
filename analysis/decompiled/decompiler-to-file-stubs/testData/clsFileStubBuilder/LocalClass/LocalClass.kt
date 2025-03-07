@@ -1,3 +1,6 @@
+// KNM_K2_IGNORE
+// KNM_FE10_IGNORE
+
 package test
 
 class LocalClass {

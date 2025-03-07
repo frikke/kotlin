@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -8,12 +8,13 @@ package org.jetbrains.kotlin.cli.common
 import com.intellij.ide.highlighter.JavaFileType
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.CommonToolArguments
-import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.ManualLanguageFeatureSetting
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.config.*
 import org.jetbrains.kotlin.metadata.deserialization.BinaryVersion
+import org.jetbrains.kotlin.types.AbstractTypeChecker
+import org.jetbrains.kotlin.types.FlexibleTypeImpl
 import org.jetbrains.kotlin.utils.DFS
 import org.jetbrains.kotlin.utils.KotlinPaths
 import org.jetbrains.kotlin.utils.KotlinPathsFromHomeDir
@@ -24,16 +25,36 @@ fun CompilerConfiguration.setupCommonArguments(
     arguments: CommonCompilerArguments,
     createMetadataVersion: ((IntArray) -> BinaryVersion)? = null
 ) {
-    val messageCollector = getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY)
+    val messageCollector = getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY)
 
     put(CommonConfigurationKeys.DISABLE_INLINE, arguments.noInline)
-    put(CommonConfigurationKeys.USE_FIR_EXTENDED_CHECKERS, arguments.useFirExtendedCheckers)
-    put(CommonConfigurationKeys.EXPECT_ACTUAL_LINKER, arguments.expectActualLinker)
+    put(CommonConfigurationKeys.USE_FIR_EXTRA_CHECKERS, arguments.extraWarnings)
+    put(CommonConfigurationKeys.USE_FIR_EXPERIMENTAL_CHECKERS, arguments.useFirExperimentalCheckers)
+    put(CommonConfigurationKeys.METADATA_KLIB, arguments.metadataKlib)
     putIfNotNull(CLIConfigurationKeys.INTELLIJ_PLUGIN_ROOT, arguments.intellijPluginRoot)
     put(CommonConfigurationKeys.REPORT_OUTPUT_FILES, arguments.reportOutputFiles)
     put(CommonConfigurationKeys.INCREMENTAL_COMPILATION, incrementalCompilationIsEnabled(arguments))
     put(CommonConfigurationKeys.ALLOW_ANY_SCRIPTS_IN_SOURCE_ROOTS, arguments.allowAnyScriptsInSourceRoots)
     put(CommonConfigurationKeys.IGNORE_CONST_OPTIMIZATION_ERRORS, arguments.ignoreConstOptimizationErrors)
+
+    val irVerificationMode = arguments.verifyIr?.let { verifyIrString ->
+        IrVerificationMode.resolveMode(verifyIrString).also {
+            if (it == null) {
+                messageCollector.report(CompilerMessageSeverity.ERROR, "Unsupported IR verification mode $verifyIrString")
+            }
+        }
+    } ?: IrVerificationMode.NONE
+    put(CommonConfigurationKeys.VERIFY_IR, irVerificationMode)
+
+    if (arguments.verifyIrVisibility) {
+        put(CommonConfigurationKeys.ENABLE_IR_VISIBILITY_CHECKS, true)
+        if (irVerificationMode == IrVerificationMode.NONE) {
+            messageCollector.report(
+                CompilerMessageSeverity.WARNING,
+                "'-Xverify-ir-visibility' has no effect unless '-Xverify-ir=warning' or '-Xverify-ir=error' is specified"
+            )
+        }
+    }
 
     val metadataVersionString = arguments.metadataVersion
     if (metadataVersionString != null) {
@@ -47,40 +68,21 @@ fun CompilerConfiguration.setupCommonArguments(
         }
     }
 
-    switchToFallbackModeIfNecessary(arguments, messageCollector)
     setupLanguageVersionSettings(arguments)
 
-    val usesK2 = arguments.useK2 || languageVersionSettings.languageVersion.usesK2
+    val usesK2 = languageVersionSettings.languageVersion.usesK2
     put(CommonConfigurationKeys.USE_FIR, usesK2)
     put(CommonConfigurationKeys.USE_LIGHT_TREE, arguments.useFirLT)
     buildHmppModuleStructure(arguments)?.let { put(CommonConfigurationKeys.HMPP_MODULE_STRUCTURE, it) }
-}
 
-fun switchToFallbackModeIfNecessary(arguments: CommonCompilerArguments, messageCollector: MessageCollector) {
-    val isK2 = arguments.useK2 || (arguments.languageVersion?.startsWith('2') ?: (LanguageVersion.LATEST_STABLE >= LanguageVersion.KOTLIN_2_0))
-    if (isK2) {
-        val isKaptUsed = arguments.pluginOptions?.any { it.startsWith("plugin:org.jetbrains.kotlin.kapt3") } == true
-        if (isKaptUsed) {
-            if (!arguments.suppressVersionWarnings) {
-                messageCollector.report(
-                    CompilerMessageSeverity.STRONG_WARNING,
-                    "Kapt currently doesn't support language version 2.0+.\nFalling back to 1.9."
-                )
-            }
-            arguments.languageVersion = LanguageVersion.KOTLIN_1_9.versionString
-            if (arguments.apiVersion?.startsWith("2") == true) {
-                arguments.apiVersion = ApiVersion.KOTLIN_1_9.versionString
-            }
-            arguments.useK2 = false
-            arguments.skipMetadataVersionCheck = true
-            arguments.skipPrereleaseCheck = true
-            (arguments as? K2JVMCompilerArguments)?.allowUnstableDependencies = true
-        }
+    if (arguments.debugLevelCompilerChecks) {
+        FlexibleTypeImpl.RUN_SLOW_ASSERTIONS = true
+        AbstractTypeChecker.RUN_SLOW_ASSERTIONS = true
     }
 }
 
 fun CompilerConfiguration.setupLanguageVersionSettings(arguments: CommonCompilerArguments) {
-    languageVersionSettings = arguments.toLanguageVersionSettings(getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY))
+    languageVersionSettings = arguments.toLanguageVersionSettings(getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY))
 }
 
 const val KOTLIN_HOME_PROPERTY = "kotlin.home"
@@ -128,8 +130,8 @@ fun MessageCollector.reportArgumentParseProblems(arguments: CommonToolArguments)
 
     reportUnsafeInternalArgumentsIfAny(arguments)
 
-    for (internalArgumentsError in errors.internalArgumentsParsingProblems) {
-        report(CompilerMessageSeverity.STRONG_WARNING, internalArgumentsError)
+    for ((severity, internalArgumentsProblem) in errors.internalArgumentsParsingProblems) {
+        report(severity, internalArgumentsProblem)
     }
 }
 
@@ -161,7 +163,7 @@ private fun CompilerConfiguration.buildHmppModuleStructure(arguments: CommonComp
     val rawFragmentSources = arguments.fragmentSources
     val rawFragmentRefines = arguments.fragmentRefines
 
-    val messageCollector = getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY)
+    val messageCollector = getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY)
 
     fun reportError(message: String) {
         messageCollector.report(CompilerMessageSeverity.ERROR, message)

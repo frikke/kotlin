@@ -9,34 +9,34 @@ import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.classKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.context.findClosest
 import org.jetbrains.kotlin.fir.analysis.checkers.explicitReceiverIsNotSuperReference
 import org.jetbrains.kotlin.fir.analysis.diagnostics.FirErrors
 import org.jetbrains.kotlin.fir.containingClassLookupTag
-import org.jetbrains.kotlin.fir.declarations.FirRegularClass
+import org.jetbrains.kotlin.fir.declarations.FirClass
 import org.jetbrains.kotlin.fir.declarations.utils.isAbstract
 import org.jetbrains.kotlin.fir.expressions.FirQualifiedAccessExpression
 import org.jetbrains.kotlin.fir.expressions.toResolvedCallableSymbol
-import org.jetbrains.kotlin.fir.references.toResolvedCallableSymbol
+import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 import org.jetbrains.kotlin.fir.resolve.toSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirIntersectionCallableSymbol
-import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 
-object FirAbstractSuperCallChecker : FirQualifiedAccessExpressionChecker() {
+object FirAbstractSuperCallChecker : FirQualifiedAccessExpressionChecker(MppCheckerKind.Common) {
     override fun check(expression: FirQualifiedAccessExpression, context: CheckerContext, reporter: DiagnosticReporter) {
         // require the receiver to be the super reference
         if (expression.explicitReceiverIsNotSuperReference()) return
 
-        val closestClass = context.findClosest<FirRegularClass>()
+        val closestClass = context.findClosest<FirClass>()
             ?: return
 
         if (closestClass.classKind == ClassKind.CLASS) {
             // handles all the FirSimpleFunction/FirProperty/etc.
             val declarationSymbol = expression.toResolvedCallableSymbol() ?: return
 
-            val containingClassSymbol = declarationSymbol.containingClassLookupTag()?.toSymbol(context.session) as? FirRegularClassSymbol ?: return
+            val containingClassSymbol = declarationSymbol.containingClassLookupTag()?.toRegularClassSymbol(context.session) ?: return
 
             if (containingClassSymbol.isAbstract) {
                 if (declarationSymbol.isAbstract) {

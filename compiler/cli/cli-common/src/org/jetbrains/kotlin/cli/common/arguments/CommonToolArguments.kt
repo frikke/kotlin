@@ -17,6 +17,8 @@
 package org.jetbrains.kotlin.cli.common.arguments
 
 import java.io.Serializable
+import kotlin.reflect.KProperty1
+import kotlin.reflect.jvm.javaField
 
 abstract class CommonToolArguments : Freezable(), Serializable {
     companion object {
@@ -33,21 +35,21 @@ abstract class CommonToolArguments : Freezable(), Serializable {
     @Transient
     var errors: ArgumentParseErrors? = null
 
-    @Argument(value = "-help", shortName = "-h", description = "Print a synopsis of standard options")
+    @Argument(value = "-help", shortName = "-h", description = "Print a synopsis of standard options.")
     var help = false
         set(value) {
             checkFrozen()
             field = value
         }
 
-    @Argument(value = "-X", description = "Print a synopsis of advanced options")
+    @Argument(value = "-X", description = "Print a synopsis of advanced options.")
     var extraHelp = false
         set(value) {
             checkFrozen()
             field = value
         }
 
-    @Argument(value = "-version", description = "Display compiler version")
+    @Argument(value = "-version", description = "Display the compiler version.")
     var version = false
         set(value) {
             checkFrozen()
@@ -59,7 +61,7 @@ abstract class CommonToolArguments : Freezable(), Serializable {
         gradleInputType = GradleInputTypes.INTERNAL,
         shouldGenerateDeprecatedKotlinOptions = true,
     )
-    @Argument(value = "-verbose", description = "Enable verbose logging output")
+    @Argument(value = "-verbose", description = "Enable verbose logging output.")
     var verbose = false
         set(value) {
             checkFrozen()
@@ -71,7 +73,7 @@ abstract class CommonToolArguments : Freezable(), Serializable {
         gradleInputType = GradleInputTypes.INTERNAL,
         shouldGenerateDeprecatedKotlinOptions = true,
     )
-    @Argument(value = "-nowarn", description = "Generate no warnings")
+    @Argument(value = "-nowarn", description = "Don't generate any warnings.")
     var suppressWarnings = false
         set(value) {
             checkFrozen()
@@ -83,8 +85,22 @@ abstract class CommonToolArguments : Freezable(), Serializable {
         gradleInputType = GradleInputTypes.INPUT,
         shouldGenerateDeprecatedKotlinOptions = true,
     )
-    @Argument(value = "-Werror", description = "Report an error if there are any warnings")
+    @Argument(value = "-Werror", description = "Report an error if there are any warnings.")
     var allWarningsAsErrors = false
+        set(value) {
+            checkFrozen()
+            field = value
+        }
+
+    @GradleOption(
+        value = DefaultValue.BOOLEAN_FALSE_DEFAULT,
+        gradleInputType = GradleInputTypes.INPUT,
+    )
+    @Argument(
+        value = "-Wextra",
+        description = "Enable extra checkers for K2."
+    )
+    var extraWarnings = false
         set(value) {
             checkFrozen()
             field = value
@@ -95,4 +111,22 @@ abstract class CommonToolArguments : Freezable(), Serializable {
             checkFrozen()
             field = value
         }
+}
+
+/**
+ * An argument which should be passed to Kotlin compiler to enable [this] compiler option
+ */
+val KProperty1<out CommonCompilerArguments, *>.cliArgument: String
+    get() {
+        val javaField = javaField
+            ?: error("Java field should be present for $this")
+        val argumentAnnotation = javaField.getAnnotation<Argument>(Argument::class.java)
+        return argumentAnnotation.value
+    }
+
+/**
+ * Returns a string of the form "argument=value" where "argument" is the [Argument.value] of this compiler argument.
+ */
+fun KProperty1<out CommonCompilerArguments, *>.cliArgument(value: String): String {
+    return "$cliArgument=$value"
 }

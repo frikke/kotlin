@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.incremental
@@ -23,21 +12,23 @@ import org.jetbrains.kotlin.build.report.ICReporter
 import org.jetbrains.kotlin.build.report.info
 import org.jetbrains.kotlin.build.report.metrics.BuildAttribute
 import org.jetbrains.kotlin.build.report.metrics.DoNothingBuildMetricsReporter
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildPerformanceMetric
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildTime
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
-import org.jetbrains.kotlin.cli.common.arguments.isIrBackendEnabled
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.cli.js.K2JSCompiler
 import org.jetbrains.kotlin.config.IncrementalCompilation
 import org.jetbrains.kotlin.config.Services
 import org.jetbrains.kotlin.incremental.components.ExpectActualTracker
 import org.jetbrains.kotlin.incremental.components.LookupTracker
+import org.jetbrains.kotlin.incremental.dirtyFiles.getClasspathChanges
+import org.jetbrains.kotlin.incremental.dirtyFiles.getRemovedClassesChanges
 import org.jetbrains.kotlin.incremental.js.*
 import org.jetbrains.kotlin.incremental.multiproject.EmptyModulesApiHistory
 import org.jetbrains.kotlin.incremental.multiproject.ModulesApiHistory
 import org.jetbrains.kotlin.library.metadata.KlibMetadataSerializerProtocol
-import org.jetbrains.kotlin.serialization.js.JsSerializerProtocol
 import java.io.File
 
 fun makeJsIncrementally(
@@ -62,7 +53,7 @@ fun makeJsIncrementally(
             modulesApiHistory = modulesApiHistory,
             scopeExpansion = scopeExpansion
         )
-        compiler.compile(allKotlinFiles, args, messageCollector, providedChangedFiles)
+        compiler.compile(allKotlinFiles, args, messageCollector, providedChangedFiles ?: ChangedFiles.DeterminableFiles.ToBeComputed)
     }
 }
 
@@ -83,53 +74,48 @@ inline fun <R> withJsIC(args: CommonCompilerArguments, enabled: Boolean = true, 
 
 class IncrementalJsCompilerRunner(
     workingDir: File,
-    reporter: BuildReporter,
-    buildHistoryFile: File,
+    reporter: BuildReporter<GradleBuildTime, GradleBuildPerformanceMetric>,
+    buildHistoryFile: File?,
     private val modulesApiHistory: ModulesApiHistory,
     private val scopeExpansion: CompileScopeExpansionMode = CompileScopeExpansionMode.NEVER,
-    withAbiSnapshot: Boolean = false,
-    preciseCompilationResultsBackup: Boolean = false,
-    keepIncrementalCompilationCachesInMemory: Boolean = false,
+    icFeatures: IncrementalCompilationFeatures = IncrementalCompilationFeatures.DEFAULT_CONFIGURATION,
 ) : IncrementalCompilerRunner<K2JSCompilerArguments, IncrementalJsCachesManager>(
     workingDir,
     "caches-js",
     reporter,
     buildHistoryFile = buildHistoryFile,
     outputDirs = null,
-    withAbiSnapshot = withAbiSnapshot,
-    preciseCompilationResultsBackup = preciseCompilationResultsBackup,
-    keepIncrementalCompilationCachesInMemory = keepIncrementalCompilationCachesInMemory,
+    icFeatures = icFeatures,
 ) {
     override val shouldTrackChangesInLookupCache
         get() = false
 
     override val shouldStoreFullFqNamesInLookupCache
-        get() = withAbiSnapshot
+        get() = icFeatures.withAbiSnapshot
 
     override fun createCacheManager(icContext: IncrementalCompilationContext, args: K2JSCompilerArguments) =
-        IncrementalJsCachesManager(icContext, if (!args.isIrBackendEnabled()) JsSerializerProtocol else KlibMetadataSerializerProtocol, cacheDirectory)
+        IncrementalJsCachesManager(icContext, KlibMetadataSerializerProtocol, cacheDirectory)
 
     override fun destinationDir(args: K2JSCompilerArguments): File {
-        return if (args.isIrBackendEnabled())
-            File(args.outputDir!!)
-        else
-            File(args.outputFile!!).parentFile
+        return File(args.outputDir!!)
     }
 
     override fun calculateSourcesToCompile(
         caches: IncrementalJsCachesManager,
-        changedFiles: ChangedFiles.Known,
+        changedFiles: ChangedFiles.DeterminableFiles.Known,
         args: K2JSCompilerArguments,
         messageCollector: MessageCollector,
         classpathAbiSnapshots: Map<String, AbiSnapshot> //Ignore for now
     ): CompilationMode {
-        if (!withAbiSnapshot && !buildHistoryFile.isFile) {
+        if (buildHistoryFile == null) {
+            error("The build is configured to use the build-history based IC approach, but doesn't specify the buildHistoryFile")
+        }
+        if (!icFeatures.withAbiSnapshot && !buildHistoryFile.isFile) {
             return CompilationMode.Rebuild(BuildAttribute.NO_BUILD_HISTORY)
         }
         val lastBuildInfo = BuildInfo.read(lastBuildInfoFile, messageCollector) ?: return CompilationMode.Rebuild(BuildAttribute.INVALID_LAST_BUILD_INFO)
 
-        val dirtyFiles = DirtyFilesContainer(caches, reporter, kotlinSourceFilesExtensions)
-        initDirtyFiles(dirtyFiles, changedFiles)
+        val dirtyFiles = dirtyFilesProvider.getInitializedDirtyFiles(caches, changedFiles)
 
         val libs = (args.libraries ?: "").split(File.pathSeparator).map { File(it) }
         //TODO(valtman) check for JS
@@ -150,7 +136,7 @@ class IncrementalJsCompilerRunner(
             }
         }
 
-        val removedClassesChanges = getRemovedClassesChanges(caches, changedFiles)
+        val removedClassesChanges = getRemovedClassesChanges(caches, changedFiles, kotlinSourceFilesExtensions, reporter)
         dirtyFiles.addByDirtySymbols(removedClassesChanges.dirtyLookupSymbols)
         dirtyFiles.addByDirtyClasses(removedClassesChanges.dirtyClassesFqNames)
         dirtyFiles.addByDirtyClasses(removedClassesChanges.dirtyClassesFqNamesForceRecompile)

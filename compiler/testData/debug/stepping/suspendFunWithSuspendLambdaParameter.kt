@@ -1,5 +1,6 @@
 
 // WITH_STDLIB
+
 // FILE: test.kt
 suspend fun foo(block: suspend Long.() -> String): String {
     return 1L.block()
@@ -16,17 +17,31 @@ suspend fun box() {
 // That means that we never step into the lambda as that is only
 // called via code in the kotlin package.
 
-// EXPECTATIONS JVM JVM_IR
-// test.kt:9 box
-// test.kt:5 foo
-// test.kt:9 box
-// test.kt:12 box
+// EXPECTATIONS JVM_IR
+// test.kt:10 box
+// test.kt:6 foo
+// test.kt:10 box
+// test.kt:13 box
 
 // EXPECTATIONS JS_IR
-// test.kt:9 doResume
-// test.kt:9 box$slambda
-// test.kt:9 doResume
-// test.kt:6 foo
-// test.kt:5 foo
 // test.kt:10 doResume
-// test.kt:12 doResume
+// test.kt:10 box$slambda
+// test.kt:10 doResume
+// test.kt:6 foo
+// test.kt:6 foo
+// test.kt:11 doResume
+// test.kt:13 doResume
+
+// EXPECTATIONS WASM
+// test.kt:13 $box (1)
+// coroutineHelpers.kt:9 $EmptyContinuation.<get-context> (37)
+// test.kt:13 $box (1)
+// test.kt:10 $$boxCOROUTINE$0.doResume (8, 4)
+// test.kt:6 $foo (14, 11, 14)
+// test.kt:11 $box$slambda.doResume (8)
+// test.kt:6 $foo (4)
+// test.kt:10 $$boxCOROUTINE$0.doResume (4)
+// test.kt:13 $$boxCOROUTINE$0.doResume (1)
+// test.kt:10 $$boxCOROUTINE$0.doResume (8, 4)
+// test.kt:13 $$boxCOROUTINE$0.doResume (0)
+// test.kt:13 $box (1)

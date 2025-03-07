@@ -1,4 +1,4 @@
-// FIR_IDENTICAL
+// RUN_PIPELINE_TILL: FRONTEND
 // LANGUAGE: -ProhibitOpenValDeferredInitialization
 // DIAGNOSTICS: -DEBUG_INFO_LEAKING_THIS
 open class A {

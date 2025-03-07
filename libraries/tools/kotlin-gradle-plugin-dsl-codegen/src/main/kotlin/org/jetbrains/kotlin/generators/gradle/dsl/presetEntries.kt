@@ -60,29 +60,6 @@ internal val androidTargetPresetEntry = KotlinPresetEntry(
     entityName = "android",
 )
 
-internal val androidPresetEntry = KotlinPresetEntry(
-    "android",
-    typeName("$MPP_PACKAGE.KotlinAndroidTargetPreset"),
-    typeName("$MPP_PACKAGE.KotlinAndroidTarget"),
-    deprecation = KotlinPresetEntry.Deprecation(
-        message = "ANDROID_TARGET_MIGRATION_MESSAGE",
-        level = DeprecationLevel.WARNING,
-        replaceWithOtherPreset = "androidTarget"
-    ),
-    extraTopLevelDeclarations = listOf(
-        "private const val ANDROID_TARGET_MIGRATION_MESSAGE" +
-                " = \"Please use androidTarget() instead. Learn more here: https://kotl.in/android-target-dsl\""
-    ),
-    alsoBlockAfterConfiguration = """
-            it.project.logger.warn(
-                ""${'"'}
-                    w: Please use `androidTarget` function instead of `android` to configure android target inside `kotlin { }` block.
-                    See the details here: https://kotl.in/android-target-dsl
-                ""${'"'}.trimIndent()
-            )
-    """.trimIndent()
-)
-
 // Note: modifying these sets should also be reflected in the MPP plugin code, see 'setupDefaultPresets'
 private val nativeTargetsWithHostTests =
     setOf(KonanTarget.LINUX_X64, KonanTarget.MACOS_X64, KonanTarget.MACOS_ARM64, KonanTarget.MINGW_X64)
@@ -91,7 +68,6 @@ private val nativeTargetsWithSimulatorTests =
         KonanTarget.IOS_X64,
         KonanTarget.IOS_SIMULATOR_ARM64,
 
-        KonanTarget.WATCHOS_X86,
         KonanTarget.WATCHOS_X64,
         KonanTarget.WATCHOS_SIMULATOR_ARM64,
 
@@ -113,7 +89,7 @@ internal val nativePresetEntries = HostManager().targets
 
         val deprecation = KotlinPresetEntry.Deprecation(
             message = "DEPRECATED_TARGET_MESSAGE",
-            level = DeprecationLevel.ERROR
+            level = if (target in KonanTarget.toleratedDeprecatedTargets) DeprecationLevel.WARNING else DeprecationLevel.ERROR
         ).takeIf { target in KonanTarget.deprecatedTargets }
         KotlinPresetEntry(target.presetName, typeName(presetType), typeName(targetType), deprecation)
     }
@@ -121,5 +97,4 @@ internal val nativePresetEntries = HostManager().targets
 internal val allPresetEntries = listOf(
     jvmPresetEntry,
     androidTargetPresetEntry,
-    androidPresetEntry
 ) + nativePresetEntries

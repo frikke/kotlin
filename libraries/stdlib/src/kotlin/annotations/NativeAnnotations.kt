@@ -5,6 +5,7 @@
 
 package kotlin.native
 
+import kotlin.experimental.ExperimentalNativeApi
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.experimental.ExperimentalObjCRefinement
 
@@ -14,6 +15,7 @@ import kotlin.experimental.ExperimentalObjCRefinement
  * [externName] controls the name of top level function, [shortName] controls the short name.
  * If [externName] is empty, no top level declaration is being created.
  */
+@ExperimentalNativeApi
 @SinceKotlin("1.5")
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.BINARY)
@@ -21,17 +23,15 @@ import kotlin.experimental.ExperimentalObjCRefinement
 public expect annotation class CName(val externName: String = "", val shortName: String = "")
 
 /**
- * Freezing API is deprecated since 1.7.20.
+ * Freezing API has been deprecated since Kotlin 1.7.20,
+ * and support for the legacy memory manager was completely removed from the compiler in 1.9.20.
  *
- * See [documentation](https://kotlinlang.org/docs/native-migration-guide.html) for details
+ * See the [documentation](https://kotlinlang.org/docs/native-migration-guide.html) for details.
  */
-// Note: when changing level of deprecation here, also change
-// * `freezing` mode handling in KonanConfig.kt
-// * frontend diagnostics in ErrorsNative.kt
 @SinceKotlin("1.7")
 @RequiresOptIn(
     message = "Freezing API is deprecated since 1.7.20. See https://kotlinlang.org/docs/native-migration-guide.html for details",
-    level = RequiresOptIn.Level.WARNING,
+    level = RequiresOptIn.Level.WARNING
 )
 @Target(
     AnnotationTarget.CLASS,
@@ -47,8 +47,11 @@ public expect annotation class CName(val externName: String = "", val shortName:
     AnnotationTarget.TYPEALIAS,
 )
 @Retention(AnnotationRetention.BINARY)
+@MustBeDocumented
 @OptionalExpectation
-expect annotation class FreezingIsDeprecated
+@Deprecated("Opting in for the freezing API is no longer supported.")
+@DeprecatedSinceKotlin(warningSince = "2.1")
+public expect annotation class FreezingIsDeprecated
 
 /**
  * Instructs the Kotlin compiler to use a custom Objective-C and/or Swift name for this class, property, parameter or function.
@@ -130,4 +133,3 @@ public expect annotation class RefinesInSwift()
 @ExperimentalObjCRefinement
 @SinceKotlin("1.8")
 public expect annotation class ShouldRefineInSwift()
-

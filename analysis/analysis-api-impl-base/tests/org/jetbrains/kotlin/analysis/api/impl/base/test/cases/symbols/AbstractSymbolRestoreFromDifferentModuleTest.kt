@@ -5,47 +5,45 @@
 
 package org.jetbrains.kotlin.analysis.api.impl.base.test.cases.symbols
 
-import org.jetbrains.kotlin.analysis.api.renderer.declarations.impl.KtDeclarationRendererForDebug
+import org.jetbrains.kotlin.analysis.api.renderer.declarations.impl.KaDeclarationRendererForDebug
 import org.jetbrains.kotlin.analysis.api.symbols.DebugSymbolRenderer
-import org.jetbrains.kotlin.analysis.api.symbols.KtDeclarationSymbol
-import org.jetbrains.kotlin.analysis.project.structure.ProjectStructureProvider
+import org.jetbrains.kotlin.analysis.api.symbols.KaDeclarationSymbol
+import org.jetbrains.kotlin.analysis.api.platform.projectStructure.KotlinProjectStructureProvider
 import org.jetbrains.kotlin.analysis.test.framework.base.AbstractAnalysisApiBasedTest
 import org.jetbrains.kotlin.analysis.test.framework.services.expressionMarkerProvider
 import org.jetbrains.kotlin.analysis.utils.printer.prettyPrint
 import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtElement
-import org.jetbrains.kotlin.test.services.TestModuleStructure
 import org.jetbrains.kotlin.test.services.TestServices
 import org.jetbrains.kotlin.test.services.assertions
 
 abstract class AbstractSymbolRestoreFromDifferentModuleTest : AbstractAnalysisApiBasedTest() {
-    private val defaultRenderer = KtDeclarationRendererForDebug.WITH_QUALIFIED_NAMES
+    private val defaultRenderer = KaDeclarationRendererForDebug.WITH_QUALIFIED_NAMES
 
-    override fun doTestByModuleStructure(moduleStructure: TestModuleStructure, testServices: TestServices) {
+    override fun doTest(testServices: TestServices) {
         val declaration =
-            testServices.expressionMarkerProvider.getElementsOfTypeAtCarets<KtDeclaration>(moduleStructure, testServices).single().first
+            testServices.expressionMarkerProvider.getBottommostElementsOfTypeAtCarets<KtDeclaration>(testServices).single().first
 
         val restoreAt =
-            testServices.expressionMarkerProvider.getElementsOfTypeAtCarets<KtElement>(
-                moduleStructure,
+            testServices.expressionMarkerProvider.getBottommostElementsOfTypeAtCarets<KtElement>(
                 testServices,
-                caretTag = "restoreAt"
+                qualifier = "restoreAt"
             ).single().first
 
         val project = declaration.project
-        val declarationModule = ProjectStructureProvider.getModule(project, declaration, contextualModule = null)
-        val restoreAtModule = ProjectStructureProvider.getModule(project, restoreAt, contextualModule = null)
+        val declarationModule = KotlinProjectStructureProvider.getModule(project, declaration, useSiteModule = null)
+        val restoreAtModule = KotlinProjectStructureProvider.getModule(project, restoreAt, useSiteModule = null)
 
         val (debugRendered, prettyRendered, pointer) = analyseForTest(declaration) {
-            val symbol = declaration.getSymbol()
+            val symbol = declaration.symbol
             val pointer = symbol.createPointer()
-            Triple(DebugSymbolRenderer().render(symbol), symbol.render(defaultRenderer), pointer)
+            Triple(DebugSymbolRenderer().render(useSiteSession, symbol), symbol.render(defaultRenderer), pointer)
         }
-        configurator.doOutOfBlockModification(declaration.containingKtFile)
+        configurator.doGlobalModuleStateModification(project)
 
         val (debugRenderedRestored, prettyRenderedRestored) = analyseForTest(restoreAt) {
-            val symbol = pointer.restoreSymbol() as? KtDeclarationSymbol
-            symbol?.let { DebugSymbolRenderer().render(it) } to symbol?.render(defaultRenderer)
+            val symbol = pointer.restoreSymbol() as? KaDeclarationSymbol
+            symbol?.let { DebugSymbolRenderer().render(useSiteSession, it) } to symbol?.render(defaultRenderer)
         }
 
         val actualDebug = prettyPrint {

@@ -1,4 +1,5 @@
-// !OPT_IN: kotlin.RequiresOptIn
+// RUN_PIPELINE_TILL: FRONTEND
+// OPT_IN: kotlin.RequiresOptIn
 import kotlin.contracts.*
 
 @OptIn(ExperimentalContracts::class)

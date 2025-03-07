@@ -7,8 +7,58 @@ package org.jetbrains.kotlin.build.report.metrics
 
 import java.io.Serializable
 
+interface BuildTime : Serializable {
+    fun getReadableString(): String
+
+    fun getParent(): BuildTime?
+
+    fun getAllMetrics(): List<BuildTime>
+
+    fun children(): List<BuildTime>?
+
+    fun getName(): String
+}
+
+
 @Suppress("Reformat")
-enum class BuildTime(val parent: BuildTime? = null, val readableString: String) : Serializable {
+enum class JpsBuildTime(private val parent: JpsBuildTime? = null, private val readableString: String) : BuildTime {
+
+    JPS_ITERATION(readableString = "Jps iteration"),
+        COMPILATION_ROUND(JPS_ITERATION, "Sources compilation round"),
+            COMPILER_PERFORMANCE(COMPILATION_ROUND, readableString = "Compiler time"),
+            COMPILER_INITIALIZATION(COMPILER_PERFORMANCE, "Compiler initialization time"),
+            CODE_ANALYSIS(COMPILER_PERFORMANCE, "Compiler code analysis"),
+            CODE_GENERATION(COMPILER_PERFORMANCE, "Compiler code generation"),
+    ;
+
+    override fun getReadableString(): String = readableString
+    override fun getParent(): BuildTime? = parent
+
+    override fun getAllMetrics(): List<BuildTime> {
+        return entries
+    }
+
+    override fun children(): List<BuildTime>? {
+        return children[this]
+    }
+
+    override fun getName(): String = this.name
+
+    companion object {
+        const val serialVersionUID = 1L
+
+        val children by lazy {
+            entries.filter { it.parent != null }.groupBy { it.parent }
+        }
+    }
+
+}
+
+@Suppress("Reformat")
+enum class GradleBuildTime(private val parent: GradleBuildTime? = null, private val readableString: String) : BuildTime {
+    // We use tabs to organize the hierarchy of metrics,
+    // that's why the formatter is disabled.
+    // @formatter:off
     GRADLE_TASK(readableString = "Total Gradle task time"),
     GRADLE_TASK_PREPARATION(readableString = "Spent time before task action"),
     GRADLE_TASK_ACTION(readableString = "Task action"),
@@ -24,6 +74,9 @@ enum class BuildTime(val parent: BuildTime? = null, val readableString: String) 
             CONNECT_TO_DAEMON(RUN_COMPILATION_IN_WORKER, "Connect to Kotlin daemon"),
             CALCULATE_OUTPUT_SIZE(RUN_COMPILATION_IN_WORKER, "Calculate output size"),
             RUN_COMPILATION(RUN_COMPILATION_IN_WORKER, "Run compilation"),
+                NATIVE_IN_PROCESS(RUN_COMPILATION, "Run native in process"),
+                    RUN_ENTRY_POINT(NATIVE_IN_PROCESS, "Run entry point"),
+                NATIVE_IN_EXECUTOR(RUN_COMPILATION, "Run native in executor"),
                 NON_INCREMENTAL_COMPILATION_IN_PROCESS(RUN_COMPILATION, "Non incremental inprocess compilation"),
                 NON_INCREMENTAL_COMPILATION_OUT_OF_PROCESS(RUN_COMPILATION, "Non incremental out of process compilation"),
                 NON_INCREMENTAL_COMPILATION_DAEMON(RUN_COMPILATION, "Non incremental compilation in daemon"),
@@ -58,14 +111,19 @@ enum class BuildTime(val parent: BuildTime? = null, val readableString: String) 
                         COMPILER_PERFORMANCE(COMPILATION_ROUND, readableString = "Compiler time"),
                             COMPILER_INITIALIZATION(COMPILER_PERFORMANCE, "Compiler initialization time"),
                             CODE_ANALYSIS(COMPILER_PERFORMANCE, "Compiler code analysis"),
+                            TRANSLATION_TO_IR(COMPILER_PERFORMANCE, "Compiler translation to IR"),
                             CODE_GENERATION(COMPILER_PERFORMANCE, "Compiler code generation"),
+                                IR_LOWERING(CODE_GENERATION, "Compiler IR lowering"),
+                                BACKEND(CODE_GENERATION, "Compiler backend"),
                     IC_WRITE_HISTORY_FILE(INCREMENTAL_COMPILATION_DAEMON, "Write history file"),
                     SHRINK_AND_SAVE_CURRENT_CLASSPATH_SNAPSHOT_AFTER_COMPILATION(INCREMENTAL_COMPILATION_DAEMON, "Shrink and save current classpath snapshot after compilation"),
                         INCREMENTAL_SHRINK_CURRENT_CLASSPATH_SNAPSHOT(SHRINK_AND_SAVE_CURRENT_CLASSPATH_SNAPSHOT_AFTER_COMPILATION, "Shrink current classpath snapshot incrementally"),
                             INCREMENTAL_LOAD_CURRENT_CLASSPATH_SNAPSHOT(INCREMENTAL_SHRINK_CURRENT_CLASSPATH_SNAPSHOT, "Load current classpath snapshot"),
+                                INCREMENTAL_REMOVE_DUPLICATE_CLASSES(INCREMENTAL_LOAD_CURRENT_CLASSPATH_SNAPSHOT, "Remove duplicate classes"),
                             INCREMENTAL_LOAD_SHRUNK_CURRENT_CLASSPATH_SNAPSHOT_AGAINST_PREVIOUS_LOOKUPS(INCREMENTAL_SHRINK_CURRENT_CLASSPATH_SNAPSHOT, "Load shrunk current classpath snapshot against previous lookups"),
                         NON_INCREMENTAL_SHRINK_CURRENT_CLASSPATH_SNAPSHOT(SHRINK_AND_SAVE_CURRENT_CLASSPATH_SNAPSHOT_AFTER_COMPILATION, "Shrink current classpath snapshot non-incrementally"),
                             NON_INCREMENTAL_LOAD_CURRENT_CLASSPATH_SNAPSHOT(NON_INCREMENTAL_SHRINK_CURRENT_CLASSPATH_SNAPSHOT, "Load current classpath snapshot"),
+                                NON_INCREMENTAL_REMOVE_DUPLICATE_CLASSES(NON_INCREMENTAL_LOAD_CURRENT_CLASSPATH_SNAPSHOT, "Remove duplicate classes"),
                         SAVE_SHRUNK_CURRENT_CLASSPATH_SNAPSHOT(SHRINK_AND_SAVE_CURRENT_CLASSPATH_SNAPSHOT_AFTER_COMPILATION, "Save shrunk current classpath snapshot"),
     TASK_FINISH_LISTENER_NOTIFICATION(readableString = "Task finish event notification"),
     CLASSPATH_ENTRY_SNAPSHOT_TRANSFORM(readableString = "Classpath entry snapshot transform"),
@@ -74,15 +132,29 @@ enum class BuildTime(val parent: BuildTime? = null, val readableString: String) 
             LOAD_CONTENTS_OF_CLASSES(parent = SNAPSHOT_CLASSES, "Load contents of classes"),
             SNAPSHOT_KOTLIN_CLASSES(parent = SNAPSHOT_CLASSES, "Snapshot Kotlin classes"),
             SNAPSHOT_JAVA_CLASSES(parent = SNAPSHOT_CLASSES, "Snapshot Java classes"),
+            SNAPSHOT_INLINED_CLASSES(parent = SNAPSHOT_CLASSES, "Snapshot inlined classes"),
         SAVE_CLASSPATH_ENTRY_SNAPSHOT(parent = CLASSPATH_ENTRY_SNAPSHOT_TRANSFORM, "Save classpath entry snapshot"),
-
     ;
+    // @formatter:on
+
+    override fun getReadableString(): String = readableString
+    override fun getParent(): BuildTime? = parent
+
+    override fun children(): List<BuildTime>? {
+        return children[this]
+    }
+
+    override fun getAllMetrics(): List<BuildTime> {
+        return entries
+    }
+
+    override fun getName(): String = this.name
 
     companion object {
-        const val serialVersionUID = 0L
+        const val serialVersionUID = 4L
 
         val children by lazy {
-            values().filter { it.parent != null }.groupBy { it.parent }
+            entries.filter { it.parent != null }.groupBy { it.parent }
         }
     }
 }

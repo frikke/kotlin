@@ -21,38 +21,51 @@ package org.jetbrains.kotlin.cli.common
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.util.Disposer
 import org.jetbrains.kotlin.analyzer.CompilationErrorException
-import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY
 import org.jetbrains.kotlin.cli.common.ExitCode.*
-import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
+import org.jetbrains.kotlin.cli.common.arguments.*
 import org.jetbrains.kotlin.cli.common.environment.setIdeaIoUseFallback
 import org.jetbrains.kotlin.cli.common.messages.*
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity.*
+import org.jetbrains.kotlin.cli.jvm.compiler.CompileEnvironmentException
+import org.jetbrains.kotlin.cli.jvm.compiler.setupIdeaStandaloneExecution
 import org.jetbrains.kotlin.cli.jvm.plugins.PluginCliParser
+import org.jetbrains.kotlin.cli.plugins.extractPluginClasspathAndOptions
 import org.jetbrains.kotlin.cli.plugins.processCompilerPluginsOptions
 import org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor
+import org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar
 import org.jetbrains.kotlin.compiler.plugin.ComponentRegistrar
 import org.jetbrains.kotlin.config.*
-import org.jetbrains.kotlin.ir.util.IrMessageLogger
 import org.jetbrains.kotlin.metadata.deserialization.BinaryVersion
+import org.jetbrains.kotlin.platform.TargetPlatform
+import org.jetbrains.kotlin.platform.isCommon
 import org.jetbrains.kotlin.progress.CompilationCanceledException
 import org.jetbrains.kotlin.progress.CompilationCanceledStatus
 import org.jetbrains.kotlin.progress.IncrementalNextRoundException
 import org.jetbrains.kotlin.progress.ProgressIndicatorAndCompilationCanceledStatus
+import org.jetbrains.kotlin.util.CompilerType
+import org.jetbrains.kotlin.util.PerformanceManager
+import org.jetbrains.kotlin.util.PerformanceManagerImpl
+import org.jetbrains.kotlin.util.forEachStringMeasurement
 import org.jetbrains.kotlin.utils.KotlinPaths
 import org.jetbrains.kotlin.utils.PathUtil
 import java.io.File
 import java.io.PrintStream
+import java.net.URL
+import java.net.URLConnection
+import java.util.function.Predicate
+import kotlin.system.exitProcess
 
-abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
-    companion object {
-        const val SCRIPT_PLUGIN_REGISTRAR_NAME =
-            "org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingCompilerConfigurationComponentRegistrar"
-        const val SCRIPT_PLUGIN_COMMANDLINE_PROCESSOR_NAME = "org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingCommandLineProcessor"
+abstract class CLICompiler<A : CommonCompilerArguments> {
+    abstract val platform: TargetPlatform
+
+    open val defaultPerformanceManager: PerformanceManager by lazy {
+        PerformanceManagerImpl(platform, "Kotlin to ${if (platform.isCommon()) "Metadata" else platform.first().platformName} compiler")
     }
 
-    abstract val defaultPerformanceManager: CommonCompilerPerformanceManager
+    var isReadingSettingsFromEnvironmentAllowed: Boolean =
+        this::class.java.classLoader.getResource(LanguageVersionSettings.RESOURCE_NAME_TO_ALLOW_READING_FROM_ENVIRONMENT) != null
 
-    protected open fun createPerformanceManager(arguments: A, services: Services): CommonCompilerPerformanceManager =
+    protected open fun createPerformanceManager(arguments: A, services: Services): PerformanceManager =
         defaultPerformanceManager
 
     // Used in CompilerRunnerUtil#invokeExecMethod, in Eclipse plugin (KotlinCLICompiler) and in kotlin-gradle-plugin (GradleCompilerRunner)
@@ -65,21 +78,31 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
         return exec(errStream, Services.EMPTY, MessageRenderer.PLAIN_FULL_PATHS, args)
     }
 
-    public override fun execImpl(messageCollector: MessageCollector, services: Services, arguments: A): ExitCode {
-        val performanceManager = createPerformanceManager(arguments, services)
+    protected open fun shouldRunK2(messageCollector: MessageCollector, arguments: A): Boolean {
+        val languageVersion = arguments.languageVersion?.let { LanguageVersion.fromVersionString(arguments.languageVersion) }
+            ?: LanguageVersion.LATEST_STABLE
+        return languageVersion.usesK2
+    }
+
+    private fun execImpl(messageCollector: MessageCollector, services: Services, arguments: A): ExitCode {
+        val shouldRunK2 = shouldRunK2(messageCollector, arguments)
+        if (shouldRunK2) {
+            val code = doExecutePhased(arguments, services, messageCollector)
+            if (code != null) return code
+        }
+
+        val performanceManager = createPerformanceManager(arguments, services).apply { compilerType = if (shouldRunK2) CompilerType.K2 else CompilerType.K1 }
         if (arguments.reportPerf || arguments.dumpPerf != null) {
-            performanceManager.enableCollectingPerformanceStatistics()
+            performanceManager.enableExtendedStats()
         }
 
         val configuration = CompilerConfiguration()
 
         configuration.put(CLIConfigurationKeys.ORIGINAL_MESSAGE_COLLECTOR_KEY, messageCollector)
 
-        val collector = GroupingMessageCollector(messageCollector, arguments.allWarningsAsErrors).also {
-            configuration.put(MESSAGE_COLLECTOR_KEY, it)
+        val collector = GroupingMessageCollector(messageCollector, arguments.allWarningsAsErrors, arguments.reportAllWarnings).also {
+            configuration.messageCollector = it
         }
-
-        configuration.put(IrMessageLogger.IR_MESSAGE_LOGGER, IrMessageCollector(collector))
 
         configuration.put(CLIConfigurationKeys.PERF_MANAGER, performanceManager)
         try {
@@ -93,7 +116,7 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
             val canceledStatus = services[CompilationCanceledStatus::class.java]
             ProgressIndicatorAndCompilationCanceledStatus.setCompilationCanceledStatus(canceledStatus)
 
-            val rootDisposable = Disposer.newDisposable()
+            val rootDisposable = Disposer.newDisposable("Disposable for ${CLICompiler::class.simpleName}.execImpl")
             try {
                 setIdeaIoUseFallback()
 
@@ -102,8 +125,8 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
                 performanceManager.notifyCompilationFinished()
                 if (arguments.reportPerf) {
                     collector.report(LOGGING, "PERF: " + performanceManager.getTargetInfo())
-                    for (measurement in performanceManager.getMeasurementResults()) {
-                        collector.report(LOGGING, "PERF: " + measurement.render(), null)
+                    performanceManager.unitStats.forEachStringMeasurement {
+                        collector.report(LOGGING, "PERF: $it", null)
                     }
                 }
 
@@ -124,7 +147,7 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
                     throw e
                 }
             } finally {
-                Disposer.dispose(rootDisposable)
+                disposeRootInWriteAction(rootDisposable)
             }
         } catch (e: CompilationErrorException) {
             return COMPILATION_ERROR
@@ -133,17 +156,6 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
             return if (t is OutOfMemoryError || t.hasOOMCause()) OOM_ERROR else INTERNAL_ERROR
         } finally {
             collector.flush()
-        }
-    }
-
-    private fun Throwable.hasOOMCause(): Boolean = when (cause) {
-        is OutOfMemoryError -> true
-        else -> cause?.hasOOMCause() ?: false
-    }
-
-    private fun MessageCollector.reportCompilationCancelled(e: CompilationCanceledException) {
-        if (e !is IncrementalNextRoundException) {
-            report(INFO, "Compilation was canceled", null)
         }
     }
 
@@ -157,6 +169,27 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
         configuration: CompilerConfiguration, arguments: A, services: Services
     )
 
+    /**
+     * Main method for execution the new phased CLI compiler pipeline
+     * Since the new pipeline is supposed to be implemented only for K2 compiler, it runs only if [shouldRunK2] returns true.
+     *
+     * If this method returns `null` it's an indicator that the phased pipeline for specific [CLICompiler] is not implemented yet,
+     *   so the old pipeline ([doExecute]) will be executed
+     */
+    protected open fun doExecutePhased(
+        arguments: A,
+        services: Services,
+        basicMessageCollector: MessageCollector,
+    ): ExitCode? {
+        return null
+    }
+
+    /**
+     * Main method for execution the old CLI compiler pipeline
+     * It runs for K1 compilation and for cases when the new pipeline is not implemented yet
+     *
+     * This method and its implementations should be dropped together with K1 compiler support
+     */
     protected abstract fun doExecute(
         arguments: A,
         configuration: CompilerConfiguration,
@@ -166,29 +199,41 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
 
     protected abstract fun MutableList<String>.addPlatformOptions(arguments: A)
 
-    protected fun loadPlugins(paths: KotlinPaths?, arguments: A, configuration: CompilerConfiguration): ExitCode {
+    protected fun loadPlugins(
+        paths: KotlinPaths?,
+        arguments: A,
+        configuration: CompilerConfiguration,
+        parentDisposable: Disposable,
+    ): ExitCode {
         val pluginClasspaths = arguments.pluginClasspaths.orEmpty().toMutableList()
         val pluginOptions = arguments.pluginOptions.orEmpty().toMutableList()
         val pluginConfigurations = arguments.pluginConfigurations.orEmpty().toMutableList()
-        val messageCollector = configuration.getNotNull(MESSAGE_COLLECTOR_KEY)
+        val messageCollector = configuration.getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY)
 
         val useK2 = configuration.get(CommonConfigurationKeys.USE_FIR) == true
+
         if (!checkPluginsArguments(messageCollector, useK2, pluginClasspaths, pluginOptions, pluginConfigurations)) {
             return INTERNAL_ERROR
         }
 
+        val scriptingPluginClasspath = mutableListOf<String>()
+        val scriptingPluginOptions = mutableListOf<String>()
+
         if (!arguments.disableDefaultScriptingPlugin) {
-            pluginOptions.addPlatformOptions(arguments)
-            val explicitOrLoadedScriptingPlugin =
-                pluginClasspaths.any { File(it).name.startsWith(PathUtil.KOTLIN_SCRIPTING_COMPILER_PLUGIN_NAME) } ||
-                        tryLoadScriptingPluginFromCurrentClassLoader(configuration, pluginOptions)
+            scriptingPluginOptions.addPlatformOptions(arguments)
+            val explicitScriptingPlugin =
+                extractPluginClasspathAndOptions(pluginConfigurations).any { (_, classpath, _) ->
+                    classpath.any { File(it).name.startsWith(PathUtil.KOTLIN_SCRIPTING_COMPILER_PLUGIN_NAME) }
+                } || pluginClasspaths.any { File(it).name.startsWith(PathUtil.KOTLIN_SCRIPTING_COMPILER_PLUGIN_NAME) }
+            val explicitOrLoadedScriptingPlugin = explicitScriptingPlugin ||
+                    tryLoadScriptingPluginFromCurrentClassLoader(configuration, pluginOptions, useK2)
             if (!explicitOrLoadedScriptingPlugin) {
                 val kotlinPaths = paths ?: PathUtil.kotlinPathsForCompiler
                 val libPath = kotlinPaths.libPath.takeIf { it.exists() && it.isDirectory } ?: File(".")
                 val (jars, missingJars) =
                     PathUtil.KOTLIN_SCRIPTING_PLUGIN_CLASSPATH_JARS.map { File(libPath, it) }.partition { it.exists() }
                 if (missingJars.isEmpty()) {
-                    pluginClasspaths.addAll(0, jars.map { it.canonicalPath })
+                    scriptingPluginClasspath.addAll(0, jars.map { it.canonicalPath })
                 } else {
                     messageCollector.report(
                         LOGGING,
@@ -197,31 +242,198 @@ abstract class CLICompiler<A : CommonCompilerArguments> : CLITool<A>() {
                 }
             }
         } else {
-            pluginOptions.add("plugin:kotlin.scripting:disable=true")
+            scriptingPluginOptions.add("plugin:kotlin.scripting:disable=true")
         }
-        return PluginCliParser.loadPluginsSafe(pluginClasspaths, pluginOptions, pluginConfigurations, configuration)
+
+        pluginClasspaths.addAll(scriptingPluginClasspath)
+        pluginOptions.addAll(scriptingPluginOptions)
+
+        return PluginCliParser.loadPluginsSafe(pluginClasspaths, pluginOptions, pluginConfigurations, configuration, parentDisposable)
     }
 
-    private fun tryLoadScriptingPluginFromCurrentClassLoader(configuration: CompilerConfiguration, pluginOptions: List<String>): Boolean =
+    private fun tryLoadScriptingPluginFromCurrentClassLoader(
+        configuration: CompilerConfiguration,
+        pluginOptions: List<String>,
+        useK2: Boolean
+    ): Boolean =
         try {
             val pluginRegistrarClass = PluginCliParser::class.java.classLoader.loadClass(SCRIPT_PLUGIN_REGISTRAR_NAME)
-            val pluginRegistrar = pluginRegistrarClass.getDeclaredConstructor().newInstance() as? ComponentRegistrar
-            if (pluginRegistrar != null) {
-                val cmdlineProcessorClass =
-                    if (pluginOptions.isEmpty()) null
-                    else PluginCliParser::class.java.classLoader.loadClass(SCRIPT_PLUGIN_COMMANDLINE_PROCESSOR_NAME)!!
-                val cmdlineProcessor = cmdlineProcessorClass?.getDeclaredConstructor()?.newInstance() as? CommandLineProcessor
-                configuration.add(ComponentRegistrar.PLUGIN_COMPONENT_REGISTRARS, pluginRegistrar)
-                if (cmdlineProcessor != null) {
-                    processCompilerPluginsOptions(configuration, pluginOptions, listOf(cmdlineProcessor))
+            val pluginRegistrar = (pluginRegistrarClass.getDeclaredConstructor().newInstance() as? ComponentRegistrar)?.also {
+                configuration.add(ComponentRegistrar.PLUGIN_COMPONENT_REGISTRARS, it)
+            }
+            val pluginK2Registrar = if (useK2) {
+                val pluginK2RegistrarClass = PluginCliParser::class.java.classLoader.loadClass(SCRIPT_PLUGIN_K2_REGISTRAR_NAME)
+                (pluginK2RegistrarClass.getDeclaredConstructor().newInstance() as? CompilerPluginRegistrar)?.also {
+                    configuration.add(CompilerPluginRegistrar.COMPILER_PLUGIN_REGISTRARS, it)
                 }
+            } else null
+            if (pluginRegistrar != null || pluginK2Registrar != null) {
+                processScriptPluginCliOptions(pluginOptions, configuration)
                 true
             } else false
         } catch (e: Throwable) {
-            val messageCollector = configuration.getNotNull(MESSAGE_COLLECTOR_KEY)
+            val messageCollector = configuration.getNotNull(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY)
             messageCollector.report(LOGGING, "Exception on loading scripting plugin: $e")
             false
         }
+
+    private fun processScriptPluginCliOptions(pluginOptions: List<String>, configuration: CompilerConfiguration) {
+        val cmdlineProcessorClass =
+            if (pluginOptions.isEmpty()) null
+            else PluginCliParser::class.java.classLoader.loadClass(SCRIPT_PLUGIN_COMMANDLINE_PROCESSOR_NAME)!!
+        val cmdlineProcessor = cmdlineProcessorClass?.getDeclaredConstructor()?.newInstance() as? CommandLineProcessor
+        if (cmdlineProcessor != null) {
+            processCompilerPluginsOptions(configuration, pluginOptions, listOf(cmdlineProcessor))
+        }
+    }
+
+    fun exec(errStream: PrintStream, vararg args: String): ExitCode =
+        exec(errStream, Services.EMPTY, defaultMessageRenderer(), args)
+
+    fun exec(errStream: PrintStream, messageRenderer: MessageRenderer, vararg args: String): ExitCode =
+        exec(errStream, Services.EMPTY, messageRenderer, args)
+
+    protected fun exec(
+        errStream: PrintStream,
+        services: Services,
+        messageRenderer: MessageRenderer,
+        args: Array<out String>
+    ): ExitCode {
+        val arguments = createArguments()
+        parseCommandLineArguments(args.asList(), arguments)
+
+        if (isReadingSettingsFromEnvironmentAllowed) {
+            parseCommandLineArgumentsFromEnvironment(arguments)
+        }
+
+        val collector = PrintingMessageCollector(errStream, messageRenderer, arguments.verbose)
+
+        try {
+            if (messageRenderer is PlainTextMessageRenderer) {
+                messageRenderer.enableColorsIfNeeded()
+            }
+
+            errStream.print(messageRenderer.renderPreamble())
+
+            val errorMessage = validateArguments(arguments.errors)
+            if (errorMessage != null) {
+                collector.report(ERROR, errorMessage, null)
+                collector.report(INFO, "Use -help for more information", null)
+                return COMPILATION_ERROR
+            }
+
+            if (arguments.help || arguments.extraHelp) {
+                errStream.print(messageRenderer.renderUsage(Usage.render(this, arguments)))
+                return OK
+            }
+
+            return exec(collector, services, arguments)
+        } finally {
+            errStream.print(messageRenderer.renderConclusion())
+
+            if (messageRenderer is PlainTextMessageRenderer) {
+                messageRenderer.disableColorsIfNeeded()
+            }
+        }
+    }
+
+    fun exec(messageCollector: MessageCollector, services: Services, arguments: A): ExitCode {
+        disableURLConnectionCaches()
+
+        printVersionIfNeeded(messageCollector, arguments)
+
+        val fixedMessageCollector = if (arguments.suppressWarnings && !arguments.allWarningsAsErrors) {
+            FilteringMessageCollector(messageCollector, Predicate.isEqual(WARNING))
+        } else {
+            messageCollector
+        }
+
+        fixedMessageCollector.reportArgumentParseProblems(arguments)
+        return execImpl(fixedMessageCollector, services, arguments)
+    }
+
+    private fun disableURLConnectionCaches() {
+        // We disable caches to avoid problems with compiler under daemon, see https://youtrack.jetbrains.com/issue/KT-22513
+        // For some inexplicable reason, URLConnection.setDefaultUseCaches is an instance method modifying a static field,
+        // so we have to create a dummy instance to call that method
+
+        object : URLConnection(URL("file:.")) {
+            override fun connect() = throw UnsupportedOperationException()
+        }.defaultUseCaches = false
+    }
+
+    abstract fun createArguments(): A
+
+    // Used in kotlin-maven-plugin (KotlinCompileMojoBase) and in kotlin-gradle-plugin (KotlinJvmOptionsImpl, KotlinJsOptionsImpl)
+    fun parseArguments(args: Array<out String>, arguments: A) {
+        parseCommandLineArguments(args.asList(), arguments)
+        val message = validateArguments(arguments.errors)
+        if (message != null) {
+            throw IllegalArgumentException(message)
+        }
+    }
+
+    private fun <A : CommonToolArguments> printVersionIfNeeded(messageCollector: MessageCollector, arguments: A) {
+        if (arguments.version) {
+            val jreVersion = System.getProperty("java.runtime.version")
+            messageCollector.report(INFO, "${executableScriptFileName()} ${KotlinCompilerVersion.VERSION} (JRE $jreVersion)")
+        }
+    }
+
+    abstract fun executableScriptFileName(): String
+
+    companion object {
+        const val SCRIPT_PLUGIN_REGISTRAR_NAME =
+            "org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingCompilerConfigurationComponentRegistrar"
+        const val SCRIPT_PLUGIN_COMMANDLINE_PROCESSOR_NAME = "org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingCommandLineProcessor"
+        const val SCRIPT_PLUGIN_K2_REGISTRAR_NAME =
+            "org.jetbrains.kotlin.scripting.compiler.plugin.ScriptingK2CompilerPluginRegistrar"
+
+        private fun defaultMessageRenderer(): MessageRenderer =
+            when (System.getProperty(MessageRenderer.PROPERTY_KEY)) {
+                MessageRenderer.XML.name -> MessageRenderer.XML
+                MessageRenderer.GRADLE_STYLE.name -> MessageRenderer.GRADLE_STYLE
+                MessageRenderer.XCODE_STYLE.name -> MessageRenderer.XCODE_STYLE
+                MessageRenderer.WITHOUT_PATHS.name -> MessageRenderer.WITHOUT_PATHS
+                MessageRenderer.PLAIN_FULL_PATHS.name -> MessageRenderer.PLAIN_FULL_PATHS
+                else -> MessageRenderer.PLAIN_RELATIVE_PATHS
+            }
+
+        /**
+         * Useful main for derived command line tools
+         */
+        @JvmStatic
+        fun doMain(compiler: CLICompiler<*>, args: Array<String>) {
+            // We depend on swing (indirectly through PSI or something), so we want to declare headless mode,
+            // to avoid accidentally starting the UI thread
+            if (System.getProperty("java.awt.headless") == null) {
+                System.setProperty("java.awt.headless", "true")
+            }
+            if (CompilerSystemProperties.KOTLIN_COLORS_ENABLED_PROPERTY.value == null) {
+                CompilerSystemProperties.KOTLIN_COLORS_ENABLED_PROPERTY.value = "true"
+            }
+
+            setupIdeaStandaloneExecution()
+
+            val exitCode = doMainNoExit(compiler, args)
+            if (exitCode != ExitCode.OK) {
+                exitProcess(exitCode.code)
+            }
+        }
+
+        @JvmStatic
+        @JvmOverloads
+        fun doMainNoExit(
+            compiler: CLICompiler<*>,
+            args: Array<String>,
+            messageRenderer: MessageRenderer = defaultMessageRenderer()
+        ): ExitCode = try {
+            compiler.exec(System.err, messageRenderer, *args)
+        } catch (e: CompileEnvironmentException) {
+            System.err.println(e.message)
+            INTERNAL_ERROR
+        }
+    }
 }
 
 fun checkPluginsArguments(
@@ -229,7 +441,7 @@ fun checkPluginsArguments(
     useK2: Boolean,
     pluginClasspaths: List<String>,
     pluginOptions: List<String>,
-    pluginConfigurations: MutableList<String>
+    pluginConfigurations: List<String>
 ): Boolean {
     var hasErrors = false
 
@@ -270,3 +482,13 @@ fun checkPluginsArguments(
     return !hasErrors
 }
 
+fun Throwable.hasOOMCause(): Boolean = when (cause) {
+    is OutOfMemoryError -> true
+    else -> cause?.hasOOMCause() ?: false
+}
+
+fun MessageCollector.reportCompilationCancelled(e: CompilationCanceledException) {
+    if (e !is IncrementalNextRoundException) {
+        report(INFO, "Compilation was canceled", null)
+    }
+}

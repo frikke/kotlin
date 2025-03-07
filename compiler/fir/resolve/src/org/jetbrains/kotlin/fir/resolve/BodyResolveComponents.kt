@@ -5,10 +5,10 @@
 
 package org.jetbrains.kotlin.fir.resolve
 
-import org.jetbrains.kotlin.fir.FirCallResolver
+import org.jetbrains.kotlin.fir.resolve.calls.FirCallResolver
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.*
-import org.jetbrains.kotlin.fir.resolve.calls.ResolutionStageRunner
+import org.jetbrains.kotlin.fir.resolve.calls.stages.ResolutionStageRunner
 import org.jetbrains.kotlin.fir.resolve.dfa.FirDataFlowAnalyzer
 import org.jetbrains.kotlin.fir.resolve.inference.FirCallCompleter
 import org.jetbrains.kotlin.fir.resolve.providers.FirSymbolProvider
@@ -26,7 +26,7 @@ data class SessionHolderImpl(override val session: FirSession, override val scop
 
 abstract class BodyResolveComponents : SessionHolder {
     abstract val returnTypeCalculator: ReturnTypeCalculator
-    abstract val implicitReceiverStack: ImplicitReceiverStack
+    abstract val implicitValueStorage: ImplicitValueStorage
     abstract val containingDeclarations: List<FirDeclaration>
     abstract val fileImportsScope: List<FirScope>
     abstract val towerDataElements: List<FirTowerDataElement>

@@ -1,6 +1,7 @@
-// !LANGUAGE: +AllowContractsForCustomFunctions +UseReturnsEffect +AllowContractsForNonOverridableMembers
-// !OPT_IN: kotlin.contracts.ExperimentalContracts
-// !DIAGNOSTICS: -INVISIBLE_REFERENCE -INVISIBLE_MEMBER -SENSELESS_COMPARISON
+// RUN_PIPELINE_TILL: FRONTEND
+// LANGUAGE: +AllowContractsForCustomFunctions +UseReturnsEffect +AllowContractsForNonOverridableMembers
+// OPT_IN: kotlin.contracts.ExperimentalContracts
+// DIAGNOSTICS: -INVISIBLE_REFERENCE -INVISIBLE_MEMBER -SENSELESS_COMPARISON
 
 import kotlin.contracts.*
 
@@ -16,25 +17,25 @@ class Foo {
 
         fun badOuter() {
             contract {
-                <!ERROR_IN_CONTRACT_DESCRIPTION!>returns() implies (this@Foo != null)<!>
+                <!ERROR_IN_CONTRACT_DESCRIPTION("'this' can only be a qualified reference to the extension receiver of contract owner.")!>returns() implies (this@Foo != null)<!>
             }
         }
 
         fun badInner() {
             contract {
-                <!ERROR_IN_CONTRACT_DESCRIPTION!>returns() implies (this != null)<!>
+                <!ERROR_IN_CONTRACT_DESCRIPTION("'this' can only be a qualified reference to the extension receiver of contract owner.")!>returns() implies (this != null)<!>
             }
         }
 
         fun A?.goodWithReceiver() {
-            <!WRONG_IMPLIES_CONDITION!>contract {
+            contract {
                 returns() implies (this@goodWithReceiver != null)
-            }<!>
+            }
         }
 
         fun A?.badWithReceiver() {
             contract {
-                <!ERROR_IN_CONTRACT_DESCRIPTION!>returns() implies (this@Bar != null)<!>
+                <!ERROR_IN_CONTRACT_DESCRIPTION("'this' can only be a qualified reference to the extension receiver of contract owner.")!>returns() implies (this@Bar != null)<!>
             }
         }
     }

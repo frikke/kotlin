@@ -1,11 +1,12 @@
+// IGNORE_FIR_DIAGNOSTICS
+// RUN_PIPELINE_TILL: FIR2IR
 // MODULE: common
-// TARGET_PLATFORM: Common
 
 expect fun parameterCount()
 fun parameterCount(p: String) {}
 
-<!NO_ACTUAL_FOR_EXPECT{JVM}!>expect fun parameterCount2()<!>
-<!ACTUAL_WITHOUT_EXPECT!>actual fun parameterCount2(p: String) {}<!>
+<!NO_ACTUAL_FOR_EXPECT{JVM}!>expect<!> fun parameterCount2()
+actual fun <!ACTUAL_WITHOUT_EXPECT, ACTUAL_WITHOUT_EXPECT{METADATA}!>parameterCount2<!>(p: String) {}
 
 expect fun callableKind(): Int
 val callableKind: Int = 1
@@ -13,12 +14,12 @@ val callableKind: Int = 1
 expect fun <T> typeParameterCount()
 fun typeParameterCount() {}
 
-<!NO_ACTUAL_FOR_EXPECT{JVM}!>expect enum class EnumEntries {
+<!NO_ACTUAL_FOR_EXPECT{JVM}!>expect<!> enum class <!EXPECT_AND_ACTUAL_IN_THE_SAME_MODULE, EXPECT_AND_ACTUAL_IN_THE_SAME_MODULE{METADATA}!>EnumEntries<!> {
     ONE, TWO;
-}<!>
-<!ACTUAL_WITHOUT_EXPECT!>actual enum class EnumEntries {
+}
+actual enum class <!ACTUAL_WITHOUT_EXPECT, ACTUAL_WITHOUT_EXPECT{METADATA}, EXPECT_AND_ACTUAL_IN_THE_SAME_MODULE, EXPECT_AND_ACTUAL_IN_THE_SAME_MODULE{METADATA}!>EnumEntries<!> {
     ONE;
-}<!>
+}
 
 expect fun vararg(bar: Int)
 fun vararg(vararg bar: Int) = Unit

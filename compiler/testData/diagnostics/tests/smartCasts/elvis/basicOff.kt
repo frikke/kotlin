@@ -1,5 +1,4 @@
-// !LANGUAGE: -BooleanElvisBoundSmartCasts
-
+// RUN_PIPELINE_TILL: BACKEND
 interface Order {
     val expired: Boolean?
 

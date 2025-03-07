@@ -6,19 +6,22 @@
 package org.jetbrains.kotlin.psi2ir.generators.fragments
 
 import org.jetbrains.kotlin.ir.PsiIrFileEntry
+import org.jetbrains.kotlin.ir.declarations.DescriptorMetadataSource
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.impl.IrFileImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrModuleFragmentImpl
 import org.jetbrains.kotlin.ir.util.patchDeclarationParents
 import org.jetbrains.kotlin.psi.KtBlockCodeFragment
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi2ir.generators.*
+import org.jetbrains.kotlin.psi2ir.generators.DeclarationGenerator
+import org.jetbrains.kotlin.psi2ir.generators.GeneratorContext
+import org.jetbrains.kotlin.psi2ir.generators.ModuleGenerator
 import org.jetbrains.kotlin.resolve.lazy.descriptors.findPackageFragmentForFile
 
 class FragmentModuleGenerator(
     override val context: GeneratorContext,
     private val fragmentInfo: EvaluatorFragmentInfo
-) : ModuleGenerator(context, expectDescriptorToSymbol = null) {
+) : ModuleGenerator(context) {
 
     override fun generateModuleFragment(
         ktFiles: Collection<KtFile>,
@@ -26,12 +29,12 @@ class FragmentModuleGenerator(
         assert(ktFiles.singleOrNull { it is KtBlockCodeFragment} != null) {
             "Amongst all files passed to the FragmentModuleGenerator should be exactly one KtBlockCodeFragment"
         }
-        return IrModuleFragmentImpl(context.moduleDescriptor, context.irBuiltIns).also { irModule ->
+        return IrModuleFragmentImpl(context.moduleDescriptor).also { irModule ->
             val irDeclarationGenerator = FragmentDeclarationGenerator(context, fragmentInfo)
             ktFiles.forEach { ktFile ->
                 irModule.files.add(
                     if (ktFile is KtBlockCodeFragment) {
-                        createEmptyIrFile(ktFile).apply {
+                        createEmptyIrFile(ktFile, irModule).apply {
                             declarations.add(
                                 irDeclarationGenerator.generateClassForCodeFragment(ktFile)
                             )
@@ -61,9 +64,11 @@ class FragmentModuleGenerator(
         }
     }
 
-    private fun createEmptyIrFile(ktFile: KtFile): IrFileImpl {
+    private fun createEmptyIrFile(ktFile: KtFile, irModule: IrModuleFragment): IrFileImpl {
         val fileEntry = PsiIrFileEntry(ktFile)
         val packageFragmentDescriptor = context.moduleDescriptor.findPackageFragmentForFile(ktFile)!!
-        return IrFileImpl(fileEntry, packageFragmentDescriptor)
+        return IrFileImpl(fileEntry, packageFragmentDescriptor, irModule).apply {
+            metadata = DescriptorMetadataSource.CodeFragment()
+        }
     }
 }

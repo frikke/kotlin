@@ -47,7 +47,7 @@ internal abstract class KPropertyImpl<out V> private constructor(
     val boundReceiver
         get() = rawBoundReceiver.coerceToExpectedReceiverType(descriptor)
 
-    override val isBound: Boolean get() = rawBoundReceiver != CallableReference.NO_RECEIVER
+    override val isBound: Boolean get() = rawBoundReceiver !== CallableReference.NO_RECEIVER
 
     private val _javaField = lazy(PUBLICATION) {
         when (val jvmSignature = RuntimeTypeMapper.mapPropertySignature(descriptor)) {
@@ -289,7 +289,7 @@ private fun KPropertyImpl.Accessor<*, *>.computeCallerForAccessor(isGetter: Bool
                     if (isBound) CallerImpl.Method.BoundJvmStaticInObject(accessor)
                     else CallerImpl.Method.JvmStaticInObject(accessor)
                 else ->
-                    if (isBound) CallerImpl.Method.BoundStatic(accessor, boundReceiver)
+                    if (isBound) CallerImpl.Method.BoundStatic(accessor, isCallByToValueClassMangledMethod = false, boundReceiver)
                     else CallerImpl.Method.Static(accessor)
             }
         }

@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.util.getPropertyGetter
 import org.jetbrains.kotlin.ir.util.getSimpleFunction
+import org.jetbrains.kotlin.ir.util.hasShape
 
 class PrimitiveContainerMemberCallTransformer(private val context: JsIrBackendContext) : CallsTransformer {
     private val intrinsics = context.intrinsics
@@ -22,15 +23,15 @@ class PrimitiveContainerMemberCallTransformer(private val context: JsIrBackendCo
     init {
         symbolToTransformer.run {
             // Arrays
-            add(context.intrinsics.array.sizeProperty, context.intrinsics.jsArrayLength, true)
-            add(context.intrinsics.array.getFunction, context.intrinsics.jsArrayGet, true)
-            add(context.intrinsics.array.setFunction, context.intrinsics.jsArraySet, true)
-            add(context.intrinsics.array.iterator, context.intrinsics.jsArrayIteratorFunction, true)
+            add(context.intrinsics.array.sizeProperty, context.intrinsics.jsArrayLength)
+            add(context.intrinsics.array.getFunction, context.intrinsics.jsArrayGet)
+            add(context.intrinsics.array.setFunction, context.intrinsics.jsArraySet)
+            add(context.intrinsics.array.iterator, context.intrinsics.jsArrayIteratorFunction)
             for ((key, elementType) in context.intrinsics.primitiveArrays) {
-                add(key.sizeProperty, context.intrinsics.jsArrayLength, true)
-                add(key.getFunction, context.intrinsics.jsArrayGet, true)
-                add(key.setFunction, context.intrinsics.jsArraySet, true)
-                add(key.iterator, context.intrinsics.jsPrimitiveArrayIteratorFunctions[elementType]!!, true)
+                add(key.sizeProperty, context.intrinsics.jsArrayLength)
+                add(key.getFunction, context.intrinsics.jsArrayGet)
+                add(key.setFunction, context.intrinsics.jsArraySet)
+                add(key.iterator, context.intrinsics.jsPrimitiveArrayIteratorFunctions[elementType]!!)
 
                 // TODO irCall?
                 add(key.sizeConstructor) { call ->
@@ -39,21 +40,20 @@ class PrimitiveContainerMemberCallTransformer(private val context: JsIrBackendCo
                         call.endOffset,
                         call.type,
                         context.intrinsics.primitiveToSizeConstructor[elementType]!!,
-                        typeArgumentsCount = 0,
-                        valueArgumentsCount = 1
+                        typeArgumentsCount = 0
                     ).apply {
-                        putValueArgument(0, call.getValueArgument(0))
+                        arguments[0] = call.arguments[0]
                     }
                 }
             }
 
-            add(context.irBuiltIns.stringClass.hashCodeFunction, intrinsics.jsGetStringHashCode, true)
-            add(context.irBuiltIns.stringClass.lengthProperty, context.intrinsics.jsArrayLength, true)
-            add(context.irBuiltIns.stringClass.getFunction, intrinsics.jsCharSequenceGet, true)
-            add(context.irBuiltIns.stringClass.subSequence, intrinsics.jsCharSequenceSubSequence, true)
-            add(intrinsics.charSequenceLengthPropertyGetterSymbol, intrinsics.jsCharSequenceLength, true)
-            add(intrinsics.charSequenceGetFunctionSymbol, intrinsics.jsCharSequenceGet, true)
-            add(intrinsics.charSequenceSubSequenceFunctionSymbol, intrinsics.jsCharSequenceSubSequence, true)
+            add(context.irBuiltIns.stringClass.hashCodeFunction, intrinsics.jsGetStringHashCode)
+            add(context.irBuiltIns.stringClass.lengthProperty, context.intrinsics.jsArrayLength)
+            add(context.irBuiltIns.stringClass.getFunction, intrinsics.jsCharCodeAt)
+            add(context.irBuiltIns.stringClass.subSequence, context.symbols.subStringFunction)
+            add(intrinsics.charSequenceLengthPropertyGetterSymbol, intrinsics.jsCharSequenceLength)
+            add(intrinsics.charSequenceGetFunctionSymbol, intrinsics.jsCharSequenceGet)
+            add(intrinsics.charSequenceSubSequenceFunctionSymbol, intrinsics.jsCharSequenceSubSequence)
             add(context.irBuiltIns.dataClassArrayMemberHashCodeSymbol, context.intrinsics.jsHashCode)
             add(context.irBuiltIns.dataClassArrayMemberToStringSymbol, context.intrinsics.jsToString)
         }
@@ -82,7 +82,7 @@ private val IrClassSymbol.iterator
     get() = getSimpleFunction("iterator")!!
 
 private val IrClassSymbol.sizeConstructor
-    get() = owner.declarations.asSequence().filterIsInstance<IrConstructor>().first { it.valueParameters.size == 1 }.symbol
+    get() = owner.declarations.asSequence().filterIsInstance<IrConstructor>().first { it.hasShape(regularParameters = 1) }.symbol
 
 private val IrClassSymbol.lengthProperty
     get() = getPropertyGetter("length")!!

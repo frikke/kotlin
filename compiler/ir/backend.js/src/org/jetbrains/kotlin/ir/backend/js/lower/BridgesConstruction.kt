@@ -23,6 +23,7 @@ import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.classifierOrNull
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.utils.memoryOptimizedPlus
+import org.jetbrains.kotlin.utils.toSmartList
 
 /**
  * Constructs bridges for inherited generic functions
@@ -143,12 +144,14 @@ abstract class BridgesConstruction<T : JsCommonBackendContext>(val context: T) :
             parent = function.parent
             copyTypeParametersFrom(bridge)
             val substitutionMap = makeTypeParameterSubstitutionMap(bridge, this)
-            copyReceiverParametersFrom(bridge, substitutionMap)
             copyValueParametersFrom(bridge, substitutionMap)
             annotations = annotations memoryOptimizedPlus bridge.annotations
             // the js function signature building process (jsFunctionSignature()) uses dfs throught overriddenSymbols for getting js name,
             // therefore it is very important to put bridge symbol at the beginning, it allows to get correct js function name
-            overriddenSymbols = overriddenSymbols memoryOptimizedPlus bridge.symbol memoryOptimizedPlus delegateTo.overriddenSymbols
+            overriddenSymbols = mutableSetOf(bridge.symbol).also {
+                it.addAll(overriddenSymbols)
+                it.addAll(delegateTo.overriddenSymbols)
+            }.toSmartList()
         }
 
         irFunction.body = context.irFactory.createBlockBody(UNDEFINED_OFFSET, UNDEFINED_OFFSET) {
@@ -195,14 +198,11 @@ abstract class BridgesConstruction<T : JsCommonBackendContext>(val context: T) :
      * The rest parameters are expected to be obtained later using the `arguments` object in JS.
      */
     private fun IrSimpleFunction.copyValueParametersFrom(bridge: IrSimpleFunction, substitutionMap: Map<IrTypeParameterSymbol, IrType>) {
-        var valueParametersToCopy = bridge.valueParameters
+        var valueParametersToCopy = bridge.parameters
         if (bridge.isEffectivelyExternal()) {
-            val varargIndex = bridge.varargParameterIndex()
-            if (varargIndex != -1) {
-                valueParametersToCopy = bridge.valueParameters.take(varargIndex)
-            }
+            valueParametersToCopy = valueParametersToCopy.takeWhile { it.varargElementType == null }
         }
-        valueParameters = valueParameters memoryOptimizedPlus valueParametersToCopy.map { p -> p.copyTo(this, type = p.type.substitute(substitutionMap)) }
+        parameters = parameters memoryOptimizedPlus valueParametersToCopy.map { p -> p.copyTo(this, type = p.type.substitute(substitutionMap)) }
     }
 
     abstract fun getBridgeOrigin(bridge: IrSimpleFunction): IrDeclarationOrigin
@@ -243,4 +243,10 @@ data class IrBasedFunctionHandle(val function: IrSimpleFunction) : FunctionHandl
 
     override fun getOverridden() =
         function.overriddenSymbols.map { IrBasedFunctionHandle(it.owner) }
+}
+
+private fun IrSimpleFunction.findInterfaceImplementation(): IrSimpleFunction? {
+    if (isReal) return null
+
+    return resolveFakeOverride()?.run { if (parentAsClass.isInterface) this else null }
 }

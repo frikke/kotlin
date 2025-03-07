@@ -7,6 +7,7 @@ package org.jetbrains.kotlin.ir.declarations.lazy
 
 import org.jetbrains.kotlin.descriptors.ClassConstructorDescriptor
 import org.jetbrains.kotlin.descriptors.DescriptorVisibility
+import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.ObsoleteDescriptorBasedAPI
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrBody
@@ -22,8 +23,8 @@ import org.jetbrains.kotlin.serialization.deserialization.descriptors.Deserializ
 
 @OptIn(ObsoleteDescriptorBasedAPI::class)
 class IrLazyConstructor(
-    override val startOffset: Int,
-    override val endOffset: Int,
+    override var startOffset: Int,
+    override var endOffset: Int,
     override var origin: IrDeclarationOrigin,
     override val symbol: IrConstructorSymbol,
     override val descriptor: ClassConstructorDescriptor,
@@ -36,7 +37,9 @@ class IrLazyConstructor(
     override val stubGenerator: DeclarationStubGenerator,
     override val typeTranslator: TypeTranslator,
 ) : IrConstructor(), IrLazyFunctionBase {
-    override var parent: IrDeclarationParent by createLazyParent()
+    init {
+        this.contextReceiverParametersCount = descriptor.contextReceiverParameters.size
+    }
 
     override var annotations: List<IrConstructorCall> by createLazyAnnotations()
 
@@ -45,18 +48,6 @@ class IrLazyConstructor(
     override var returnType: IrType by lazyVar(stubGenerator.lock) { createReturnType() }
 
     override val initialSignatureFunction: IrFunction? by createInitialSignatureFunction()
-
-    override var dispatchReceiverParameter: IrValueParameter? by lazyVar(stubGenerator.lock) {
-        createReceiverParameter(descriptor.dispatchReceiverParameter)
-    }
-
-    override var extensionReceiverParameter: IrValueParameter? by lazyVar(stubGenerator.lock) {
-        createReceiverParameter(descriptor.extensionReceiverParameter)
-    }
-
-    override var valueParameters: List<IrValueParameter> by lazyVar(stubGenerator.lock) { createValueParameters() }
-
-    override var contextReceiverParametersCount: Int = descriptor.contextReceiverParameters.size
 
     override var metadata: MetadataSource?
         get() = null
@@ -73,6 +64,8 @@ class IrLazyConstructor(
             }
         }
     }
+
+    override var attributeOwnerId: IrElement = this
 
     override val containerSource: DeserializedContainerSource?
         get() = (descriptor as? DescriptorWithContainerSource)?.containerSource

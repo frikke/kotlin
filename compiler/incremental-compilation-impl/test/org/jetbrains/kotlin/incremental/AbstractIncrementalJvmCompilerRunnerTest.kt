@@ -21,6 +21,8 @@ import org.jetbrains.kotlin.build.report.metrics.DoNothingBuildMetricsReporter
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import org.jetbrains.kotlin.cli.common.messages.MessageCollectorImpl
+import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.incremental.multiproject.EmptyModulesApiHistory
 import org.jetbrains.kotlin.incremental.utils.*
 import org.jetbrains.kotlin.test.util.KtTestUtil
@@ -31,7 +33,7 @@ import javax.tools.ToolProvider
 abstract class AbstractIncrementalJvmCompilerRunnerTest : AbstractIncrementalCompilerRunnerTestBase<K2JVMCompilerArguments>() {
     override fun make(cacheDir: File, outDir: File, sourceRoots: Iterable<File>, args: K2JVMCompilerArguments): TestCompilationResult {
         val reporter = TestICReporter()
-        val messageCollector = TestMessageCollector()
+        val messageCollector = MessageCollectorImpl()
         val testLookupTracker = TestLookupTracker(lookupsDuringTest)
 
         makeIncrementallyForTests(
@@ -72,33 +74,38 @@ abstract class AbstractIncrementalJvmCompilerRunnerTest : AbstractIncrementalCom
         val buildReporter = TestBuildReporter(testICReporter = reporter, buildMetricsReporter = DoNothingBuildMetricsReporter)
 
         withIncrementalCompilation(args) {
+            val k2Mode = (args.languageVersion ?: LanguageVersion.LATEST_STABLE.versionString) >= LanguageVersion.KOTLIN_2_0.versionString
+
             val compiler =
-                if (args.useK2 && args.useFirIC && args.useFirLT /* TODO by @Ilya.Chernikov: move LT check into runner */)
+                if (k2Mode && args.useFirIC && args.useFirLT /* TODO by @Ilya.Chernikov: move LT check into runner */) {
+                    val snapshotsDir = File(workingDir, "classpath-snapshots").apply { mkdirs() }
+
                     IncrementalFirJvmCompilerTestRunner(
                         cachesDir,
                         buildReporter,
-                        buildHistoryFile,
                         outputDirs = null,
-                        EmptyModulesApiHistory,
+                        makeEmptyClasspathChangesForSingleModuleTests(snapshotsDir),
                         kotlinExtensions,
-                        ClasspathChanges.ClasspathSnapshotDisabled,
-                        testLookupTracker
+                        testLookupTracker = testLookupTracker
                     )
-                else
+                } else {
+                    val verifiedPreciseJavaTracking = args.disablePreciseJavaTrackingIfK2(usePreciseJavaTrackingByDefault = true)
                     IncrementalJvmCompilerTestRunner(
                         cachesDir,
                         buildReporter,
-                        // Use precise setting in case of non-Gradle build
-                        usePreciseJavaTracking = !args.useK2, // TODO by @Ilya.Chernikov: add fir-based java classes tracker when available and set this to true
                         buildHistoryFile = buildHistoryFile,
                         outputDirs = null,
                         modulesApiHistory = EmptyModulesApiHistory,
                         kotlinSourceFilesExtensions = kotlinExtensions,
-                        classpathChanges = ClasspathChanges.ClasspathSnapshotDisabled,
+                        icFeatures = IncrementalCompilationFeatures(
+                            withAbiSnapshot = false,
+                            usePreciseJavaTracking = verifiedPreciseJavaTracking
+                        ),
                         testLookupTracker = testLookupTracker
                     )
+                }
             //TODO by @Ilya.Chernikov: set properly
-            compiler.compile(sourceFiles, args, messageCollector, changedFiles = null)
+            compiler.compile(sourceFiles, args, messageCollector, changedFiles = ChangedFiles.DeterminableFiles.ToBeComputed)
         }
     }
 
@@ -118,8 +125,8 @@ abstract class AbstractIncrementalJvmCompilerRunnerTest : AbstractIncrementalCom
         }
         val args = arrayOf(
             "-cp", javaClasspath,
-            "-d", javaDestinationDir.canonicalPath,
-            *javaSources.map { it.canonicalPath }.toTypedArray()
+            "-d", javaDestinationDir.absolutePath,
+            *javaSources.map { it.absolutePath }.toTypedArray()
         )
 
         val err = ByteArrayOutputStream()
@@ -142,5 +149,5 @@ abstract class AbstractIncrementalJvmCompilerRunnerTest : AbstractIncrementalCom
         listOf(
             kotlinStdlibJvm,
             KtTestUtil.getAnnotationsJar()
-        ).joinToString(File.pathSeparator) { it.canonicalPath }
+        ).joinToString(File.pathSeparator) { it.absolutePath }
 }

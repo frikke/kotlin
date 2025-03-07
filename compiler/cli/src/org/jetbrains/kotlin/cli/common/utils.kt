@@ -16,12 +16,17 @@
 
 package org.jetbrains.kotlin.cli.common
 
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.runWriteAction
+import com.intellij.openapi.util.Disposer
 import org.jetbrains.kotlin.KtSourceElement
 import org.jetbrains.kotlin.KtSourceFileLinesMapping
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.messages.*
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.IncrementalCompilation
+import org.jetbrains.kotlin.config.messageCollector
 import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.packageFqName
 import org.jetbrains.kotlin.name.FqName
@@ -30,7 +35,7 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.text
 import org.jetbrains.kotlin.util.Logger
 import java.io.File
-import kotlin.system.exitProcess
+import org.jetbrains.kotlin.cli.common.messages.toLogger as toLoggerNew
 
 fun incrementalCompilationIsEnabled(arguments: CommonCompilerArguments): Boolean {
     return arguments.incrementalCompilation ?: IncrementalCompilation.isEnabledForJvm()
@@ -63,9 +68,6 @@ fun <F> checkKotlinPackageUsage(
     }
     return true
 }
-
-private val CompilerConfiguration.messageCollector: MessageCollector
-    get() = get(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, MessageCollector.NONE)
 
 fun checkKotlinPackageUsageForPsi(
     configuration: CompilerConfiguration,
@@ -127,23 +129,19 @@ fun <PathProvider : Any> getLibraryFromHome(
     return null
 }
 
-fun MessageCollector.toLogger(): Logger =
-    object : Logger {
-        override fun error(message: String) {
-            report(CompilerMessageSeverity.ERROR, message)
-        }
+@Deprecated(
+    "Use org.jetbrains.kotlin.cli.common.messages.toLogger() instead",
+    ReplaceWith("toLogger()", "org.jetbrains.kotlin.cli.common.messages.toLogger"),
+    DeprecationLevel.ERROR
+)
+fun MessageCollector.toLogger(): Logger = toLoggerNew()
 
-        override fun fatal(message: String): Nothing {
-            report(CompilerMessageSeverity.ERROR, message)
-            exitProcess(1)
+fun disposeRootInWriteAction(disposable: Disposable) {
+    if (ApplicationManager.getApplication() != null) {
+        runWriteAction {
+            Disposer.dispose(disposable)
         }
-
-        override fun warning(message: String) {
-            report(CompilerMessageSeverity.WARNING, message)
-        }
-
-        override fun log(message: String) {
-            report(CompilerMessageSeverity.LOGGING, message)
-        }
+    } else {
+        Disposer.dispose(disposable)
     }
-
+}

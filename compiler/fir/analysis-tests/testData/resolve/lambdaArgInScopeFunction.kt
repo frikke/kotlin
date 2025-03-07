@@ -1,9 +1,10 @@
-// !CHECK_TYPE
+// RUN_PIPELINE_TILL: FRONTEND
+// CHECK_TYPE
 // ISSUE: KT-37070
 
 class KotlinClass(private val name: String) : Comparable<KotlinClass> {
-    override operator fun compareTo(that: KotlinClass): Int {
-        return name.compareTo(that.name)
+    override operator fun compareTo(other: KotlinClass): Int {
+        return name.compareTo(other.name)
     }
 }
 

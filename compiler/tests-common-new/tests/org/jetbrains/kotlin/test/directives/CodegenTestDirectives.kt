@@ -1,12 +1,10 @@
 /*
- * Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.test.directives
 
-import org.jetbrains.kotlin.backend.common.phaser.AnyNamedPhase
-import org.jetbrains.kotlin.test.FirParser
 import org.jetbrains.kotlin.test.TargetBackend
 import org.jetbrains.kotlin.test.backend.TargetInliner
 import org.jetbrains.kotlin.test.backend.handlers.*
@@ -15,9 +13,11 @@ import org.jetbrains.kotlin.test.directives.model.DirectiveApplicability.File
 import org.jetbrains.kotlin.test.directives.model.DirectiveApplicability.Global
 import org.jetbrains.kotlin.test.directives.model.SimpleDirectivesContainer
 import org.jetbrains.kotlin.test.directives.model.ValueDirective
-import org.jetbrains.kotlin.test.directives.model.singleOrZeroValue
 import org.jetbrains.kotlin.test.model.FrontendKinds
 import org.jetbrains.kotlin.test.model.TestModule
+import org.jetbrains.kotlin.test.services.TestServices
+import org.jetbrains.kotlin.test.services.defaultsProvider
+import org.jetbrains.kotlin.test.services.moduleStructure
 
 object CodegenTestDirectives : SimpleDirectivesContainer() {
     val IGNORE_BACKEND by enumDirective<TargetBackend>(
@@ -32,11 +32,6 @@ object CodegenTestDirectives : SimpleDirectivesContainer() {
 
     val IGNORE_BACKEND_K2 by enumDirective<TargetBackend>(
         description = "Ignore specific backend if test uses K2 frontend",
-        applicability = Global
-    )
-
-    val IGNORE_BACKEND_K2_LIGHT_TREE by enumDirective<TargetBackend>(
-        description = "Ignore specific backend if test uses K2 frontend in Light tree mode",
         applicability = Global
     )
 
@@ -125,16 +120,16 @@ object CodegenTestDirectives : SimpleDirectivesContainer() {
         """.trimIndent()
     )
 
-    val IGNORE_JAVA_ERRORS by directive(
-        description = "Ignore compilation errors from java"
-    )
-
     val IGNORE_FIR_DIAGNOSTICS by directive(
         description = "Run backend even FIR reported some diagnostics with ERROR severity"
     )
 
     val IGNORE_FIR_DIAGNOSTICS_DIFF by directive(
         description = "Don't compare diagnostics in testdata for FIR codegen tests"
+    )
+
+    val IGNORE_BACKEND_DIAGNOSTICS by directive(
+        description = "Prevent adding backend diagnostics to GlobalMetadataInfoHandler. This is needed when the backend is executed for tests that originally were not designed for it."
     )
 
     val DUMP_IR by directive(
@@ -154,6 +149,10 @@ object CodegenTestDirectives : SimpleDirectivesContainer() {
         description = "Dumps generated backend IR in pretty kotlin dump (enables ${IrPrettyKotlinDumpHandler::class})"
     )
 
+    val DUMP_SOURCE_RANGES_IR by directive(
+        description = "Dumps generated backend IR together with elements source ranges (enables ${IrSourceRangesDumpHandler::class})"
+    )
+
     val SKIP_KT_DUMP by directive(
         description = "Skips check pretty kt IR dump (disables ${IrPrettyKotlinDumpHandler::class})"
     )
@@ -165,21 +164,21 @@ object CodegenTestDirectives : SimpleDirectivesContainer() {
         """.trimIndent()
     )
 
-    val DUMP_LOCAL_DECLARATION_SIGNATURES by directive(
-        description = "For tests with $DUMP_SIGNATURES, also dumps signatures and mangled names for local functions and classes"
-    )
-
-    val SKIP_SIGNATURE_DUMP by directive(
-        description = "Disables dumping signatures and mangled names of declarations to the ${IrMangledNameAndSignatureDumpHandler.DUMP_EXTENSION} file"
+    val SEPARATE_SIGNATURE_DUMP_FOR_K2 by directive(
+        description = """
+            Usually the signature dump must not differ between K1 and K2.
+            There are rare cases, however, when there is legitimate difference (for example, if the set of fake overrides is different).
+            Please always document the usage of this directive and carefully verify that the difference between K1 and K2 does
+            not affect IR linkage.
+            """.trimIndent()
     )
 
     val MUTE_SIGNATURE_COMPARISON_K2 by enumDirective<TargetBackend>(
         description = "Ignores failures of signature dump comparison for tests with the $DUMP_SIGNATURES directive if the test uses the K2 frontend and the specified backend."
     )
 
-    val DUMP_IR_FOR_GIVEN_PHASES by valueDirective<AnyNamedPhase>(
+    val DUMP_IR_FOR_GIVEN_PHASES by stringDirective(
         description = "Dumps backend IR after given lowerings (enables ${PhasedIrDumpHandler::class})",
-        parser = { error("Cannot parse value $it for \"DUMP_IR_FOR_GIVEN_PHASES\" directive. All arguments must be specified via code in test system") }
     )
 
     val TREAT_AS_ONE_FILE by directive(
@@ -249,45 +248,56 @@ object CodegenTestDirectives : SimpleDirectivesContainer() {
             Ignore exceptions in AbstractFirLoadK2CompiledKotlin tests
         """.trimIndent()
     )
+
+    val JVM_ABI_K1_K2_DIFF by stringDirective(
+        description = "Expect difference in JVM ABI between K1 and K2",
+        applicability = Global
+    )
+
+    val DISABLE_IR_VISIBILITY_CHECKS by enumDirective<TargetBackend>(
+        description = "Don't check for visibility violations when validating IR on the target backend"
+    )
+
+    val DISABLE_IR_VARARG_TYPE_CHECKS by enumDirective<TargetBackend>(
+        description = "Don't check for vararg type mismatches when validating IR on the target backend"
+    )
 }
 
-fun extractIgnoredDirectivesForTargetBackend(
-    module: TestModule,
-    targetBackend: TargetBackend,
-    customIgnoreDirective: ValueDirective<TargetBackend>? = null
-): List<ValueDirective<TargetBackend>> {
-    val specificIgnoreDirectives = when (module.frontendKind) {
-        FrontendKinds.ClassicFrontend -> listOf(CodegenTestDirectives.IGNORE_BACKEND_K1)
-        FrontendKinds.FIR -> listOfNotNull(
-            CodegenTestDirectives.IGNORE_BACKEND_K2,
-            CodegenTestDirectives.IGNORE_BACKEND_K2_LIGHT_TREE.takeIf {
-                module.directives.singleOrZeroValue(FirDiagnosticsDirectives.FIR_PARSER) == FirParser.LightTree
-            }
-        )
-        else -> return emptyList()
-    }
-    val result = specificIgnoreDirectives.mapNotNull {
-        extractIgnoredDirectiveForTargetBackendForSpecificIgnoreDirective(module, targetBackend, it, customIgnoreDirective)
-    }
-    return result.takeIf { it.isNotEmpty() } ?: listOf(CodegenTestDirectives.IGNORE_BACKEND)
+fun ValueDirective<TargetBackend>.isApplicableTo(module: TestModule, testServices: TestServices): Boolean {
+    val specifiedBackends = module.directives[this]
+    return testServices.defaultsProvider.targetBackend in specifiedBackends || TargetBackend.ANY in specifiedBackends
 }
 
-private fun extractIgnoredDirectiveForTargetBackendForSpecificIgnoreDirective(
+fun extractIgnoredDirectiveForTargetBackend(
+    testServices: TestServices,
     module: TestModule,
     targetBackend: TargetBackend,
-    specificIgnoreDirective: ValueDirective<TargetBackend>,
-    customIgnoreDirective: ValueDirective<TargetBackend>?
-): ValueDirective<TargetBackend>? {
-    return when {
-        customIgnoreDirective != null -> customIgnoreDirective
-        !module.directives.contains(specificIgnoreDirective) -> null//CodegenTestDirectives.IGNORE_BACKEND
-        else -> {
-            val inCommonIgnored = module.directives[CodegenTestDirectives.IGNORE_BACKEND].let { targetBackend in it || TargetBackend.ANY in it }
-            val inSpecificIgnored = module.directives[specificIgnoreDirective].let { targetBackend in it || TargetBackend.ANY in it }
-            if (inCommonIgnored && inSpecificIgnored) {
-                throw AssertionError("Both, IGNORE_BACKEND and ${specificIgnoreDirective.name} contain target backend ${targetBackend.name}. Please remove one of them.")
+    customIgnoreDirective: ValueDirective<TargetBackend>? = null,
+): ValueDirective<TargetBackend>? =
+    when (testServices.defaultsProvider.frontendKind) {
+        FrontendKinds.ClassicFrontend -> CodegenTestDirectives.IGNORE_BACKEND_K1
+        FrontendKinds.FIR -> CodegenTestDirectives.IGNORE_BACKEND_K2
+        else -> null
+    }?.let { specificIgnoreDirective ->
+        when {
+            customIgnoreDirective != null -> customIgnoreDirective
+            !module.directives.contains(specificIgnoreDirective) -> CodegenTestDirectives.IGNORE_BACKEND
+            else -> {
+                val inCommonIgnored = module.directives[CodegenTestDirectives.IGNORE_BACKEND].let { targetBackend in it || TargetBackend.ANY in it }
+                val inSpecificIgnored = module.directives[specificIgnoreDirective].let { targetBackend in it || TargetBackend.ANY in it }
+                if (inCommonIgnored && inSpecificIgnored) {
+                    throw AssertionError("Both, IGNORE_BACKEND and ${specificIgnoreDirective.name} contain target backend ${targetBackend.name}. Please remove one of them.")
+                }
+                if (inCommonIgnored) CodegenTestDirectives.IGNORE_BACKEND else specificIgnoreDirective
             }
-            if (inCommonIgnored) null else specificIgnoreDirective
         }
     }
+
+fun TestServices.tryRetrieveIgnoredInliner(directive: ValueDirective<TargetInliner>): TargetInliner? {
+    val directiveName = directive.name
+    val ignoreDirectives = moduleStructure.allDirectives[directive]
+    if (ignoreDirectives.size > 1) {
+        throw IllegalArgumentException("Directive $directiveName should contains only one value")
+    }
+    return ignoreDirectives.singleOrNull()
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -7,67 +7,58 @@ package org.jetbrains.kotlin.analysis.low.level.api.fir.file.structure
 
 import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirModuleResolveComponents
-import org.jetbrains.kotlin.analysis.low.level.api.fir.api.collectDesignationWithFile
-import org.jetbrains.kotlin.analysis.low.level.api.fir.api.targets.LLFirClassWithSpecificMembersResolveTarget
+import org.jetbrains.kotlin.analysis.low.level.api.fir.api.collectDesignation
+import org.jetbrains.kotlin.analysis.low.level.api.fir.api.targets.LLFirClassSpecificMembersResolveTarget
+import org.jetbrains.kotlin.analysis.low.level.api.fir.api.targets.resolve
+import org.jetbrains.kotlin.analysis.low.level.api.fir.diagnostics.isImplicitConstructor
+import org.jetbrains.kotlin.fir.correspondingProperty
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.declarations.impl.FirPrimaryConstructor
-import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.fir.symbols.lazyResolveToPhase
 
 internal object FileElementFactory {
-    /**
-     * should be consistent with [isReanalyzableContainer]
-     */
     fun createFileStructureElement(
         firDeclaration: FirDeclaration,
-        ktDeclaration: KtDeclaration,
         firFile: FirFile,
         moduleComponents: LLFirModuleResolveComponents,
-    ): FileStructureElement = when {
-        ktDeclaration is KtNamedFunction && ktDeclaration.isReanalyzableContainer() -> ReanalyzableFunctionStructureElement(
-            firFile,
-            ktDeclaration,
-            (firDeclaration as FirSimpleFunction).symbol,
-            ktDeclaration.modificationStamp,
-            moduleComponents,
-        )
+    ): FileStructureElement = when (firDeclaration) {
+        is FirRegularClass -> {
+            firDeclaration.lazyResolveToPhase(FirResolvePhase.BODY_RESOLVE.previous)
 
-        ktDeclaration is KtProperty && ktDeclaration.isReanalyzableContainer() -> ReanalyzablePropertyStructureElement(
-            firFile,
-            ktDeclaration,
-            (firDeclaration as FirProperty).symbol,
-            ktDeclaration.modificationStamp,
-            moduleComponents,
-        )
+            lazyResolveClassGeneratedMembers(firDeclaration)
+            ClassDeclarationStructureElement(firFile, firDeclaration, moduleComponents)
+        }
 
-        ktDeclaration is KtClassOrObject && ktDeclaration !is KtEnumEntry -> {
-            lazyResolveClassWithGeneratedMembers(firDeclaration as FirRegularClass, moduleComponents)
-            NonReanalyzableClassDeclarationStructureElement(
-                firFile,
-                firDeclaration,
-                ktDeclaration,
-                moduleComponents,
-            )
+        is FirScript -> {
+            firDeclaration.lazyResolveToPhase(FirResolvePhase.BODY_RESOLVE.previous)
+            RootScriptStructureElement(firFile, firDeclaration, moduleComponents)
         }
 
         else -> {
-            NonReanalyzableNonClassDeclarationStructureElement(
-                firFile,
-                firDeclaration,
-                ktDeclaration,
-                moduleComponents,
-            )
+            firDeclaration.lazyResolveToPhase(FirResolvePhase.BODY_RESOLVE)
+            if (firDeclaration is FirPrimaryConstructor) {
+                firDeclaration.valueParameters.forEach { parameter ->
+                    parameter.correspondingProperty?.lazyResolveToPhase(FirResolvePhase.BODY_RESOLVE)
+                }
+            }
+
+            DeclarationStructureElement(firFile, firDeclaration, moduleComponents)
         }
     }
 
-    private fun lazyResolveClassWithGeneratedMembers(firClass: FirRegularClass, moduleComponents: LLFirModuleResolveComponents) {
+    private fun lazyResolveClassGeneratedMembers(firClass: FirRegularClass) {
         val classMembersToResolve = buildList {
             for (member in firClass.declarations) {
                 when {
-                    member is FirPrimaryConstructor && member.source?.kind == KtFakeSourceElementKind.ImplicitConstructor -> {
+                    member is FirSimpleFunction && member.source?.kind == KtFakeSourceElementKind.DataClassGeneratedMembers -> {
                         add(member)
                     }
 
-                    member is FirProperty && member.source?.kind == KtFakeSourceElementKind.PropertyFromParameter -> {
+                    member.source?.kind == KtFakeSourceElementKind.EnumGeneratedDeclaration -> {
+                        add(member)
+                    }
+
+                    member.isImplicitConstructor -> {
                         add(member)
                     }
 
@@ -82,39 +73,13 @@ internal object FileElementFactory {
             }
         }
 
-        val firClassDesignation = firClass.collectDesignationWithFile()
-        val designationWithMembers = LLFirClassWithSpecificMembersResolveTarget(
-            firClassDesignation.firFile,
-            firClassDesignation.path,
-            firClass,
+        if (classMembersToResolve.isEmpty()) return
+        val firClassDesignation = firClass.collectDesignation()
+        val designationWithMembers = LLFirClassSpecificMembersResolveTarget(
+            firClassDesignation,
             classMembersToResolve,
         )
 
-        moduleComponents.firModuleLazyDeclarationResolver.lazyResolveTarget(
-            designationWithMembers,
-            FirResolvePhase.BODY_RESOLVE,
-            towerDataContextCollector = null
-        )
+        designationWithMembers.resolve(FirResolvePhase.BODY_RESOLVE)
     }
 }
-
-/**
- * should be consistent with [createFileStructureElement]
- */
-//TODO make internal
-fun isReanalyzableContainer(
-    ktDeclaration: KtDeclaration,
-): Boolean = when (ktDeclaration) {
-    is KtNamedFunction -> ktDeclaration.isReanalyzableContainer()
-    is KtProperty -> ktDeclaration.isReanalyzableContainer()
-    else -> false
-}
-
-private fun KtNamedFunction.isReanalyzableContainer() =
-    name != null && hasExplicitTypeOrUnit
-
-private fun KtProperty.isReanalyzableContainer() =
-    name != null && typeReference != null
-
-private val KtNamedFunction.hasExplicitTypeOrUnit
-    get() = hasBlockBody() || typeReference != null

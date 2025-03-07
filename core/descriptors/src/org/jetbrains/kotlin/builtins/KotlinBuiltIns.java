@@ -354,6 +354,12 @@ public abstract class KotlinBuiltIns {
         return getBuiltInClassByFqName(FqNames.kClass.toSafe());
     }
 
+
+    @NotNull
+    public ClassDescriptor getKType() {
+        return getBuiltInClassByFqName(FqNames.kType.toSafe());
+    }
+
     @NotNull
     public ClassDescriptor getKCallable() {
         return getBuiltInClassByFqName(FqNames.kCallable.toSafe());
@@ -575,9 +581,18 @@ public abstract class KotlinBuiltIns {
 
     @NotNull
     public KotlinType getArrayElementType(@NotNull KotlinType arrayType) {
+        KotlinType result = getArrayElementTypeOrNull(arrayType);
+        if (result == null) {
+            throw new IllegalStateException("not array: " + arrayType);
+        }
+        return result;
+    }
+
+    @Nullable
+    public KotlinType getArrayElementTypeOrNull(@NotNull KotlinType arrayType) {
         if (isArray(arrayType)) {
             if (arrayType.getArguments().size() != 1) {
-                throw new IllegalStateException();
+                return null;
             }
             return arrayType.getArguments().get(0).getType();
         }
@@ -593,7 +608,7 @@ public abstract class KotlinBuiltIns {
         }
 
 
-        throw new IllegalStateException("not array: " + arrayType);
+        return null;
     }
 
     @Nullable
@@ -950,6 +965,10 @@ public abstract class KotlinBuiltIns {
         return type != null && isNotNullConstructedFromGivenClass(type, FqNames.string);
     }
 
+    public static boolean isUnsignedNumber(@Nullable KotlinType type) {
+        return type != null && (isUByte(type) || isUShort(type) || isUInt(type) || isULong(type));
+    }
+
     public static boolean isCharSequenceOrNullableCharSequence(@Nullable KotlinType type) {
         return type != null && isConstructedFromGivenClass(type, FqNames.charSequence);
     }
@@ -992,10 +1011,6 @@ public abstract class KotlinBuiltIns {
 
     public static boolean isNonPrimitiveArray(@NotNull ClassDescriptor descriptor) {
         return classFqNameEquals(descriptor, FqNames.array);
-    }
-
-    public static boolean isCloneable(@NotNull ClassDescriptor descriptor) {
-        return classFqNameEquals(descriptor, FqNames.cloneable);
     }
 
     // This function only checks presence of Deprecated annotation at declaration-site, it doesn't take into account @DeprecatedSinceKotlin

@@ -1,4 +1,5 @@
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// RUN_PIPELINE_TILL: BACKEND
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 // no inline modifier
 fun <R> callIt(fn: () -> R): R = TODO()

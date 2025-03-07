@@ -1,0 +1,2 @@
+(Full dump is not available: null)
+CLASS IR_EXTERNAL_JAVA_DECLARATION_STUB INTERFACE name:StubSerializer modality:ABSTRACT visibility:public superTypes:[<root>.ObjectStubSerializer<@[FlexibleNullability] @[RawType] <root>.StubElement<@[FlexibleNullability] kotlin.Any?>?>]

@@ -20,16 +20,16 @@ sealed class FirImplicitBuiltinTypeRef(
     typeArguments: Array<out ConeTypeProjection> = emptyArray(),
     isNullable: Boolean = false
 ) : FirResolvedTypeRef() {
+    override val customRenderer: Boolean
+        get() = false
+
     override val annotations: List<FirAnnotation>
         get() = emptyList()
 
-    override val type: ConeClassLikeType = ConeClassLikeTypeImpl(id.toLookupTag(), typeArguments, isNullable)
+    override val coneType: ConeClassLikeType = ConeClassLikeTypeImpl(id.toLookupTag(), typeArguments, isNullable)
 
     override val delegatedTypeRef: FirTypeRef?
         get() = null
-
-    override val isFromStubType: Boolean
-        get() = false
 
     override fun <R, D> acceptChildren(visitor: FirVisitor<R, D>, data: D) {}
 
@@ -105,6 +105,14 @@ class FirImplicitUIntTypeRef(
 class FirImplicitULongTypeRef(
     source: KtSourceElement?
 ) : FirImplicitBuiltinTypeRef(source, StandardClassIds.ULong)
+
+class FirImplicitUShortTypeRef(
+    source: KtSourceElement?
+) : FirImplicitBuiltinTypeRef(source, StandardClassIds.UShort)
+
+class FirImplicitUByteTypeRef(
+    source: KtSourceElement?
+) : FirImplicitBuiltinTypeRef(source, StandardClassIds.UByte)
 
 class FirImplicitNothingTypeRef(
     source: KtSourceElement?
@@ -209,37 +217,39 @@ fun FirImplicitBuiltinTypeRef.withNewSource(newSource: KtSourceElement?): FirImp
         is FirImplicitCharIteratorTypeRef -> FirImplicitCharIteratorTypeRef(newSource)
         is FirImplicitKPropertyTypeRef -> FirImplicitKPropertyTypeRef(
             newSource,
-            typeArgument = type.typeArguments[0]
+            typeArgument = coneType.typeArguments[0]
         )
         is FirImplicitKProperty0TypeRef -> FirImplicitKProperty0TypeRef(
             newSource,
-            propertyTypeArgument = type.typeArguments[0]
+            propertyTypeArgument = coneType.typeArguments[0]
         )
         is FirImplicitKMutableProperty0TypeRef -> FirImplicitKMutableProperty0TypeRef(
             newSource,
-            propertyTypeArgument = type.typeArguments[0]
+            propertyTypeArgument = coneType.typeArguments[0]
         )
         is FirImplicitKProperty1TypeRef -> FirImplicitKProperty1TypeRef(
             newSource,
-            receiverTypeArgument = type.typeArguments[0],
-            propertyTypeArgument = type.typeArguments[1]
+            receiverTypeArgument = coneType.typeArguments[0],
+            propertyTypeArgument = coneType.typeArguments[1]
         )
         is FirImplicitKMutableProperty1TypeRef -> FirImplicitKMutableProperty1TypeRef(
             newSource,
-            receiverTypeArgument = type.typeArguments[0],
-            propertyTypeArgument = type.typeArguments[1]
+            receiverTypeArgument = coneType.typeArguments[0],
+            propertyTypeArgument = coneType.typeArguments[1]
         )
         is FirImplicitKProperty2TypeRef -> FirImplicitKProperty2TypeRef(
             newSource,
-            dispatchReceiverTypeArgument = type.typeArguments[0],
-            extensionReceiverTypeArgument = type.typeArguments[1],
-            propertyTypeArgument = type.typeArguments[2]
+            dispatchReceiverTypeArgument = coneType.typeArguments[0],
+            extensionReceiverTypeArgument = coneType.typeArguments[1],
+            propertyTypeArgument = coneType.typeArguments[2]
         )
         is FirImplicitKMutableProperty2TypeRef -> FirImplicitKMutableProperty2TypeRef(
             newSource,
-            dispatchReceiverTypeArgument = type.typeArguments[0],
-            extensionReceiverTypeArgument = type.typeArguments[1],
-            propertyTypeArgument = type.typeArguments[2]
+            dispatchReceiverTypeArgument = coneType.typeArguments[0],
+            extensionReceiverTypeArgument = coneType.typeArguments[1],
+            propertyTypeArgument = coneType.typeArguments[2]
         )
+        is FirImplicitUByteTypeRef -> FirImplicitUByteTypeRef(newSource)
+        is FirImplicitUShortTypeRef -> FirImplicitUShortTypeRef(newSource)
     }
 }

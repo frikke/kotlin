@@ -1,53 +1,39 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.analysis.low.level.api.fir.transformers
 
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.persistentListOf
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.targets.LLFirResolveTarget
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.targets.LLFirSingleResolveTarget
 import org.jetbrains.kotlin.analysis.low.level.api.fir.api.targets.asResolveTarget
-import org.jetbrains.kotlin.analysis.low.level.api.fir.api.tryCollectDesignationWithFile
-import org.jetbrains.kotlin.analysis.low.level.api.fir.file.builder.LLFirLockProvider
-import org.jetbrains.kotlin.analysis.low.level.api.fir.lazy.resolve.LLFirPhaseUpdater
-import org.jetbrains.kotlin.analysis.low.level.api.fir.util.checkPhase
+import org.jetbrains.kotlin.analysis.low.level.api.fir.api.tryCollectDesignation
+import org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.LLFirSession
+import org.jetbrains.kotlin.analysis.low.level.api.fir.sessions.llFirSession
 import org.jetbrains.kotlin.analysis.low.level.api.fir.util.checkTypeRefIsResolved
+import org.jetbrains.kotlin.analysis.low.level.api.fir.util.errorWithFirSpecificEntries
 import org.jetbrains.kotlin.fir.FirElementWithResolveState
-import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.*
-import org.jetbrains.kotlin.fir.diagnostics.ConeSimpleDiagnostic
-import org.jetbrains.kotlin.fir.diagnostics.DiagnosticKind
 import org.jetbrains.kotlin.fir.java.declarations.FirJavaClass
-import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.defaultType
-import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
+import org.jetbrains.kotlin.fir.resolve.providers.firProvider
+import org.jetbrains.kotlin.fir.resolve.toSymbol
 import org.jetbrains.kotlin.fir.resolve.transformers.FirSupertypeResolverVisitor
 import org.jetbrains.kotlin.fir.resolve.transformers.SupertypeComputationSession
 import org.jetbrains.kotlin.fir.resolve.transformers.SupertypeComputationStatus
-import org.jetbrains.kotlin.fir.resolve.transformers.body.resolve.FirTowerDataContextCollector
 import org.jetbrains.kotlin.fir.resolve.transformers.platformSupertypeUpdater
+import org.jetbrains.kotlin.fir.symbols.impl.FirClassifierSymbol
 import org.jetbrains.kotlin.fir.symbols.lazyResolveToPhase
 import org.jetbrains.kotlin.fir.types.*
+import org.jetbrains.kotlin.fir.utils.exceptions.withFirEntry
 
 internal object LLFirSupertypeLazyResolver : LLFirLazyResolver(FirResolvePhase.SUPER_TYPES) {
-    override fun resolve(
-        target: LLFirResolveTarget,
-        lockProvider: LLFirLockProvider,
-        session: FirSession,
-        scopeSession: ScopeSession,
-        towerDataContextCollector: FirTowerDataContextCollector?,
-    ) {
-        val resolver = LLFirSuperTypeTargetResolver(target, lockProvider, session, scopeSession)
-        resolver.resolveDesignation()
-    }
+    override fun createTargetResolver(target: LLFirResolveTarget): LLFirTargetResolver = LLFirSuperTypeTargetResolver(target)
 
-    override fun updatePhaseForDeclarationInternals(target: FirElementWithResolveState) {
-        LLFirPhaseUpdater.updateDeclarationInternalsPhase(target, resolverPhase, updateForLocalDeclarations = false)
-    }
-
-    override fun checkIsResolved(target: FirElementWithResolveState) {
-        target.checkPhase(resolverPhase)
+    override fun phaseSpecificCheckIsResolved(target: FirElementWithResolveState) {
         when (target) {
             is FirClass -> {
                 for (superTypeRef in target.superTypeRefs) {
@@ -58,24 +44,36 @@ internal object LLFirSupertypeLazyResolver : LLFirLazyResolver(FirResolvePhase.S
             is FirTypeAlias -> {
                 checkTypeRefIsResolved(target.expandedTypeRef, typeRefName = "type alias expanded type", target)
             }
-
-            else -> {}
         }
     }
 }
 
+/**
+ * This resolver is responsible for [SUPER_TYPES][FirResolvePhase.SUPER_TYPES] phase.
+ *
+ * This resolver:
+ * - Transforms all supertypes of classes.
+ * - Performs type aliases expansion.
+ * - Breaks loops in the type hierarchy if needed.
+ *
+ * Special rules:
+ * - First resolves outer classes to this phase.
+ * - Resolves all super types recursively.
+ * - [Searches][org.jetbrains.kotlin.analysis.low.level.api.fir.transformers.LLFirSuperTypeTargetResolver.crawlSupertype]
+ *   super types not only in the declaration site session, but also in the call site session to resolve `expect` declaration first.
+ *
+ * @see FirSupertypeResolverVisitor
+ * @see FirResolvePhase.SUPER_TYPES
+ */
 private class LLFirSuperTypeTargetResolver(
     target: LLFirResolveTarget,
-    lockProvider: LLFirLockProvider,
-    private val session: FirSession,
-    private val scopeSession: ScopeSession,
-    private val supertypeComputationSession: LLFirSupertypeComputationSession = LLFirSupertypeComputationSession(session),
+    private val supertypeComputationSession: LLFirSupertypeComputationSession = LLFirSupertypeComputationSession(),
     private val visitedElements: MutableSet<FirElementWithResolveState> = hashSetOf(),
-) : LLFirTargetResolver(target, lockProvider, FirResolvePhase.SUPER_TYPES, isJumpingPhase = false) {
+) : LLFirTargetResolver(target, FirResolvePhase.SUPER_TYPES) {
     private val supertypeResolver = object : FirSupertypeResolverVisitor(
-        session = session,
+        session = resolveTargetSession,
         supertypeComputationSession = supertypeComputationSession,
-        scopeSession = scopeSession,
+        scopeSession = resolveTargetScopeSession,
     ) {
         /**
          * We can do nothing here because at a call moment we've already resolved [outerClass]
@@ -96,14 +94,10 @@ private class LLFirSuperTypeTargetResolver(
         }
     }
 
-    override fun withFile(firFile: FirFile, action: () -> Unit) {
-        action()
-    }
-
     @Deprecated("Should never be called directly, only for override purposes, please use withRegularClass", level = DeprecationLevel.ERROR)
-    override fun withRegularClassImpl(firClass: FirRegularClass, action: () -> Unit) {
+    override fun withContainingRegularClass(firClass: FirRegularClass, action: () -> Unit) {
+        doResolveWithoutLock(firClass)
         supertypeResolver.withClass(firClass) {
-            doResolveWithoutLock(firClass)
             action()
         }
     }
@@ -120,20 +114,30 @@ private class LLFirSuperTypeTargetResolver(
                     // to avoid [ConcurrentModificationException] during another thread publication
                     ArrayList(target.superTypeRefs)
                 },
-                resolver = { supertypeResolver.resolveSpecificClassLikeSupertypes(target, it) },
-                superTypeUpdater = {
-                    target.replaceSuperTypeRefs(it)
-                    session.platformSupertypeUpdater?.updateSupertypesIfNeeded(target, scopeSession)
+                resolver = {
+                    supertypeResolver.withClass(target) {
+                        supertypeResolver.resolveSpecificClassLikeSupertypes(target, it, resolveRecursively = false)
+                    }
+                },
+                superTypeUpdater = { superTypeRefs ->
+                    val expandedTypeRefs = superTypeRefs.map { supertypeComputationSession.expandTypealiasInPlace(it, target.llFirSession) }
+                    target.replaceSuperTypeRefs(expandedTypeRefs)
+                    resolveTargetSession.platformSupertypeUpdater?.updateSupertypesIfNeeded(target, resolveTargetScopeSession)
                 },
             )
             is FirTypeAlias -> performResolve(
                 declaration = target,
                 superTypeRefsForTransformation = { target.expandedTypeRef },
                 resolver = { supertypeResolver.resolveTypeAliasSupertype(target, it, resolveRecursively = false) },
-                superTypeUpdater = { target.replaceExpandedTypeRef(it.single()) },
+                superTypeUpdater = { superTypeRefs ->
+                    val expandedTypeRef = supertypeComputationSession.expandTypealiasInPlace(superTypeRefs.single(), target.llFirSession)
+                    target.replaceExpandedTypeRef(expandedTypeRef)
+                },
             )
-            else -> performCustomResolveUnderLock(target) {
-                // just update the phase
+            else -> {
+                performCustomResolveUnderLock(target) {
+                    // just update the phase
+                }
             }
         }
 
@@ -169,8 +173,10 @@ private class LLFirSuperTypeTargetResolver(
         // 2. Resolve super declarations
         val status = supertypeComputationSession.getSupertypesComputationStatus(declaration)
         if (status is SupertypeComputationStatus.Computed) {
-            for (computedType in status.supertypeRefs) {
-                crawlSupertype(computedType.type)
+            supertypeComputationSession.withDeclarationSession(declaration) {
+                for (computedType in status.supertypeRefs) {
+                    crawlSupertype(computedType.coneType)
+                }
             }
         }
 
@@ -186,23 +192,16 @@ private class LLFirSuperTypeTargetResolver(
         }
     }
 
-    private fun FirClassLikeDeclaration.asResolveTarget(): LLFirSingleResolveTarget? {
-        return takeIf { it.canHaveLoopInSupertypesHierarchy(session) }
-            ?.tryCollectDesignationWithFile()
-            ?.asResolveTarget()
-    }
+    private fun FirClassLikeDeclaration.asResolveTarget(): LLFirSingleResolveTarget? = tryCollectDesignation()?.asResolveTarget()
 
     private fun resolveToSupertypePhase(target: LLFirSingleResolveTarget) {
         LLFirSuperTypeTargetResolver(
             target = target,
-            lockProvider = lockProvider,
-            session = session,
-            scopeSession = scopeSession,
             supertypeComputationSession = supertypeComputationSession,
             visitedElements = visitedElements,
         ).resolveDesignation()
 
-        LLFirLazyPhaseResolverByPhase.getByPhase(resolverPhase).checkIsResolved(target)
+        LLFirSupertypeLazyResolver.checkIsResolved(target.target)
     }
 
     /**
@@ -210,20 +209,37 @@ private class LLFirSuperTypeTargetResolver(
      * So we crawl the resolved supertypes of visited designations to find more designations to collect.
      */
     private fun crawlSupertype(type: ConeKotlinType) {
-        val classLikeDeclaration = type.toSymbol(session)?.fir
+        // Resolution order: from declaration site to use site
+        for (session in supertypeComputationSession.useSiteSessions.asReversed()) {
+            /**
+             * We can avoid deduplication here as the symbol will be checked with [visitedElements]
+             */
+            type.toSymbol(session)?.let(::crawlSupertype)
+        }
+
+        if (type is ConeClassLikeType) {
+            // The `classLikeDeclaration` is not associated with a file, and thus there is no need to resolve it, but it may still point
+            // to declarations via its type arguments which need to be collected and have a containing file.
+            // For example, a `Function1` could point to a type alias.
+            type.typeArguments.forEach { it.type?.let { crawlSupertype(it) } }
+        }
+    }
+
+    private fun crawlSupertype(symbol: FirClassifierSymbol<*>) {
+        val classLikeDeclaration = symbol.fir
         if (classLikeDeclaration !is FirClassLikeDeclaration) return
         if (classLikeDeclaration in visitedElements) return
-        if (classLikeDeclaration is FirJavaClass) {
-            if (!classLikeDeclaration.canHaveLoopInSupertypesHierarchy(session)) return
 
+        if (classLikeDeclaration.resolvePhase >= resolverPhase) {
             visitedElements += classLikeDeclaration
-            val parentClass = classLikeDeclaration.outerClass(session)
-            if (parentClass != null) {
-                crawlSupertype(parentClass.defaultType())
-            }
-
-            classLikeDeclaration.superTypeRefs.filterIsInstance<FirResolvedTypeRef>().forEach {
-                crawlSupertype(it.type)
+            if (classLikeDeclaration is FirJavaClass) {
+                // We do not have phases guarantees for Java classes, so we should process them with an assumption
+                // that there are some unresolved supertypes from the declaration site point of view
+                supertypeComputationSession.withDeclarationSession(classLikeDeclaration) {
+                    crawlSupertypeFromResolvedDeclaration(classLikeDeclaration)
+                }
+            } else {
+                crawlSupertypeFromResolvedDeclaration(classLikeDeclaration)
             }
 
             return
@@ -232,11 +248,29 @@ private class LLFirSuperTypeTargetResolver(
         val resolveTarget = classLikeDeclaration.asResolveTarget()
         if (resolveTarget != null) {
             resolveToSupertypePhase(resolveTarget)
-        } else if (type is ConeClassLikeType) {
-            // The `classLikeDeclaration` is not associated with a file, and thus there is no need to resolve it, but it may still point
-            // to declarations via its type arguments which need to be collected and have a containing file.
-            // For example, a `Function1` could point to a type alias.
-            type.typeArguments.forEach { it.type?.let(::crawlSupertype) }
+        }
+    }
+
+    private fun crawlSupertypeFromResolvedDeclaration(classLikeDeclaration: FirClassLikeDeclaration) {
+        val parentClass = classLikeDeclaration.outerClass()
+        if (parentClass != null) {
+            crawlSupertype(parentClass.defaultType())
+        }
+
+        val superTypeRefs = when (classLikeDeclaration) {
+            is FirTypeAlias -> listOf(classLikeDeclaration.expandedTypeRef)
+            is FirClass -> classLikeDeclaration.superTypeRefs
+        }
+
+        for (typeRef in superTypeRefs) {
+            val coneType = typeRef.coneTypeOrNull ?: errorWithFirSpecificEntries(
+                "The declaration super type must be resolved, but the actual type reference is not resolved",
+                fir = classLikeDeclaration,
+            ) {
+                withFirEntry("typeRef", typeRef)
+            }
+
+            crawlSupertype(coneType)
         }
     }
 
@@ -245,35 +279,23 @@ private class LLFirSuperTypeTargetResolver(
     }
 }
 
-/**
- * We shouldn't skip Java source classes because they're marked as BODY_RESOLVE,
- * but this doesn't give us knowledge about its participation in the calculation of supertypes.
- * The contract here – if a declaration is already resolved to FirResolvePhase.SUPER_TYPES or higher that this
- * means that this class can't have loop with our class, because in this case this declaration will be present
- * in the current supertypes resolve session
- */
-private fun FirClassLikeDeclaration.canHaveLoopInSupertypesHierarchy(session: FirSession): Boolean = when {
-    this is FirJavaClass -> origin is FirDeclarationOrigin.Java.Source
-    origin !is FirDeclarationOrigin.Source -> false
-    resolvePhase < FirResolvePhase.SUPER_TYPES -> true
-    // We should still process resolved if it has loop in super type refs, because we can be part of this cycle
-    this is FirRegularClass && superTypeRefs.any(FirTypeRef::isLoopedSupertypeRef) -> true
-    this is FirTypeAlias && expandedTypeRef.isLoopedSupertypeRef -> true
-    else -> outerClass(session)?.canHaveLoopInSupertypesHierarchy(session) == true
-}
+private fun FirClassLikeDeclaration.outerClass(): FirRegularClass? =
+    llFirSession.firProvider.getContainingClass(symbol)?.fir as? FirRegularClass
 
-private fun FirClassLikeDeclaration.outerClass(session: FirSession): FirRegularClass? = symbol.classId.parentClassId?.let { parentClassId ->
-    session.symbolProvider.getClassLikeSymbolByClassId(parentClassId)?.fir as? FirRegularClass
-}
+private class LLFirSupertypeComputationSession : SupertypeComputationSession() {
+    var useSiteSessions: PersistentList<LLFirSession> = persistentListOf<LLFirSession>()
+        private set
 
-private val FirTypeRef.isLoopedSupertypeRef: Boolean
-    get() {
-        if (this !is FirErrorTypeRef) return false
-        val diagnostic = diagnostic
-        return diagnostic is ConeSimpleDiagnostic && diagnostic.kind == DiagnosticKind.LoopInSupertype
+    inline fun withDeclarationSession(declaration: FirClassLikeDeclaration, action: () -> Unit) {
+        val newSession = declaration.llFirSession.takeUnless { it == useSiteSessions.lastOrNull() }
+        try {
+            newSession?.let { useSiteSessions = useSiteSessions.add(it) }
+            action()
+        } finally {
+            newSession?.let { useSiteSessions = useSiteSessions.removeAt(useSiteSessions.lastIndex) }
+        }
     }
 
-private class LLFirSupertypeComputationSession(private val session: FirSession) : SupertypeComputationSession() {
     /**
      * These collections exist to reuse a collection for each search to avoid repeated memory allocation.
      * Can be replaced with a new collection on each invocation of [findLoopFor]
@@ -297,11 +319,14 @@ private class LLFirSupertypeComputationSession(private val session: FirSession) 
     fun findLoopFor(declaration: FirClassLikeDeclaration): List<FirResolvedTypeRef>? {
         breakLoopFor(
             declaration = declaration,
-            session = session,
+            // Only loops from the declaration site point of view should be processed
+            session = declaration.llFirSession,
             visited = visited,
             looped = looped,
             pathSet = pathSet,
             path = path,
+            // LL resolver only works for non-local declarations
+            localClassesNavigationInfo = null,
         )
 
         require(path.isEmpty()) { "Path should be empty" }
@@ -309,10 +334,6 @@ private class LLFirSupertypeComputationSession(private val session: FirSession) 
         visited.clear()
         looped.clear()
         return updatedTypesForDeclarationsWithLoop[declaration]
-    }
-
-    override fun isAlreadyResolved(classLikeDeclaration: FirClassLikeDeclaration): Boolean {
-        return !classLikeDeclaration.canHaveLoopInSupertypesHierarchy(session)
     }
 
     /**

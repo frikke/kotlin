@@ -64,6 +64,7 @@ public abstract class KotlinLightClassStructureTest extends KotlinAsJavaTestBase
 
             checkModifiers("test.Outer.Inner", PUBLIC, FINAL, NESTED);
         }
+
         public void testModalities() {
             checkModifiers("test.Abstract", PUBLIC, ABSTRACT);
             checkModifiers("test.Open", PUBLIC);
@@ -75,7 +76,7 @@ public abstract class KotlinLightClassStructureTest extends KotlinAsJavaTestBase
         }
 
         public void testEnum() {
-            checkModifiers("test.Enum", PUBLIC, ENUM);
+            checkModifiers("test.Enum", PUBLIC, FINAL, ENUM);
         }
 
         public void testTrait() {
@@ -241,7 +242,7 @@ public abstract class KotlinLightClassStructureTest extends KotlinAsJavaTestBase
     }
 
     enum ClassProperty {
-        PUBLIC(PsiModifier.PUBLIC), 
+        PUBLIC(PsiModifier.PUBLIC),
         PROTECTED(PsiModifier.PROTECTED),
         PACKAGE_LOCAL(PsiModifier.PACKAGE_LOCAL),
         PRIVATE(PsiModifier.PRIVATE),
@@ -306,5 +307,4 @@ public abstract class KotlinLightClassStructureTest extends KotlinAsJavaTestBase
             return psiClass.hasModifierProperty(modifier);
         }
     }
-
 }

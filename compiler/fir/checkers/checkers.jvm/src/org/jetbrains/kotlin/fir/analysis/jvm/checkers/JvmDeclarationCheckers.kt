@@ -21,15 +21,30 @@ object JvmDeclarationCheckers : DeclarationCheckers() {
             FirJvmRedundantRepeatableChecker,
         )
 
+    override val constructorCheckers: Set<FirConstructorChecker>
+        get() = setOf(
+            FirJavaClassInheritsKtPrivateClassDeclarationChecker,
+        )
+
     override val classCheckers: Set<FirClassChecker>
         get() = setOf(
-            FirStrictfpApplicabilityChecker
+            FirStrictfpApplicabilityChecker,
+            FirOverrideJavaNullabilityWarningChecker.Regular,
+            FirOverrideJavaNullabilityWarningChecker.ForExpectClass,
+            FirImplementationByDelegationWithDifferentGenericSignatureChecker,
+            FirPropertyHidesJavaFieldChecker,
+            FirIncompatibleAnnotationsChecker,
         )
 
     override val regularClassCheckers: Set<FirRegularClassChecker>
         get() = setOf(
             FirJvmRecordChecker,
             FirJvmInlineApplicabilityChecker,
+            FirInlineBodyRegularClassChecker,
+        )
+
+    override val classLikeCheckers: Set<FirClassLikeChecker>
+        get() = setOf(
             FirJvmConflictsChecker,
         )
 
@@ -37,16 +52,29 @@ object JvmDeclarationCheckers : DeclarationCheckers() {
         get() = setOf(
             FirJvmFieldApplicabilityChecker,
             FirJvmSyntheticApplicabilityChecker,
+            FirPropertyJavaNullabilityWarningChecker,
         )
 
     override val functionCheckers: Set<FirFunctionChecker>
         get() = setOf(
             FirSynchronizedAnnotationChecker,
             FirOverloadsChecker,
+            FirJvmThrowsChecker,
         )
 
     override val typeParameterCheckers: Set<FirTypeParameterChecker>
         get() = setOf(
             FirUpperBoundsChecker,
+        )
+
+    override val simpleFunctionCheckers: Set<FirSimpleFunctionChecker>
+        get() = setOf(
+            FirInlineBodySimpleFunctionChecker,
+            FirAccidentalOverrideClashChecker,
+        )
+
+    override val valueParameterCheckers: Set<FirValueParameterChecker>
+        get() = setOf(
+            FirValueParameterJavaNullabilityWarningChecker
         )
 }

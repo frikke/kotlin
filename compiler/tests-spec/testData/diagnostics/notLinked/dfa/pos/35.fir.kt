@@ -1,5 +1,14 @@
-// !DIAGNOSTICS: -UNUSED_EXPRESSION
+// DIAGNOSTICS: -UNUSED_EXPRESSION
 // SKIP_TXT
+
+/*
+ * KOTLIN DIAGNOSTICS NOT LINKED SPEC TEST (POSITIVE)
+ *
+ * SECTIONS: dfa
+ * NUMBER: 35
+ * DESCRIPTION: Raw data flow analysis test
+ * HELPERS: classes, objects, typealiases, enumClasses, interfaces, sealedClasses
+ */
 
 /*
  * TESTCASE NUMBER: 1
@@ -19,7 +28,7 @@ fun case_1(x: Any?) {
 fun case_2(x: Any?) {
     while (true) {
         <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any?")!>x<!> ?: return
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>
     }
 
     <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any?")!>x<!>
@@ -33,7 +42,7 @@ fun case_2(x: Any?) {
  */
 fun case_3(x: Any?) {
     while (true) {
-        x ?: return <!USELESS_ELVIS!>?: <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!><!>
+        x ?: return <!USELESS_ELVIS!>?: <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!><!>
     }
 
     <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any?")!>x<!>
@@ -44,19 +53,19 @@ fun case_3(x: Any?) {
 fun case_4(x: Any?) {
     while (true) {
         x ?: break
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>.equals(10)
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>.equals(10)
     }
 
-    <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Nothing?")!>x<!>
+    <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Nothing?")!>x<!>
 }
 
 // TESTCASE NUMBER: 5
 fun case_5(x: Any?) {
     while (true) {
         x ?: continue
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>.equals(10)
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>.equals(10)
     }
 
     <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any?")!>x<!>
@@ -66,8 +75,8 @@ fun case_5(x: Any?) {
 fun case_6(x: Any?) {
     do {
         x ?: continue
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>.equals(10)
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>.equals(10)
     } while (false)
 
     <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any?")!>x<!>
@@ -77,8 +86,8 @@ fun case_6(x: Any?) {
 fun case_7(x: Any?) {
     do {
         x ?: break
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>
-        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any? & kotlin.Any")!>x<!>.equals(10)
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>
+        <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any")!>x<!>.equals(10)
     } while (false)
 
     <!DEBUG_INFO_EXPRESSION_TYPE("kotlin.Any?")!>x<!>

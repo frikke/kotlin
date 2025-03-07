@@ -1,8 +1,7 @@
-// IGNORE_BACKEND_K1: JS, JS_IR, JS_IR_ES6, NATIVE
-// !LANGUAGE: +MultiPlatformProjects
+// LANGUAGE: +MultiPlatformProjects
+// WITH_STDLIB
 
 // MODULE: common
-// TARGET_PLATFORM: Common
 // FILE: common.kt
 
 expect interface S1

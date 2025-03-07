@@ -1,3 +1,4 @@
+// RUN_PIPELINE_TILL: FRONTEND
 import kotlin.contracts.*
 
 interface A {
@@ -13,10 +14,10 @@ var Any?.isNotNull: Boolean
         return this != null
     }
     set(value) {
-        <!WRONG_IMPLIES_CONDITION!><!CONTRACT_NOT_ALLOWED!>contract<!> {
-            returns() implies (this@isNotNull != null)
-            <!ERROR_IN_CONTRACT_DESCRIPTION!>require(<!SENSELESS_COMPARISON!>this != null<!>)<!>
-        }<!>
+        <!CONTRACT_NOT_ALLOWED!>contract<!> {
+            <!WRONG_IMPLIES_CONDITION!>returns() implies (this@isNotNull != null)<!>
+            require(<!SENSELESS_COMPARISON!>this != null<!>)
+        }
     }
 
 fun test_1(a: A?) {

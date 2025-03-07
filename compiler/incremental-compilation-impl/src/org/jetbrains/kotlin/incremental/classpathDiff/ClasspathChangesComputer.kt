@@ -9,15 +9,14 @@ import com.intellij.openapi.util.io.FileUtil
 import org.jetbrains.kotlin.build.report.DoNothingICReporter
 import org.jetbrains.kotlin.build.report.debug
 import org.jetbrains.kotlin.build.report.metrics.BuildMetricsReporter
-import org.jetbrains.kotlin.build.report.metrics.BuildTime
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildPerformanceMetric
+import org.jetbrains.kotlin.build.report.metrics.GradleBuildTime
 import org.jetbrains.kotlin.build.report.metrics.measure
 import org.jetbrains.kotlin.incremental.*
 import org.jetbrains.kotlin.incremental.classpathDiff.BreadthFirstSearch.findReachableNodes
-import org.jetbrains.kotlin.incremental.classpathDiff.ClasspathSnapshotShrinker.shrinkClasspath
 import org.jetbrains.kotlin.incremental.classpathDiff.ImpactedSymbolsComputer.computeImpactedSymbols
-import org.jetbrains.kotlin.incremental.storage.FileToAbsolutePathConverter
-import org.jetbrains.kotlin.incremental.storage.ListExternalizer
-import org.jetbrains.kotlin.incremental.storage.loadFromFile
+import org.jetbrains.kotlin.incremental.snapshots.LazyClasspathSnapshot
+import org.jetbrains.kotlin.incremental.snapshots.LazySnapshotLoadingMetrics
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
@@ -25,7 +24,7 @@ import org.jetbrains.kotlin.resolve.sam.SAM_LOOKUP_NAME
 import java.util.*
 
 /** Computes changes between two [ClasspathSnapshot]s .*/
-object ClasspathChangesComputer {
+internal object ClasspathChangesComputer {
 
     /**
      * Computes changes between the current and previous classpath, plus unchanged elements that are impacted by the changes.
@@ -34,41 +33,25 @@ object ClasspathChangesComputer {
      * classpath must not contain duplicate classes.
      */
     fun computeClasspathChanges(
-        classpathSnapshotFiles: ClasspathSnapshotFiles,
         lookupStorage: LookupStorage,
-        storeCurrentClasspathSnapshotForReuse: (currentClasspathSnapshot: List<AccessibleClassSnapshot>, shrunkCurrentClasspathAgainstPreviousLookups: List<AccessibleClassSnapshot>) -> Unit,
+        lazyClasspathSnapshot: LazyClasspathSnapshot,
         reporter: ClasspathSnapshotBuildReporter
     ): ProgramSymbolSet {
-        val currentClasspathSnapshot = reporter.measure(BuildTime.LOAD_CURRENT_CLASSPATH_SNAPSHOT) {
-            val classpathSnapshot =
-                CachedClasspathSnapshotSerializer.load(classpathSnapshotFiles.currentClasspathEntrySnapshotFiles, reporter)
-            reporter.measure(BuildTime.REMOVE_DUPLICATE_CLASSES) {
-                classpathSnapshot.removeDuplicateAndInaccessibleClasses()
-            }
-        }
-        val shrunkCurrentClasspathAgainstPreviousLookups = reporter.measure(BuildTime.SHRINK_CURRENT_CLASSPATH_SNAPSHOT) {
-            shrinkClasspath(
-                currentClasspathSnapshot, lookupStorage,
-                ClasspathSnapshotShrinker.MetricsReporter(
-                    reporter,
-                    BuildTime.GET_LOOKUP_SYMBOLS, BuildTime.FIND_REFERENCED_CLASSES, BuildTime.FIND_TRANSITIVELY_REFERENCED_CLASSES
-                )
-            )
-        }
+        val currentClasspathSnapshot = lazyClasspathSnapshot.getCurrentClasspathSnapshot(LazySnapshotLoadingMetrics.OnClasspathDiffComputation)
+        val shrunkCurrentClasspathAgainstPreviousLookups = lazyClasspathSnapshot
+            .getComputedShrunkClasspathAgainstPreviousLookups(lookupStorage, LazySnapshotLoadingMetrics.OnClasspathDiffComputation)
         reporter.debug {
             "Shrunk current classpath snapshot for diffing," +
                     " retained ${shrunkCurrentClasspathAgainstPreviousLookups.size} / ${currentClasspathSnapshot.size} classes"
         }
-        storeCurrentClasspathSnapshotForReuse(currentClasspathSnapshot, shrunkCurrentClasspathAgainstPreviousLookups)
 
-        val shrunkPreviousClasspathSnapshot = reporter.measure(BuildTime.LOAD_SHRUNK_PREVIOUS_CLASSPATH_SNAPSHOT) {
-            ListExternalizer(AccessibleClassSnapshotExternalizer).loadFromFile(classpathSnapshotFiles.shrunkPreviousClasspathSnapshotFile)
-        }
+        val shrunkPreviousClasspathSnapshot = lazyClasspathSnapshot
+            .getSavedShrunkClasspathAgainstPreviousLookups(LazySnapshotLoadingMetrics.OnClasspathDiffComputation)
         reporter.debug {
             "Loaded shrunk previous classpath snapshot for diffing, found ${shrunkPreviousClasspathSnapshot.size} classes"
         }
 
-        return reporter.measure(BuildTime.COMPUTE_CHANGED_AND_IMPACTED_SET) {
+        return reporter.measure(GradleBuildTime.COMPUTE_CHANGED_AND_IMPACTED_SET) {
             computeChangedAndImpactedSet(shrunkCurrentClasspathAgainstPreviousLookups, shrunkPreviousClasspathSnapshot, reporter)
         }
     }
@@ -100,7 +83,7 @@ object ClasspathChangesComputer {
             } else null
         }
 
-        val changedSet = reporter.measure(BuildTime.COMPUTE_CLASS_CHANGES) {
+        val changedSet = reporter.measure(GradleBuildTime.COMPUTE_CLASS_CHANGES) {
             computeClassChanges(changedCurrentClasses, changedPreviousClasses, reporter)
         }
         reporter.reportVerboseWithLimit { "Changed set = ${changedSet.toDebugString()}" }
@@ -109,7 +92,7 @@ object ClasspathChangesComputer {
             return changedSet
         }
 
-        val changedAndImpactedSet = reporter.measure(BuildTime.COMPUTE_IMPACTED_SET) {
+        val changedAndImpactedSet = reporter.measure(GradleBuildTime.COMPUTE_IMPACTED_SET) {
             // Note that changes may contain added symbols (they can also impact recompilation -- see examples in JavaClassChangesComputer).
             // So ideally, the result should be:
             //     computeImpactedSymbols(changes = changesOnPreviousClasspath, allClasses = classesOnPreviousClasspath) +
@@ -144,13 +127,13 @@ object ClasspathChangesComputer {
     private fun computeClassChanges(
         currentClassSnapshots: List<AccessibleClassSnapshot>,
         previousClassSnapshots: List<AccessibleClassSnapshot>,
-        metrics: BuildMetricsReporter
+        metrics: BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric>
     ): ProgramSymbolSet {
         val (currentKotlinClassSnapshots, currentJavaClassSnapshots) = currentClassSnapshots.partition { it is KotlinClassSnapshot }
         val (previousKotlinClassSnapshots, previousJavaClassSnapshots) = previousClassSnapshots.partition { it is KotlinClassSnapshot }
 
         @Suppress("UNCHECKED_CAST")
-        val kotlinClassChanges = metrics.measure(BuildTime.COMPUTE_KOTLIN_CLASS_CHANGES) {
+        val kotlinClassChanges = metrics.measure(GradleBuildTime.COMPUTE_KOTLIN_CLASS_CHANGES) {
             computeKotlinClassChanges(
                 currentKotlinClassSnapshots as List<KotlinClassSnapshot>,
                 previousKotlinClassSnapshots as List<KotlinClassSnapshot>
@@ -158,7 +141,7 @@ object ClasspathChangesComputer {
         }
 
         @Suppress("UNCHECKED_CAST")
-        val javaClassChanges = metrics.measure(BuildTime.COMPUTE_JAVA_CLASS_CHANGES) {
+        val javaClassChanges = metrics.measure(GradleBuildTime.COMPUTE_JAVA_CLASS_CHANGES) {
             JavaClassChangesComputer.compute(
                 currentJavaClassSnapshots as List<JavaClassSnapshot>,
                 previousJavaClassSnapshots as List<JavaClassSnapshot>
@@ -204,7 +187,7 @@ object ClasspathChangesComputer {
     ): ProgramSymbolSet {
         val workingDir =
             FileUtil.createTempDirectory(this::class.java.simpleName, "_WorkingDir_${UUID.randomUUID()}", /* deleteOnExit */ true)
-        val icContext = IncrementalCompilationContext(pathConverter = FileToAbsolutePathConverter)
+        val icContext = IncrementalCompilationContext()
         val incrementalJvmCache = IncrementalJvmCache(workingDir, icContext, null)
 
         // Step 1:
@@ -248,17 +231,20 @@ object ClasspathChangesComputer {
 
         // IncrementalJvmCache currently doesn't use the `KotlinClassInfo.extraInfo.classSnapshotExcludingMembers` info when comparing
         // classes, so we need to do it here.
-        // TODO(KT-58289): Ensure IncrementalJvmCache uses that info when comparing classes.
+        // TODO(KT-59292): Ensure IncrementalJvmCache uses that info when comparing classes, so we can remove this code.
         val currentClassSnapshotsExcludingMembers = currentClassSnapshots
             .associate { it.classId to it.classMemberLevelSnapshot!!.extraInfo.classSnapshotExcludingMembers }
             .filter { it.value != null }
-        val previousClassSnapshotsExcludingMembers = previousClassSnapshots
-            .associate { it.classId to it.classMemberLevelSnapshot!!.extraInfo.classSnapshotExcludingMembers }
-            .filter { it.value != null }
-        previousClassSnapshotsExcludingMembers.keys.intersect(currentClassSnapshotsExcludingMembers.keys).forEach {
-            if (previousClassSnapshotsExcludingMembers[it]!! != currentClassSnapshotsExcludingMembers[it]!!) {
+        previousClassSnapshots.forEach { previousClassSnapshot ->
+            val classId = previousClassSnapshot.classId
+            val currentClassSnapshotExcludingMember = currentClassSnapshotsExcludingMembers[classId]
+            val previousClassSnapshotExcludingMembers =
+                previousClassSnapshot.classMemberLevelSnapshot!!.extraInfo.classSnapshotExcludingMembers
+            if (currentClassSnapshotExcludingMember != null && previousClassSnapshotExcludingMembers != null
+                && currentClassSnapshotExcludingMember != previousClassSnapshotExcludingMembers
+            ) {
                 // `areSubclassesAffected = false` as we don't need to compute impacted symbols at this step
-                changesCollector.collectSignature(fqName = it.asSingleFqName(), areSubclassesAffected = false)
+                changesCollector.collectSignature(fqName = classId.asSingleFqName(), areSubclassesAffected = false)
             }
         }
 

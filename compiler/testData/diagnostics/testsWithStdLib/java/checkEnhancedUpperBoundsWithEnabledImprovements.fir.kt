@@ -1,5 +1,6 @@
-// !LANGUAGE: +TypeEnhancementImprovementsInStrictMode
-// !DIAGNOSTICS: -UNUSED_PARAMETER -UNUSED_VARIABLE
+// RUN_PIPELINE_TILL: FRONTEND
+// LANGUAGE: +TypeEnhancementImprovementsInStrictMode
+// DIAGNOSTICS: -UNUSED_PARAMETER -UNUSED_VARIABLE
 // FULL_JDK
 
 // FILE: MapLike.java

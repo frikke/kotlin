@@ -5,8 +5,6 @@
 
 package org.jetbrains.kotlin.gradle.plugin.sources.android.configurator
 
-import com.android.build.gradle.api.AndroidSourceSet
-import com.android.build.gradle.api.BaseVariant
 import org.jetbrains.kotlin.gradle.dsl.kotlinExtension
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtensionOrNull
 import org.jetbrains.kotlin.gradle.plugin.KotlinPluginLifecycle
@@ -18,22 +16,30 @@ import org.jetbrains.kotlin.gradle.plugin.sources.android.AndroidBaseSourceSetNa
 import org.jetbrains.kotlin.gradle.plugin.sources.android.AndroidVariantType
 import org.jetbrains.kotlin.gradle.plugin.sources.android.type
 import org.jetbrains.kotlin.gradle.plugin.sources.android.variantType
-import org.jetbrains.kotlin.gradle.utils.lowerCamelCaseName
+import org.jetbrains.kotlin.gradle.utils.*
 
 internal object MultiplatformLayoutV2DependsOnConfigurator : KotlinAndroidSourceSetConfigurator {
-    override fun configure(target: KotlinAndroidTarget, kotlinSourceSet: KotlinSourceSet, androidSourceSet: AndroidSourceSet) {
+    override fun configure(
+        target: KotlinAndroidTarget,
+        kotlinSourceSet: KotlinSourceSet,
+        @Suppress("TYPEALIAS_EXPANSION_DEPRECATION") androidSourceSet: DeprecatedAndroidSourceSet
+    ) {
         val androidBaseSourceSetName = AndroidBaseSourceSetName.byName(androidSourceSet.name) ?: return
         setDefaultDependsOn(target, kotlinSourceSet, androidBaseSourceSetName.variantType)
     }
 
-    override fun configureWithVariant(target: KotlinAndroidTarget, kotlinSourceSet: KotlinSourceSet, variant: BaseVariant) {
+    override fun configureWithVariant(
+        target: KotlinAndroidTarget,
+        kotlinSourceSet: KotlinSourceSet,
+        @Suppress("TYPEALIAS_EXPANSION_DEPRECATION") variant: DeprecatedAndroidBaseVariant
+    ) {
         setDefaultDependsOn(target, kotlinSourceSet, variant.type)
     }
 
     private fun setDefaultDependsOn(target: KotlinAndroidTarget, kotlinSourceSet: KotlinSourceSet, variantType: AndroidVariantType) {
         target.project.launchInStage(KotlinPluginLifecycle.Stage.FinaliseRefinesEdges) {
-            /* Only setup default if not KotlinTargetHierarchy was applied */
-            if (target.project.multiplatformExtensionOrNull?.internalKotlinTargetHierarchy?.appliedDescriptors.orEmpty().isNotEmpty()) {
+            /* Only setup default if no hierarchy template was applied */
+            if (target.project.multiplatformExtensionOrNull?.hierarchy?.appliedTemplates.orEmpty().isNotEmpty()) {
                 return@launchInStage
             }
 

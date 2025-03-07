@@ -5,8 +5,6 @@
 
 package org.jetbrains.kotlin.codegen;
 
-import com.intellij.openapi.util.io.FileUtil;
-import kotlin.io.FilesKt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.ObsoleteTestInfrastructure;
@@ -21,7 +19,6 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.util.List;
 
-import static org.jetbrains.kotlin.test.KotlinTestUtils.assertEqualsToFile;
 import static org.jetbrains.kotlin.codegen.CodegenTestUtilsKt.getBoxMethodOrNull;
 import static org.jetbrains.kotlin.codegen.CodegenTestUtilsKt.getGeneratedClass;
 
@@ -34,25 +31,14 @@ public abstract class AbstractBlackBoxCodegenTest extends CodegenTestCase {
     ) throws Exception {
         boolean isIgnored = isIgnoredTarget(wholeFile);
 
-        compile(files, !isIgnored, false);
+        compile(files, !isIgnored);
 
         try {
             blackBox(!isIgnored, unexpectedBehaviour);
         }
         catch (Throwable t) {
-            if (!isIgnored) {
-                try {
-                    // To create .txt file in case of failure
-                    doBytecodeListingTest(wholeFile);
-                }
-                catch (Throwable ignored) {
-                }
-            }
-
             throw new TestsRuntimeError(t);
         }
-
-        doBytecodeListingTest(wholeFile);
     }
 
     @Override
@@ -64,22 +50,7 @@ public abstract class AbstractBlackBoxCodegenTest extends CodegenTestCase {
         doMultiFileTest(wholeFile, (List<TestFile>) files, false);
     }
 
-    private void doBytecodeListingTest(@NotNull File wholeFile) throws Exception {
-        if (!InTextDirectivesUtils.isDirectiveDefined(FileUtil.loadFile(wholeFile), "CHECK_BYTECODE_LISTING")) return;
-
-        String suffix = getBackend().isIR() ? "_ir" : "";
-        File expectedFile = new File(wholeFile.getParent(), FilesKt.getNameWithoutExtension(wholeFile) + suffix + ".txt");
-
-        String text =
-                BytecodeListingTextCollectingVisitor.Companion.getText(
-                        classFileFactory,
-                        BytecodeListingTextCollectingVisitor.Filter.ForCodegenTests.INSTANCE
-                );
-
-        assertEqualsToFile(expectedFile, text);
-    }
-
-    protected void blackBox(boolean reportProblems, boolean unexpectedBehaviour) {
+    private void blackBox(boolean reportProblems, boolean unexpectedBehaviour) {
         // If there are many files, the first 'box(): String' function will be executed.
         GeneratedClassLoader generatedClassLoader = generateAndCreateClassLoader(reportProblems);
         for (KtFile firstFile : myFiles.getPsiFiles()) {
@@ -89,7 +60,7 @@ public abstract class AbstractBlackBoxCodegenTest extends CodegenTestCase {
             try {
                 Method method = getBoxMethodOrNull(aClass);
                 if (method != null) {
-                    callBoxMethodAndCheckResult(generatedClassLoader, aClass, method, unexpectedBehaviour);
+                    callBoxMethodAndCheckResult(generatedClassLoader, method, unexpectedBehaviour);
                     return;
                 }
             }
@@ -103,12 +74,8 @@ public abstract class AbstractBlackBoxCodegenTest extends CodegenTestCase {
         fail("Can't find box method!");
     }
 
-    protected void blackBox(boolean reportProblems) {
-        blackBox(reportProblems, false);
-    }
-
     @Nullable
-    protected static String getFacadeFqName(@NotNull KtFile file) {
+    private static String getFacadeFqName(@NotNull KtFile file) {
         return CodegenUtil.getMemberDeclarationsToGenerate(file).isEmpty()
                ? null
                : JvmFileClassUtil.getFileClassInfoNoResolve(file).getFacadeClassFqName().asString();

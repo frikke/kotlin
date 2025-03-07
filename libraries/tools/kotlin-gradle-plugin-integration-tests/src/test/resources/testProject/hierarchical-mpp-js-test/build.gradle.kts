@@ -5,13 +5,6 @@ plugins {
     kotlin("multiplatform")
 }
 
-repositories {
-	val thirdPartyRepo: String by project
-	maven(thirdPartyRepo)
-	mavenLocal()
-    mavenCentral()
-}
-
 kotlin {
     sourceSets {
         val commonMain by getting {
@@ -57,8 +50,4 @@ kotlin {
             }
         }
     }
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile> {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
 }

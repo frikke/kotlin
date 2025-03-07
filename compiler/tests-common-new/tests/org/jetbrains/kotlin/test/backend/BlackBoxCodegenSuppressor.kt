@@ -7,18 +7,18 @@ package org.jetbrains.kotlin.test.backend
 
 import org.jetbrains.kotlin.test.TargetBackend
 import org.jetbrains.kotlin.test.WrappedException
-import org.jetbrains.kotlin.test.bind
 import org.jetbrains.kotlin.test.directives.CodegenTestDirectives
-import org.jetbrains.kotlin.test.directives.extractIgnoredDirectivesForTargetBackend
+import org.jetbrains.kotlin.test.directives.extractIgnoredDirectiveForTargetBackend
 import org.jetbrains.kotlin.test.directives.model.DirectivesContainer
 import org.jetbrains.kotlin.test.directives.model.ValueDirective
 import org.jetbrains.kotlin.test.model.AfterAnalysisChecker
 import org.jetbrains.kotlin.test.model.TestModule
 import org.jetbrains.kotlin.test.services.*
+import org.jetbrains.kotlin.utils.bind
 
 class BlackBoxCodegenSuppressor(
     testServices: TestServices,
-    val customIgnoreDirective: ValueDirective<TargetBackend>? = null
+    private val customIgnoreDirective: ValueDirective<TargetBackend>? = null
 ) : AfterAnalysisChecker(testServices) {
     override val directiveContainers: List<DirectivesContainer>
         get() = listOf(CodegenTestDirectives)
@@ -29,41 +29,36 @@ class BlackBoxCodegenSuppressor(
     override fun suppressIfNeeded(failedAssertions: List<WrappedException>): List<WrappedException> {
         val suppressionChecker = testServices.codegenSuppressionChecker
         val moduleStructure = testServices.moduleStructure
-        val ignoreDirectives = suppressionChecker.extractIgnoreDirectives(moduleStructure.modules.first()) ?: return failedAssertions
-        return suppressionChecker.processAllDirectives(ignoreDirectives) { ignoreDirective, suppressionResult ->
+        val ignoreDirective = suppressionChecker.extractIgnoreDirective(moduleStructure.modules.first()) ?: return failedAssertions
+        return suppressionChecker.processAllDirectives(listOf(ignoreDirective)) { directive, suppressionResult ->
             listOfNotNull(
                 suppressionChecker.processMutedTest(
                     failed = failedAssertions.isNotEmpty(),
-                    ignoreDirective,
+                    directive,
                     suppressionResult,
                 )?.wrap()
             )
         } ?: failedAssertions
     }
 
-    class SuppressionChecker(val testServices: TestServices, val customIgnoreDirective: ValueDirective<TargetBackend>?) : TestService {
-        fun extractIgnoreDirectives(module: TestModule): List<ValueDirective<TargetBackend>>? {
-            val targetBackend = testServices.defaultsProvider.defaultTargetBackend ?: module.targetBackend ?: return null
-            return extractIgnoredDirectivesForTargetBackend(module, targetBackend, customIgnoreDirective)
+    class SuppressionChecker(
+        val testServices: TestServices,
+        private val customIgnoreDirective: ValueDirective<TargetBackend>?
+    ) : TestService {
+        fun extractIgnoreDirective(module: TestModule): ValueDirective<TargetBackend>? {
+            val targetBackend = testServices.defaultsProvider.targetBackend ?: return null
+            return extractIgnoredDirectiveForTargetBackend(testServices, module, targetBackend, customIgnoreDirective)
         }
 
         fun failuresInModuleAreIgnored(module: TestModule): Boolean {
-            val ignoreDirective = extractIgnoreDirectives(module) ?: return false
+            val ignoreDirective = extractIgnoreDirective(module) ?: return false
             return failuresInModuleAreIgnored(module, ignoreDirective).testMuted
-        }
-
-        private fun failuresInModuleAreIgnored(module: TestModule, ignoreDirectives: List<ValueDirective<TargetBackend>>): SuppressionResult {
-            for (ignoreDirective in ignoreDirectives) {
-                val result = failuresInModuleAreIgnored(module, ignoreDirective)
-                if (result.testMuted) return result
-            }
-            return SuppressionResult.NO_MUTE
         }
 
         fun failuresInModuleAreIgnored(module: TestModule, ignoreDirective: ValueDirective<TargetBackend>): SuppressionResult {
             val ignoredBackends = module.directives[ignoreDirective]
 
-            val targetBackend = testServices.defaultsProvider.defaultTargetBackend ?: module.targetBackend
+            val targetBackend = testServices.defaultsProvider.targetBackend
             return when {
                 ignoredBackends.isEmpty() -> SuppressionResult.NO_MUTE
                 targetBackend in ignoredBackends -> SuppressionResult(true, targetBackend)
@@ -106,8 +101,7 @@ class BlackBoxCodegenSuppressor(
         ): AssertionError? {
             if (failed) return null
 
-            val firstModule = testServices.moduleStructure.modules.first()
-            val targetBackend = testServices.defaultsProvider.defaultTargetBackend ?: firstModule.targetBackend
+            val targetBackend = testServices.defaultsProvider.targetBackend
             val message = buildString {
                 append("Looks like this test can be unmuted. Remove ")
                 targetBackend?.name?.let {
@@ -116,7 +110,7 @@ class BlackBoxCodegenSuppressor(
                 }
                 append(directive.name)
                 append(" directive for ")
-                append(firstModule.frontendKind)
+                append(testServices.defaultsProvider.frontendKind)
 
                 assert(suppressionResult.testMuted)
 

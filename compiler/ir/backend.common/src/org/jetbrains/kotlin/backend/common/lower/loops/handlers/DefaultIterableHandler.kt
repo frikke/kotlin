@@ -14,13 +14,13 @@ import org.jetbrains.kotlin.ir.builders.createTmpVariable
 import org.jetbrains.kotlin.ir.builders.irCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.symbols.IrSymbol
-import org.jetbrains.kotlin.ir.types.isSubtypeOfClass
 import org.jetbrains.kotlin.ir.util.getSimpleFunction
+import org.jetbrains.kotlin.ir.util.isSubtypeOfClass
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
 /** Builds a [HeaderInfo] for Iterables not handled by more specialized handlers. */
 internal class DefaultIterableHandler(private val context: CommonBackendContext) : HeaderInfoHandler<IrExpression, Nothing?> {
-    private val iterableClassSymbol = context.ir.symbols.iterable
+    private val iterableClassSymbol = context.symbols.iterable
 
     override fun matchIterable(expression: IrExpression): Boolean =
         expression.type.isSubtypeOfClass(iterableClassSymbol)

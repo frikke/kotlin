@@ -3,7 +3,6 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
-@file:OptIn(ExperimentalUnsignedTypes::class)
 
 package org.jetbrains.kotlin.backend.common.lower.loops
 
@@ -17,8 +16,8 @@ import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.defaultType
-import org.jetbrains.kotlin.ir.types.isSubtypeOfClass
 import org.jetbrains.kotlin.ir.util.defaultType
+import org.jetbrains.kotlin.ir.util.isSubtypeOfClass
 
 /** Represents a progression type in the Kotlin stdlib. */
 sealed class ProgressionType(
@@ -125,22 +124,20 @@ internal abstract class UnsignedProgressionType(
                 startOffset, endOffset,
                 unsignedType,
                 unsafeCoerceIntrinsic,
-                typeArgumentsCount = 2,
-                valueArgumentsCount = 1
+                typeArgumentsCount = 2
             ).apply {
-                putTypeArgument(0, fromType)
-                putTypeArgument(1, unsignedType)
-                putValueArgument(0, this@asUnsigned)
+                typeArguments[0] = fromType
+                typeArguments[1] = unsignedType
+                arguments[0] = this@asUnsigned
             }
         } else {
             // Fallback to calling `toUInt/ULong()` extension function.
             IrCallImpl(
                 startOffset, endOffset, unsignedConversionFunction.owner.returnType,
                 unsignedConversionFunction,
-                typeArgumentsCount = 0,
-                valueArgumentsCount = 0
+                typeArgumentsCount = 0
             ).apply {
-                extensionReceiver = this@asUnsigned
+                arguments[0] = this@asUnsigned
             }
         }
     }
@@ -153,12 +150,11 @@ internal abstract class UnsignedProgressionType(
             IrCallImpl(
                 startOffset, endOffset, toType,
                 unsafeCoerceIntrinsic,
-                typeArgumentsCount = 2,
-                valueArgumentsCount = 1
+                typeArgumentsCount = 2
             ).apply {
-                putTypeArgument(0, unsignedType)
-                putTypeArgument(1, toType)
-                putValueArgument(0, this@asSigned)
+                typeArguments[0] = unsignedType
+                typeArguments[1] = toType
+                arguments[0] = this@asSigned
             }
         } else {
             // Fallback to calling `toInt/Long()` function.

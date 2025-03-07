@@ -9,7 +9,6 @@ import org.gradle.api.logging.LogLevel
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.util.GradleVersion
 import org.jetbrains.kotlin.gradle.testbase.*
-import org.jetbrains.kotlin.gradle.util.checkedReplace
 import org.junit.jupiter.api.DisplayName
 import java.nio.file.Files
 import kotlin.io.path.appendText
@@ -29,8 +28,8 @@ class KotlinAndroidIT : KGPBaseTest() {
         jdkVersion: JdkVersions.ProvidedJdk,
     ) {
         fun BuildResult.assertKotlinGradleBuildServicesAreInitialized() {
-            assertOutputContainsExactTimes("Initialized KotlinGradleBuildServices", expectedRepetitionTimes = 1)
-            assertOutputContainsExactTimes("Disposed KotlinGradleBuildServices", expectedRepetitionTimes = 1)
+            assertOutputContainsExactlyTimes("Initialized KotlinGradleBuildServices", expectedCount = 1)
+            assertOutputContainsExactlyTimes("Disposed KotlinGradleBuildServices", expectedCount = 1)
         }
 
         project(
@@ -52,10 +51,9 @@ class KotlinAndroidIT : KGPBaseTest() {
                 }
             }
 
-            build("assembleDebug", "test") {
-                val pattern = ":Test:compile[\\w\\d]+Kotlin"
-                expectedTasks.addAll(findTasksByPattern(pattern.toRegex()))
-                assertTasksExecuted(expectedTasks)
+            build("assembleDebug", ":Android:test") {
+                val pattern = ":Android:compile[\\w\\d]+Kotlin".toRegex()
+                assertTasksExecuted(expectedTasks + tasks.map { it.path }.filter { it.matches(pattern) })
                 assertOutputContains("InternalDummyTest PASSED")
                 assertKotlinGradleBuildServicesAreInitialized()
             }
@@ -96,7 +94,10 @@ class KotlinAndroidIT : KGPBaseTest() {
             "AndroidIcepickProject",
             gradleVersion,
             buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
-            buildJdk = jdkVersion.location
+            buildJdk = jdkVersion.location,
+            dependencyManagement = DependencyManagement.DefaultDependencyManagement(
+                setOf("https://clojars.org/repo/")
+            )
         ) {
             build("assembleDebug")
         }
@@ -219,7 +220,7 @@ class KotlinAndroidIT : KGPBaseTest() {
             }
 
             // Gradle 6 + AGP 4 produce a deprecation warning on parallel executions about resolving a configuration from another project
-            build(":Lib:lintFlavor1Debug", buildOptions = buildOptions.copy(parallel = gradleVersion >= GradleVersion.version("7.0"))) {
+            build(":Lib:lintFlavor1Debug", buildOptions = buildOptions.copy(parallel = true)) {
                 assertOutputDoesNotContain("as an external dependency and not analyze it.")
             }
         }
@@ -239,15 +240,16 @@ class KotlinAndroidIT : KGPBaseTest() {
             buildJdk = jdkVersion.location
         ) {
             subProject("Lib").buildGradle.modify {
-                it.checkedReplace(
-                    "kotlin-stdlib:\$kotlin_version",
-                    "kotlin-stdlib"
-                ) +
+                it +
                         //language=Gradle
                         """
-
+                        
                         apply plugin: 'maven-publish'
-        
+                            
+                        dependencies {
+                             implementation 'org.jetbrains.kotlin:kotlin-stdlib'
+                        }
+                        
                         android {
                             defaultPublishConfig 'flavor1Debug'
                         }
@@ -265,7 +267,7 @@ class KotlinAndroidIT : KGPBaseTest() {
                                 }
                                 repositories {
                                     maven {
-                                        url = "file://${'$'}buildDir/repo"
+                                        url = "${'$'}buildDir/repo"
                                     }
                                 }
                             }
@@ -275,7 +277,8 @@ class KotlinAndroidIT : KGPBaseTest() {
 
             build(":Lib:assembleFlavor1Debug", ":Lib:publish") {
                 assertTasksExecuted(":Lib:compileFlavor1DebugKotlin", ":Lib:publishFlavorDebugPublicationToMavenRepository")
-                val pomLines = subProject("Lib").projectPath.resolve("build/repo/com/example/flavor1Debug/1.0/flavor1Debug-1.0.pom").readLines()
+                val pomLines =
+                    subProject("Lib").projectPath.resolve("build/repo/com/example/flavor1Debug/1.0/flavor1Debug-1.0.pom").readLines()
                 val stdlibVersionLineNumber = pomLines.indexOfFirst { "<artifactId>kotlin-stdlib</artifactId>" in it } + 1
                 val versionLine = pomLines[stdlibVersionLineNumber]
                 assertContains(versionLine, "<version>${buildOptions.kotlinVersion}</version>")

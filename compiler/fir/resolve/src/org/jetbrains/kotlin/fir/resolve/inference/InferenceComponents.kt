@@ -20,21 +20,30 @@ class InferenceComponents(val session: FirSession) : FirSessionComponent {
     private val typeContext: ConeInferenceContext = session.typeContext
     private val approximator = session.typeApproximator
 
-    val trivialConstraintTypeInferenceOracle = TrivialConstraintTypeInferenceOracle.create(typeContext)
-    private val incorporator = ConstraintIncorporator(approximator, trivialConstraintTypeInferenceOracle, ConeConstraintSystemUtilContext)
+    val trivialConstraintTypeInferenceOracle: TrivialConstraintTypeInferenceOracle =
+        TrivialConstraintTypeInferenceOracle.create(typeContext)
+    private val incorporator =
+        ConstraintIncorporator(
+            approximator,
+            trivialConstraintTypeInferenceOracle,
+            ConeConstraintSystemUtilContext,
+            session.languageVersionSettings
+        )
     private val injector = ConstraintInjector(
         incorporator,
         approximator,
         session.languageVersionSettings,
     )
-    val resultTypeResolver = ResultTypeResolver(approximator, trivialConstraintTypeInferenceOracle, session.languageVersionSettings)
-    val variableFixationFinder = VariableFixationFinder(trivialConstraintTypeInferenceOracle, session.languageVersionSettings)
-    val postponedArgumentInputTypesResolver =
+    val resultTypeResolver: ResultTypeResolver =
+        ResultTypeResolver(approximator, trivialConstraintTypeInferenceOracle, session.languageVersionSettings)
+    val variableFixationFinder: VariableFixationFinder =
+        VariableFixationFinder(trivialConstraintTypeInferenceOracle, session.languageVersionSettings)
+    val postponedArgumentInputTypesResolver: PostponedArgumentInputTypesResolver =
         PostponedArgumentInputTypesResolver(
             resultTypeResolver, variableFixationFinder, ConeConstraintSystemUtilContext, session.languageVersionSettings
         )
 
-    val constraintSystemFactory = ConstraintSystemFactory()
+    val constraintSystemFactory: ConstraintSystemFactory = ConstraintSystemFactory()
 
     fun createConstraintSystem(): NewConstraintSystemImpl {
         return NewConstraintSystemImpl(injector, typeContext, session.languageVersionSettings)

@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: BACKEND
 // FIR_IDENTICAL
-// !DIAGNOSTICS: -UNUSED_PARAMETER
+// DIAGNOSTICS: -UNUSED_PARAMETER
 
 fun expanded(maxCapacity: Int, newCapacity: Int, buffer: Array<Any?>) {
     select(buffer.copyOf(newCapacity), toArray(arrayOfNulls(newCapacity)))

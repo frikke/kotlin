@@ -5,15 +5,13 @@
 
 package org.jetbrains.kotlin.analysis.low.level.api.fir.sessions
 
-import com.intellij.openapi.util.ModificationTracker
 import org.jetbrains.kotlin.analysis.low.level.api.fir.LLFirModuleResolveComponents
-import org.jetbrains.kotlin.analysis.project.structure.KtScriptModule
+import org.jetbrains.kotlin.analysis.api.projectStructure.KaScriptModule
 import org.jetbrains.kotlin.fir.BuiltinTypes
 import org.jetbrains.kotlin.fir.PrivateSessionConstructor
 
 internal class LLFirScriptSession @PrivateSessionConstructor constructor(
-    ktModule: KtScriptModule,
-    dependencyTracker: ModificationTracker,
+    ktModule: KaScriptModule,
     override val moduleComponents: LLFirModuleResolveComponents,
     builtinTypes: BuiltinTypes
-) : LLFirResolvableModuleSession(ktModule, dependencyTracker, builtinTypes)
+) : LLFirResolvableModuleSession(ktModule, builtinTypes)

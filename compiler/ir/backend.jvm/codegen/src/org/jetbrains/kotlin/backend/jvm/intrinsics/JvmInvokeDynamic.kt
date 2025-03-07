@@ -24,7 +24,7 @@ object JvmInvokeDynamic : IntrinsicMethod() {
         val dynamicCall = expression.getValueArgument(0) as? IrCall
             ?: fail("'dynamicCall' is expected to be a call")
         val dynamicCallee = dynamicCall.symbol.owner
-        if (dynamicCallee.parent != codegen.context.ir.symbols.kotlinJvmInternalInvokeDynamicPackage ||
+        if (dynamicCallee.parent != codegen.context.symbols.kotlinJvmInternalInvokeDynamicPackage ||
             dynamicCallee.origin != JvmLoweredDeclarationOrigin.INVOKEDYNAMIC_CALL_TARGET
         )
             fail("Unexpected dynamicCallee: '${dynamicCallee.render()}'")
@@ -64,7 +64,7 @@ object JvmInvokeDynamic : IntrinsicMethod() {
             is IrCall ->
                 evalBootstrapArgumentIntrinsicCall(element, codegen)
                     ?: throw AssertionError("Unexpected callee in bootstrap method argument:\n${element.dump()}")
-            is IrConst<*> ->
+            is IrConst ->
                 when (element.kind) {
                     IrConstKind.Byte -> (element.value as Byte).toInt()
                     IrConstKind.Short -> (element.value as Short).toInt()
@@ -82,11 +82,11 @@ object JvmInvokeDynamic : IntrinsicMethod() {
 
     private fun evalBootstrapArgumentIntrinsicCall(irCall: IrCall, codegen: ExpressionCodegen): Any? {
         return when (irCall.symbol) {
-            codegen.context.ir.symbols.jvmOriginalMethodTypeIntrinsic ->
+            codegen.context.symbols.jvmOriginalMethodTypeIntrinsic ->
                 evalOriginalMethodType(irCall, codegen)
-            codegen.context.ir.symbols.jvmMethodType ->
+            codegen.context.symbols.jvmMethodType ->
                 evalMethodType(irCall)
-            codegen.context.ir.symbols.jvmMethodHandle ->
+            codegen.context.symbols.jvmMethodHandle ->
                 evalMethodHandle(irCall)
             else ->
                 null

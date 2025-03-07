@@ -7,6 +7,7 @@
 
 package org.jetbrains.kotlin.gradle.dependencyResolutionTests.tcs
 
+import org.jetbrains.kotlin.gradle.util.mockGenerateProjectStructureMetadataTaskOutputs
 import org.gradle.api.Project
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
 import org.jetbrains.kotlin.gradle.idea.tcs.IdeaKotlinBinaryDependency
@@ -27,7 +28,7 @@ class IdeSourceDependencyResolutionTest {
             applyMultiplatformPlugin()
 
             multiplatformExtension.apply {
-                targetHierarchy.default()
+                applyDefaultHierarchyTemplate()
                 linuxX64()
                 linuxArm64()
                 jvm()
@@ -39,7 +40,7 @@ class IdeSourceDependencyResolutionTest {
             applyMultiplatformPlugin()
 
             multiplatformExtension.apply {
-                targetHierarchy.default()
+                applyDefaultHierarchyTemplate()
                 linuxX64()
                 linuxArm64()
                 jvm()
@@ -53,6 +54,8 @@ class IdeSourceDependencyResolutionTest {
         root.evaluate()
         producer.evaluate()
         consumer.evaluate()
+
+        producer.mockGenerateProjectStructureMetadataTaskOutputs()
 
         consumer.resolveDependencies("commonMain").assertMatches(
             regularSourceDependency(":producer/commonMain")
@@ -98,7 +101,7 @@ class IdeSourceDependencyResolutionTest {
             dependsOnDependency(":consumer/commonMain"),
             dependsOnDependency(":consumer/nativeMain"),
             dependsOnDependency(":consumer/linuxMain"),
-            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxX64/main/klib/producer.klib"))
+            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxX64/main/klib/producer"))
         )
 
         consumer.resolveDependencies("linuxX64Test").assertMatches(
@@ -109,14 +112,14 @@ class IdeSourceDependencyResolutionTest {
             dependsOnDependency(":consumer/commonTest"),
             dependsOnDependency(":consumer/nativeTest"),
             dependsOnDependency(":consumer/linuxTest"),
-            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxX64/main/klib/producer.klib"))
+            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxX64/main/klib/producer"))
         )
 
         consumer.resolveDependencies("linuxArm64Main").assertMatches(
             dependsOnDependency(":consumer/commonMain"),
             dependsOnDependency(":consumer/nativeMain"),
             dependsOnDependency(":consumer/linuxMain"),
-            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxArm64/main/klib/producer.klib"))
+            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxArm64/main/klib/producer"))
         )
 
         consumer.resolveDependencies("linuxArm64Test").assertMatches(
@@ -127,7 +130,7 @@ class IdeSourceDependencyResolutionTest {
             dependsOnDependency(":consumer/commonTest"),
             dependsOnDependency(":consumer/nativeTest"),
             dependsOnDependency(":consumer/linuxTest"),
-            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxArm64/main/klib/producer.klib"))
+            projectArtifactDependency(Regular, ":producer", FilePathRegex(".*/linuxArm64/main/klib/producer"))
         )
     }
 
@@ -142,7 +145,7 @@ class IdeSourceDependencyResolutionTest {
             androidLibrary { compileSdk = 33 }
 
             multiplatformExtension.apply {
-                targetHierarchy.default()
+                applyDefaultHierarchyTemplate()
                 linuxX64()
                 linuxArm64()
                 jvm()
@@ -167,6 +170,8 @@ class IdeSourceDependencyResolutionTest {
         root.evaluate()
         producer.evaluate()
         consumer.evaluate()
+
+        producer.mockGenerateProjectStructureMetadataTaskOutputs()
 
         consumer.resolveDependencies("jvmAndAndroidMain").assertMatches(
             regularSourceDependency(":producer/commonMain"),

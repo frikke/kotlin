@@ -15,7 +15,7 @@ import org.jetbrains.kotlin.ir.builders.irGetField
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.types.getClass
-import org.jetbrains.kotlin.ir.types.isNullable
+import org.jetbrains.kotlin.ir.util.isNullable
 import org.jetbrains.kotlin.ir.util.statements
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
@@ -60,7 +60,7 @@ private class AccessorInliner(commonBackendContext: CommonBackendContext) : IrEl
                 // Boxed primitive types (Int, Short,..) have `value` field
                 // Inline unsigned classes (UInt, UShort,..) have `data` field
                 val field = retVal.symbol.owner
-                context.createIrBuilder(call.symbol, call.startOffset, call.endOffset).irGetField(call.getValueArgument(0), field)
+                context.createIrBuilder(call.symbol, call.startOffset, call.endOffset).irGetField(call.arguments[0], field)
             } else {
                 context.log { "Cannot inline unbox function ${call.symbol} with body `IrReturn(expression)`, where `expression` is not IrGetField(...)" }
                 null

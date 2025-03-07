@@ -1,6 +1,4 @@
-// MUTE_SIGNATURE_COMPARISON_K2: ANY
-// ^ KT-57754
-
+// FIR_IDENTICAL
 interface I {
     val <T> T.id: T
         get() = this

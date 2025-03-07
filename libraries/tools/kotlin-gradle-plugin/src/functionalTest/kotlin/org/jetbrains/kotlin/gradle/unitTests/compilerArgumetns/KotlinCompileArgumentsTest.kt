@@ -7,28 +7,28 @@
 
 package org.jetbrains.kotlin.gradle.unitTests.compilerArgumetns
 
+import org.gradle.api.JavaVersion
 import org.gradle.kotlin.dsl.repositories
 import org.jetbrains.kotlin.cli.common.arguments.Argument
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.parseCommandLineArguments
 import org.jetbrains.kotlin.compilerRunner.ArgumentUtils
-import org.jetbrains.kotlin.config.JvmTarget
 import org.jetbrains.kotlin.gradle.dependencyResolutionTests.mavenCentralCacheRedirector
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.dsl.kotlinJvmExtension
 import org.jetbrains.kotlin.gradle.dsl.multiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.CreateCompilerArgumentsContext
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerArgumentsProducer
-import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerArgumentsProducer.ArgumentType.PluginClasspath
-import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerArgumentsProducer.ArgumentType.Primitive
+import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerArgumentsProducer.ArgumentType.*
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerArgumentsProducer.CreateCompilerArgumentsContext.Companion.lenient
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.gradle.util.assertNotNull
 import org.jetbrains.kotlin.gradle.util.buildProjectWithJvm
 import org.jetbrains.kotlin.gradle.util.buildProjectWithMPP
 import org.jetbrains.kotlin.gradle.util.main
-import kotlin.reflect.full.findAnnotation
+import kotlin.reflect.jvm.javaField
 import kotlin.test.*
 
 
@@ -78,15 +78,15 @@ class KotlinCompileArgumentsTest {
         val arguments = mainCompilationTask.createCompilerArguments(lenient)
 
         val argumentsString = ArgumentUtils.convertArgumentsToStringList(arguments)
-        val jvmTargetArgument = K2JVMCompilerArguments::jvmTarget.findAnnotation<Argument>()!!.value
+        val jvmTargetArgument = K2JVMCompilerArguments::jvmTarget.javaField!!.getAnnotation(Argument::class.java)!!.value
         if (jvmTargetArgument !in argumentsString) fail("Missing '$jvmTargetArgument' in argument list")
         val indexOfJvmTargetArgument = argumentsString.indexOf(jvmTargetArgument)
         val jvmTargetTargetArgumentValue = argumentsString.getOrNull(indexOfJvmTargetArgument + 1)
-        assertEquals(JvmTarget.DEFAULT.description, jvmTargetTargetArgumentValue)
+        assertEquals(JvmTarget.fromTarget(JavaVersion.current().toString()).target, jvmTargetTargetArgumentValue)
 
         val parsedArguments = K2JVMCompilerArguments().apply { parseCommandLineArguments(argumentsString, this) }
         assertNotNull(parsedArguments.jvmTarget)
-        assertEquals(JvmTarget.DEFAULT.description, parsedArguments.jvmTarget)
+        assertEquals(JvmTarget.fromTarget(JavaVersion.current().toString()).target, parsedArguments.jvmTarget)
 
     }
 
@@ -97,6 +97,7 @@ class KotlinCompileArgumentsTest {
         kotlin.jvm()
 
         val jvmMainCompilation = kotlin.jvm().compilations.getByName("main")
+        @Suppress("DEPRECATION")
         jvmMainCompilation.compilerOptions.options.languageVersion.set(KotlinVersion.KOTLIN_2_0)
 
         project.evaluate()
@@ -116,6 +117,7 @@ class KotlinCompileArgumentsTest {
         val kotlin = project.multiplatformExtension
         kotlin.jvm()
         val compilation = kotlin.jvm().compilations.main
+        @Suppress("DEPRECATION")
         compilation.compilerOptions.options.languageVersion.set(KotlinVersion.KOTLIN_2_0)
         val compileTask = compilation.compileTaskProvider.get() as KotlinCompile
 

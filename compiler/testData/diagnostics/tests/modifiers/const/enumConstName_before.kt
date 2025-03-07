@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // FIR_IDENTICAL
-// !LANGUAGE: -IntrinsicConstEvaluation
+// LANGUAGE: -IntrinsicConstEvaluation
 
 enum class EnumClass {
     OK, VALUE, anotherValue, WITH_UNDERSCORE

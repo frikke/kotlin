@@ -8,11 +8,8 @@ package kotlin.native.runtime
 
 import kotlin.native.internal.*
 import kotlin.native.internal.NativePtr
-import kotlin.native.concurrent.*
-import kotlin.time.*
-import kotlin.time.Duration.Companion.nanoseconds
 import kotlinx.cinterop.*
-import kotlin.system.*
+import kotlin.native.internal.escapeAnalysis.Escapes
 
 /**
  * This class represents statistics of memory usage in one memory pool.
@@ -24,7 +21,7 @@ import kotlin.system.*
 @NativeRuntimeApi
 @SinceKotlin("1.9")
 public class MemoryUsage(
-        val totalObjectsSizeBytes: Long,
+        public val totalObjectsSizeBytes: Long,
 )
 
 /**
@@ -36,8 +33,8 @@ public class MemoryUsage(
 @NativeRuntimeApi
 @SinceKotlin("1.9")
 public class SweepStatistics(
-    val sweptCount: Long,
-    val keptCount: Long,
+        public val sweptCount: Long,
+        public val keptCount: Long,
 )
 
 /**
@@ -57,10 +54,10 @@ public class SweepStatistics(
 @NativeRuntimeApi
 @SinceKotlin("1.9")
 public class RootSetStatistics(
-        val threadLocalReferences: Long,
-        val stackReferences: Long,
-        val globalReferences: Long,
-        val stableReferences: Long
+        public val threadLocalReferences: Long,
+        public val stackReferences: Long,
+        public val globalReferences: Long,
+        public val stableReferences: Long
 )
 
 /**
@@ -71,8 +68,14 @@ public class RootSetStatistics(
  * @property startTimeNs Time, when garbage collector run is started, meausered by [kotlin.system.getTimeNanos].
  * @property endTimeNs Time, when garbage collector run is ended, measured by [kotlin.system.getTimeNanos].
  *                     After this point, most of the memory is reclaimed, and a new garbage collector run can start.
- * @property pauseStartTimeNs Time, when mutator threads are suspended, mesured by [kotlin.system.getTimeNanos].
- * @property pauseEndTimeNs Time, when mutator threads are unsuspended, mesured by [kotlin.system.getTimeNanos].
+ * @property firstPauseRequestTimeNs Time, when the garbage collector thread requested suspension of mutator threads for the first time,
+ *                                   mesured by [kotlin.system.getTimeNanos].
+ * @property firstPauseStartTimeNs Time, when mutator threads are suspended for the first time, mesured by [kotlin.system.getTimeNanos].
+ * @property firstPauseEndTimeNs Time, when mutator threads are unsuspended for the first time, mesured by [kotlin.system.getTimeNanos].
+ * @property secondPauseRequestTimeNs Time, when the garbage collector thread requested suspension of mutator threads for the second time,
+ *                                    mesured by [kotlin.system.getTimeNanos].
+ * @property secondPauseStartTimeNs Time, when mutator threads are suspended for the second time, mesured by [kotlin.system.getTimeNanos].
+ * @property secondPauseEndTimeNs Time, when mutator threads are unsuspended for the second time, mesured by [kotlin.system.getTimeNanos].
  * @property postGcCleanupTimeNs Time, when all memory is reclaimed, measured by [kotlin.system.getTimeNanos].
  *                                If null, memory reclamation is still in progress.
  * @property rootSet The number of objects in each root set pool. Check [RootSetStatistics] doc for details.
@@ -90,17 +93,21 @@ public class RootSetStatistics(
 @NativeRuntimeApi
 @SinceKotlin("1.9")
 public class GCInfo(
-        val epoch: Long,
-        val startTimeNs: Long,
-        val endTimeNs: Long,
-        val pauseStartTimeNs: Long,
-        val pauseEndTimeNs: Long,
-        val postGcCleanupTimeNs: Long?,
-        val rootSet: RootSetStatistics,
-        val markedCount: Long,
-        val sweepStatistics: Map<String, SweepStatistics>,
-        val memoryUsageBefore: Map<String, MemoryUsage>,
-        val memoryUsageAfter: Map<String, MemoryUsage>,
+        public val epoch: Long,
+        public val startTimeNs: Long,
+        public val endTimeNs: Long,
+        public val firstPauseRequestTimeNs: Long,
+        public val firstPauseStartTimeNs: Long,
+        public val firstPauseEndTimeNs: Long,
+        public val secondPauseRequestTimeNs: Long?,
+        public val secondPauseStartTimeNs: Long?,
+        public val secondPauseEndTimeNs: Long?,
+        public val postGcCleanupTimeNs: Long?,
+        public val rootSet: RootSetStatistics,
+        public val markedCount: Long,
+        public val sweepStatistics: Map<String, SweepStatistics>,
+        public val memoryUsageBefore: Map<String, MemoryUsage>,
+        public val memoryUsageAfter: Map<String, MemoryUsage>,
 ) {
     internal companion object {
         val lastGCInfo: GCInfo?
@@ -116,8 +123,12 @@ private class GCInfoBuilder() {
     var epoch: Long? = null
     var startTimeNs: Long? = null
     var endTimeNs: Long? = null
-    var pauseStartTimeNs: Long? = null
-    var pauseEndTimeNs: Long? = null
+    var firstPauseRequestTimeNs: Long? = null
+    var firstPauseStartTimeNs: Long? = null
+    var firstPauseEndTimeNs: Long? = null
+    var secondPauseRequestTimeNs: Long? = null
+    var secondPauseStartTimeNs: Long? = null
+    var secondPauseEndTimeNs: Long? = null
     var postGcCleanupTimeNs: Long? = null
     var rootSet: RootSetStatistics? = null
     var markedCount: Long? = null
@@ -140,14 +151,34 @@ private class GCInfoBuilder() {
         endTimeNs = value
     }
 
-    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setPauseStartTime")
-    private fun setPauseStartTime(value: Long) {
-        pauseStartTimeNs = value
+    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setFirstPauseRequestTime")
+    private fun setFirstPauseRequestTime(value: Long) {
+        firstPauseRequestTimeNs = value
     }
 
-    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setPauseEndTime")
-    private fun setPauseEndTime(value: Long) {
-        pauseEndTimeNs = value
+    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setFirstPauseStartTime")
+    private fun setFirstPauseStartTime(value: Long) {
+        firstPauseStartTimeNs = value
+    }
+
+    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setFirstPauseEndTime")
+    private fun setFirstPauseEndTime(value: Long) {
+        firstPauseEndTimeNs = value
+    }
+
+    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setSecondPauseRequestTime")
+    private fun setSecondPauseRequestTime(value: Long) {
+        secondPauseRequestTimeNs = value
+    }
+
+    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setSecondPauseStartTime")
+    private fun setSecondPauseStartTime(value: Long) {
+        secondPauseStartTimeNs = value
+    }
+
+    @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setSecondPauseEndTime")
+    private fun setSecondPauseEndTime(value: Long) {
+        secondPauseEndTimeNs = value
     }
 
     @ExportForCppRuntime("Kotlin_Internal_GC_GCInfoBuilder_setPostGcCleanupTime")
@@ -191,8 +222,12 @@ private class GCInfoBuilder() {
                 epoch ?: return null,
                 startTimeNs ?: return null,
                 endTimeNs ?: return null,
-                pauseStartTimeNs ?: return null,
-                pauseEndTimeNs ?: return null,
+                firstPauseRequestTimeNs ?: return null,
+                firstPauseStartTimeNs ?: return null,
+                firstPauseEndTimeNs ?: return null,
+                secondPauseRequestTimeNs,
+                secondPauseStartTimeNs,
+                secondPauseEndTimeNs,
                 postGcCleanupTimeNs,
                 rootSet ?: return null,
                 markedCount ?: return null,
@@ -203,5 +238,6 @@ private class GCInfoBuilder() {
     }
 
     @GCUnsafeCall("Kotlin_Internal_GC_GCInfoBuilder_Fill")
+    @Escapes.Nothing
     external fun fill(id: Int)
 }

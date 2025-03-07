@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.fir.analysis.checkers.expression
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
 import org.jetbrains.kotlin.diagnostics.reportOn
+import org.jetbrains.kotlin.fir.analysis.checkers.MppCheckerKind
 import org.jetbrains.kotlin.fir.analysis.checkers.context.CheckerContext
 import org.jetbrains.kotlin.fir.analysis.checkers.context.findClosest
 import org.jetbrains.kotlin.fir.analysis.checkers.explicitReceiverIsNotSuperReference
@@ -19,7 +20,7 @@ import org.jetbrains.kotlin.fir.expressions.toResolvedCallableSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.name.StandardClassIds
 
-object FirSuperclassNotAccessibleFromInterfaceChecker : FirQualifiedAccessExpressionChecker() {
+object FirSuperclassNotAccessibleFromInterfaceChecker : FirQualifiedAccessExpressionChecker(MppCheckerKind.Common) {
     override fun check(expression: FirQualifiedAccessExpression, context: CheckerContext, reporter: DiagnosticReporter) {
         if (expression.explicitReceiverIsNotSuperReference()) return
 
@@ -27,7 +28,7 @@ object FirSuperclassNotAccessibleFromInterfaceChecker : FirQualifiedAccessExpres
 
         if (closestClass.classKind == ClassKind.INTERFACE) {
             val containingClassSymbol =
-                expression.toResolvedCallableSymbol()?.getContainingClassSymbol(context.session) as? FirRegularClassSymbol ?: return
+                expression.toResolvedCallableSymbol()?.getContainingClassSymbol() as? FirRegularClassSymbol ?: return
 
             if (containingClassSymbol.source != null && containingClassSymbol.classKind == ClassKind.CLASS && containingClassSymbol.classId != StandardClassIds.Any) {
                 reporter.reportOn(expression.explicitReceiver?.source, FirErrors.SUPERCLASS_NOT_ACCESSIBLE_FROM_INTERFACE, context)

@@ -1,3 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
+// FIR_DUMP
+
 fun test1(f: String.() -> Unit) {
     (f)<!NO_VALUE_FOR_PARAMETER!>()<!>
 

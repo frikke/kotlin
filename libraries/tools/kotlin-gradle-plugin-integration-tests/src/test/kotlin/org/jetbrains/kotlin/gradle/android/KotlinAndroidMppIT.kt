@@ -5,100 +5,30 @@
 
 package org.jetbrains.kotlin.gradle.android
 
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.testkit.runner.BuildResult
 import org.gradle.util.GradleVersion
+import org.jetbrains.kotlin.gradle.BrokenOnMacosTest
 import org.jetbrains.kotlin.gradle.plugin.diagnostics.KotlinToolingDiagnostics
 import org.jetbrains.kotlin.gradle.testbase.*
-import org.jetbrains.kotlin.gradle.testbase.TestVersions.AGP.AGP_70
-import org.jetbrains.kotlin.gradle.testbase.TestVersions.AGP.AGP_71
-import org.jetbrains.kotlin.gradle.testbase.TestVersions.Gradle.G_7_1
-import org.jetbrains.kotlin.gradle.testbase.TestVersions.Gradle.G_7_2
+import org.jetbrains.kotlin.gradle.testbase.TestVersions.AgpCompatibilityMatrix
 import org.jetbrains.kotlin.gradle.tooling.BuildKotlinToolingMetadataTask
-import org.jetbrains.kotlin.gradle.util.AGPVersion
 import org.jetbrains.kotlin.gradle.util.replaceText
 import org.jetbrains.kotlin.gradle.util.testResolveAllConfigurations
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipFile
-import kotlin.io.path.appendText
-import kotlin.io.path.extension
-import kotlin.io.path.readText
-import kotlin.io.path.writeText
+import kotlin.io.path.*
 import kotlin.streams.toList
 import kotlin.test.*
 
 @DisplayName("kotlin-android with mpp")
 @AndroidGradlePluginTests
-@GradleTestVersions(minVersion = G_7_1)
-@AndroidTestVersions(minVersion = AGP_70)
 class KotlinAndroidMppIT : KGPBaseTest() {
-    @DisplayName("KT-50736: whenEvaluated waits for AGP being applied later")
-    @GradleAndroidTest
-    fun testAfterEvaluateOrdering(
-        gradleVersion: GradleVersion,
-        agpVersion: String,
-        jdkVersion: JdkVersions.ProvidedJdk,
-    ) {
-        project(
-            "AndroidProject",
-            gradleVersion,
-            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
-            buildJdk = jdkVersion.location
-        ) {
-            subProject("Lib").buildGradle.writeText(
-                //language=Gradle
-                """
-                buildscript {
-                    repositories {
-                        mavenLocal()
-                        google()
-                        gradlePluginPortal()
-                    }
-                    dependencies {
-                        classpath "com.android.tools.build:gradle:${'$'}android_tools_version"
-                        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${'$'}kotlin_version"
-                    }
-                }
-        
-                plugins {
-                    id 'org.jetbrains.kotlin.multiplatform'
-                }
-        
-                class MyAction implements kotlin.jvm.functions.Function1<Project, Void> {
-                    Void invoke (Project p) {
-                        println("compilations: " + p.kotlin.targets.getByName("android").compilations.names)
-                    }
-                }
-        
-                org.jetbrains.kotlin.gradle.plugin.KotlinMultiplatformPluginKt.whenEvaluated(project, new MyAction ())
-        
-                apply plugin : "android-library"
-        
-                android {
-                    compileSdkVersion 22
-                    namespace 'org.jetbrains.kotlin.gradle.test.android.libalfa'
-                }
-        
-                kotlin { android("android") { } }
-                """.trimIndent()
-            )
-
-            build("help") {
-                val reportedCompilations = output.lines()
-                    .single { it.contains("compilations: ") }
-                    .substringAfter("compilations: ")
-                    .removeSurrounding("[", "]")
-                    .split(", ")
-                    .toSet()
-                assertEquals(
-                    setOf("debug", "debugAndroidTest", "debugUnitTest", "release", "releaseUnitTest"),
-                    reportedCompilations
-                )
-            }
-        }
-    }
 
     @DisplayName("KotlinToolingMetadataArtifact is bundled into apk")
     @GradleAndroidTest
@@ -135,10 +65,9 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         }
     }
 
-    @AndroidTestVersions(minVersion = AGP_71)
-    @GradleTestVersions(minVersion = G_7_2)
     @DisplayName("mpp source sets are registered in AGP")
     @GradleAndroidTest
+    @BrokenOnMacosTest
     fun testAndroidMppSourceSets(
         gradleVersion: GradleVersion,
         agpVersion: String,
@@ -150,40 +79,33 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
             buildJdk = jdkVersion.location
         ) {
-            // AbstractReportTask#generate() task action was removed in Gradle 6.8+,
-            // that SourceSetTask is using: https://github.com/gradle/gradle/commit/4dac91ab87ea33ee8689d2a62b691b119198e7c7
-            // leading to the issue that ":sourceSets" task is always in 'UP-TO-DATE' state.
-            // Skipping this check until the test will start using AGP 7.0-alpha03+
-            // AGP 4.x is not compatible with Gradle 7.0, so just skip when the Gradle version is lower than 7.0
-            if (gradleVersion >= GradleVersion.version("7.0")) {
-                build("sourceSets") {
-                    fun assertOutputContainsOsIndependent(expectedString: String) {
-                        assertOutputContains(expectedString.replace("/", File.separator))
-                    }
-                    assertOutputContainsOsIndependent("Android resources: [lib/src/main/res, lib/src/androidMain/res]")
-                    assertOutputContainsOsIndependent("Assets: [lib/src/main/assets, lib/src/androidMain/assets]")
-                    assertOutputContainsOsIndependent("AIDL sources: [lib/src/main/aidl, lib/src/androidMain/aidl]")
-                    assertOutputContainsOsIndependent("RenderScript sources: [lib/src/main/rs, lib/src/androidMain/rs]")
-                    assertOutputContainsOsIndependent("JNI sources: [lib/src/main/jni, lib/src/androidMain/jni]")
-                    assertOutputContainsOsIndependent("JNI libraries: [lib/src/main/jniLibs, lib/src/androidMain/jniLibs]")
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/src/main/resources, lib/src/androidMain/resources]")
-
-                    assertOutputContainsOsIndependent("Android resources: [lib/src/androidTestDebug/res, lib/src/androidInstrumentedTestDebug/res]")
-                    assertOutputContainsOsIndependent("Assets: [lib/src/androidTestDebug/assets, lib/src/androidInstrumentedTestDebug/assets]")
-                    assertOutputContainsOsIndependent("AIDL sources: [lib/src/androidTestDebug/aidl, lib/src/androidInstrumentedTestDebug/aidl]")
-                    assertOutputContainsOsIndependent("RenderScript sources: [lib/src/androidTestDebug/rs, lib/src/androidInstrumentedTestDebug/rs]")
-                    assertOutputContainsOsIndependent("JNI sources: [lib/src/androidTestDebug/jni, lib/src/androidInstrumentedTestDebug/jni]")
-                    assertOutputContainsOsIndependent("JNI libraries: [lib/src/androidTestDebug/jniLibs, lib/src/androidInstrumentedTestDebug/jniLibs]")
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/src/androidTestDebug/resources, lib/src/androidInstrumentedTestDebug/resources]")
-
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/paidBeta/resources, lib/src/androidPaidBeta/resources]")
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/paidBetaDebug/resources, lib/src/androidPaidBetaDebug/resources]")
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/paidBetaRelease/resources, lib/src/androidPaidBetaRelease/resources]")
-
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/freeBeta/resources, lib/src/androidFreeBeta/resources]")
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/freeBetaDebug/resources, lib/src/androidFreeBetaDebug/resources]")
-                    assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/freeBetaRelease/resources, lib/src/androidFreeBetaRelease/resources]")
+            build("sourceSets") {
+                fun assertOutputContainsOsIndependent(expectedString: String) {
+                    assertOutputContains(expectedString.replace("/", File.separator))
                 }
+                assertOutputContainsOsIndependent("Android resources: [lib/src/main/res, lib/src/androidMain/res]")
+                assertOutputContainsOsIndependent("Assets: [lib/src/main/assets, lib/src/androidMain/assets]")
+                assertOutputContainsOsIndependent("AIDL sources: [lib/src/main/aidl, lib/src/androidMain/aidl]")
+                assertOutputContainsOsIndependent("RenderScript sources: [lib/src/main/rs, lib/src/androidMain/rs]")
+                assertOutputContainsOsIndependent("JNI sources: [lib/src/main/jni, lib/src/androidMain/jni]")
+                assertOutputContainsOsIndependent("JNI libraries: [lib/src/main/jniLibs, lib/src/androidMain/jniLibs]")
+                assertOutputContainsOsIndependent("Java-style resources: [lib/src/main/resources, lib/src/androidMain/resources]")
+
+                assertOutputContainsOsIndependent("Android resources: [lib/src/androidTestDebug/res, lib/src/androidInstrumentedTestDebug/res]")
+                assertOutputContainsOsIndependent("Assets: [lib/src/androidTestDebug/assets, lib/src/androidInstrumentedTestDebug/assets]")
+                assertOutputContainsOsIndependent("AIDL sources: [lib/src/androidTestDebug/aidl, lib/src/androidInstrumentedTestDebug/aidl]")
+                assertOutputContainsOsIndependent("RenderScript sources: [lib/src/androidTestDebug/rs, lib/src/androidInstrumentedTestDebug/rs]")
+                assertOutputContainsOsIndependent("JNI sources: [lib/src/androidTestDebug/jni, lib/src/androidInstrumentedTestDebug/jni]")
+                assertOutputContainsOsIndependent("JNI libraries: [lib/src/androidTestDebug/jniLibs, lib/src/androidInstrumentedTestDebug/jniLibs]")
+                assertOutputContainsOsIndependent("Java-style resources: [lib/src/androidTestDebug/resources, lib/src/androidInstrumentedTestDebug/resources]")
+
+                assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/paidBeta/resources, lib/src/androidPaidBeta/resources]")
+                assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/paidBetaDebug/resources, lib/src/androidPaidBetaDebug/resources]")
+                assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/paidBetaRelease/resources, lib/src/androidPaidBetaRelease/resources]")
+
+                assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/freeBeta/resources, lib/src/androidFreeBeta/resources]")
+                assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/freeBetaDebug/resources, lib/src/androidFreeBetaDebug/resources]")
+                assertOutputContainsOsIndependent("Java-style resources: [lib/betaSrc/freeBetaRelease/resources, lib/src/androidFreeBetaRelease/resources]")
             }
 
             buildAndFail("testFreeBetaDebug") {
@@ -201,8 +123,6 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         }
     }
 
-    @AndroidTestVersions(minVersion = AGP_70)
-    @GradleTestVersions(minVersion = G_7_2)
     @DisplayName("android mpp lib flavors publication can be configured")
     @GradleAndroidTest
     fun testMppAndroidLibFlavorsPublication(
@@ -215,6 +135,7 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             "org.gradle.dependency.bundling" to "external",
             "org.gradle.docstype" to "sources",
             "org.gradle.libraryelements" to "jar",
+            "org.gradle.jvm.environment" to "android",
             "org.gradle.usage" to "java-runtime",
             "org.jetbrains.kotlin.platform.type" to "androidJvm",
 
@@ -239,11 +160,10 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             groupDir.deleteRecursively()
 
             // Choose a single variant to publish, check that it's there:
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
                     
-                kotlin.android('androidLib').publishLibraryVariants = ['release']
+                kotlin.androidTarget("androidLib").publishLibraryVariants("release")
                 """.trimIndent()
             )
             build("publish") {
@@ -260,11 +180,10 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             groupDir.deleteRecursively()
 
             // Enable publishing for all Android variants:
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
 
-                kotlin.android('androidLib') { publishAllLibraryVariants() }
+                kotlin.androidTarget("androidLib") { publishAllLibraryVariants() }
                 """.trimIndent()
             )
             build("publish") {
@@ -292,11 +211,10 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             groupDir.deleteRecursively()
 
             // Then group the variants by flavor and check that only one publication is created:
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
 
-                kotlin.android('androidLib').publishLibraryVariantsGroupedByFlavor = true
+                kotlin.androidTarget("androidLib").publishLibraryVariantsGroupedByFlavor = true
                 """.trimIndent()
             )
             build("publish") {
@@ -324,27 +242,30 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             groupDir.deleteRecursively()
 
             // Add one flavor dimension with two flavors, check that the flavors produce grouped publications:
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
 
-                android { flavorDimensions('foo'); productFlavors { fooBar { dimension 'foo' }; fooBaz { dimension 'foo' } } }                    
+                android { 
+                    flavorDimensions("foo") 
+                    productFlavors {
+                        create("fooBar") {
+                            dimension = "foo"
+                        }
+
+                        create("fooBaz") {
+                            dimension = "foo"
+                        }
+                    }
+                }                    
                 """.trimIndent()
             )
             build("publish") {
                 listOf("fooBar", "fooBaz").forEach { flavorName ->
                     val flavor = flavorName.lowercase()
-
-                    val flavorAttributes = if (AGPVersion.fromString(agpVersion) > AGPVersion.v7_0_0) {
-                        arrayOf(
-                            "foo" to flavorName,
-                            "com.android.build.api.attributes.ProductFlavor:foo" to flavorName
-                        )
-                    } else {
-                        arrayOf(
-                            "foo" to flavorName
-                        )
-                    }
+                    val flavorAttributes = arrayOf(
+                        "foo" to flavorName,
+                        "com.android.build.api.attributes.ProductFlavor:foo" to flavorName
+                    )
 
                     assertFileExists(groupDir.resolve("lib-androidlib-$flavor/1.0/lib-androidlib-$flavor-1.0.aar"))
                     assertFileExists(groupDir.resolve("lib-androidlib-$flavor/1.0/lib-androidlib-$flavor-1.0-sources.jar"))
@@ -376,27 +297,20 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             groupDir.deleteRecursively()
 
             // Disable the grouping and check that all the variants are published under separate artifactIds:
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
                     
-                kotlin.android('androidLib') { publishLibraryVariantsGroupedByFlavor = false }    
+                kotlin.androidTarget("androidLib") { publishLibraryVariantsGroupedByFlavor = false }    
                 """.trimIndent()
             )
             build("publish") {
                 listOf("fooBar", "fooBaz").forEach { flavorName ->
                     val flavor = flavorName.lowercase()
 
-                    val flavorAttributes = if (AGPVersion.fromString(agpVersion) > AGPVersion.v7_0_0) {
-                        arrayOf(
-                            "foo" to flavorName,
-                            "com.android.build.api.attributes.ProductFlavor:foo" to flavorName
-                        )
-                    } else {
-                        arrayOf(
-                            "foo" to flavorName
-                        )
-                    }
+                    val flavorAttributes = arrayOf(
+                        "foo" to flavorName,
+                        "com.android.build.api.attributes.ProductFlavor:foo" to flavorName
+                    )
 
                     listOf("-debug", "").forEach { buildType ->
                         assertFileExists(groupDir.resolve("lib-androidlib-$flavor$buildType/1.0/lib-androidlib-$flavor$buildType-1.0.aar"))
@@ -435,7 +349,7 @@ class KotlinAndroidMppIT : KGPBaseTest() {
     fun testDisableSourcesPublication(
         gradleVersion: GradleVersion,
         agpVersion: String,
-        jdkVersion: JdkVersions.ProvidedJdk
+        jdkVersion: JdkVersions.ProvidedJdk,
     ) {
         project(
             "new-mpp-android",
@@ -443,13 +357,12 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
             buildJdk = jdkVersion.location
         ) {
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
                     
-                    kotlin.android('androidLib') {
-                        withSourcesJar(false)
-                        publishLibraryVariants = ['release']
+                    kotlin.androidTarget("androidLib") {
+                        withSourcesJar(publish = false)
+                        publishLibraryVariants("release")
                     }
                 """.trimIndent()
             )
@@ -477,31 +390,60 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         project(
             "new-mpp-android",
             gradleVersion,
-            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
+            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion)
+                .disableConfigurationCache_KT70416(),
             buildJdk = jdkVersion.location
         ) {
             // Convert the 'app' project to a library, publish two flavors without metadata,
             // check that the dependencies in the POMs are correctly rewritten:
             val appGroupDir = subProject("app").projectPath.resolve("build/repo/com/example")
 
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
                 
-                android { flavorDimensions('foo'); productFlavors { fooBar { dimension 'foo' }; fooBaz { dimension 'foo' } } }
+                android { 
+                    flavorDimensions("foo") 
+                    productFlavors {
+                        create("fooBar") {
+                            dimension = "foo"
+                        }
+
+                        create("fooBaz") {
+                            dimension = "foo"
+                        }
+                    }
+                }
                 """.trimIndent()
             )
 
-            subProject("app").buildGradle.modify {
+            subProject("app").buildGradleKts.modify {
                 it.replace("com.android.application", "com.android.library")
-                    .replace("applicationId", "//") +
-                        //language=Gradle
+                    .replace("applicationId", "//")
+                    .replace("versionCode", "//")
+                    .replace("versionName", "//")
+                    .replace("plugins {\n", "plugins {\n `maven-publish`\n") +
                         """
-    
-                        apply plugin: 'maven-publish'
-                        publishing { repositories { maven { url = uri("${'$'}buildDir/repo") } } }
-                        kotlin.android('androidApp') { publishAllLibraryVariants() }
-                        android { flavorDimensions('foo'); productFlavors { fooBar { dimension 'foo' }; fooBaz { dimension 'foo' } } }
+
+                        publishing {
+                            repositories {
+                                maven {
+                                    url = uri("${'$'}buildDir/repo")
+                                }
+                            }
+                        }
+                        kotlin.androidTarget("androidApp") { publishAllLibraryVariants() }
+                        android { 
+                            flavorDimensions("foo") 
+                            productFlavors {
+                                create("fooBar") {
+                                    dimension = "foo"
+                                }
+            
+                                create("fooBaz") {
+                                    dimension = "foo"
+                                }
+                            }
+                        }                        
                         """.trimIndent()
             }
             build("publish") {
@@ -522,13 +464,12 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             appGroupDir.deleteRecursively()
 
             // Also check that api and runtimeOnly MPP dependencies get correctly published with the appropriate scope, KT-29476:
-            subProject("app").buildGradle.modify {
-                it.replace("implementation project(':lib')", "api project(':lib')") +
-                        //language=Gradle
+            subProject("app").buildGradleKts.modify {
+                it.replace("implementation(project(\":lib\")", "api(project(\":lib\")") +
                         """
 
-                        kotlin.sourceSets.commonMain.dependencies {
-                            runtimeOnly(kotlin('reflect'))
+                        kotlin.sourceSets.getByName("commonMain").dependencies {
+                            runtimeOnly(kotlin("reflect"))
                         }
                         """.trimIndent()
             }
@@ -544,7 +485,7 @@ class KotlinAndroidMppIT : KGPBaseTest() {
                         )
                         assertContains(
                             pomText,
-                            "<artifactId>kotlin-reflect</artifactId><version>${buildOptions.kotlinVersion}</version><scope>runtime</scope>"
+                            "<artifactId>kotlin-reflect</artifactId><scope>runtime</scope>"
                         )
                     }
                 }
@@ -552,8 +493,49 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         }
     }
 
+    @DisplayName("KT-69585: kmp + android depends on another kmp + android project via included build should not fail on pom rewrite action")
+    @GradleAndroidTest
+    fun kt69585PublishWithDependencyOnIncludedBuildsDoesntFail(
+        gradleVersion: GradleVersion,
+        agpVersion: String,
+        jdkVersion: JdkVersions.ProvidedJdk,
+    ) {
+        project(
+            "new-mpp-android",
+            gradleVersion,
+            buildOptions = defaultBuildOptions
+                .copy(androidVersion = agpVersion),
+            buildJdk = jdkVersion.location
+        ) {
+            settingsGradle.replaceText("include ':app', ':lib'", "include ':lib'")
+            includeOtherProjectAsIncludedBuild("lib", "new-mpp-android", "libFromIncluded")
+            subProject("lib").buildGradleKts.appendText(
+                """
+                
+                kotlin { 
+                  sourceSets.getByName("androidLibMain").dependencies {
+                    implementation("com.example:libFromIncluded:1.0")
+                  }
+                }
+                """.trimIndent()
+            )
+            build(":lib:generatePomFileForAndroidLibReleasePublication") {
+                val pomText = projectPath
+                    .resolve("lib/build/publications/androidLibRelease/pom-default.xml")
+                    .readText()
+                    .replace("""\s+""".toRegex(), "")
+
+                assertContains(
+                    pomText,
+                    """<groupId>com.example</groupId><artifactId>libFromIncluded-androidlib</artifactId><version>1.0</version>"""
+                )
+            }
+        }
+    }
+
     @DisplayName("android app can depend on mpp lib")
     @GradleAndroidTest
+    @BrokenOnMacosTest
     fun testAndroidWithNewMppApp(
         gradleVersion: GradleVersion,
         agpVersion: String,
@@ -612,24 +594,23 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             buildJdk = jdkVersion.location
         ) {
             // Test the fix for KT-29343
-            subProject("lib").buildGradle.appendText(
-                //language=Gradle
+            subProject("lib").buildGradleKts.appendText(
                 """
 
                 kotlin.sourceSets {
                     commonMain {
                         dependencies {
-                            implementation kotlin("stdlib-common")
+                            implementation(kotlin("stdlib-common"))
                         }
                     }
-                    androidLibDebug {
+                    val androidLibDebug by creating {
                         dependencies {
-                            implementation kotlin("reflect")
+                            implementation(kotlin("reflect"))
                         }
                     }
-                    androidLibRelease {
+                    val androidLibRelease by creating {
                         dependencies {
-                            implementation kotlin("test-junit")
+                            implementation(kotlin("test-junit"))
                         }
                     }
                 }
@@ -655,8 +636,6 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         }
     }
 
-    @AndroidTestVersions(minVersion = AGP_70)
-    @GradleTestVersions(minVersion = G_7_2)
     @DisplayName("KT-27714: custom attributes are copied to android compilation configurations")
     @GradleAndroidTest
     fun testCustomAttributesInAndroidTargets(
@@ -670,15 +649,14 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
             buildJdk = jdkVersion.location
         ) {
-            val libBuildScript = subProject("lib").buildGradle
-            val appBuildScript = subProject("app").buildGradle
+            val libBuildScript = subProject("lib").buildGradleKts
+            val appBuildScript = subProject("app").buildGradleKts
 
             // Enable publishing for all Android variants:
             libBuildScript.appendText(
-                //language=Gradle
                 """
 
-                kotlin.android('androidLib') { publishAllLibraryVariants() }
+                kotlin.androidTarget("androidLib") { publishAllLibraryVariants() }
                 """.trimIndent()
             )
 
@@ -701,25 +679,24 @@ class KotlinAndroidMppIT : KGPBaseTest() {
 
             // Check that the consumer side uses custom attributes specified in the target and compilations:
             val appBuildScriptBackup = appBuildScript.readText()
+            val libBuildScriptBackup = libBuildScript.readText()
 
             libBuildScript.appendText(
-                //language=Gradle
                 """
 
                 kotlin.targets.all { 
                     attributes.attribute(
-                        Attribute.of("com.example.target", String),
+                        Attribute.of("com.example.target", String::class.java),
                         targetName
                     )
                 }
                 """.trimIndent()
             )
             appBuildScript.appendText(
-                //language=Gradle
                 """
 
-                kotlin.targets.androidApp.attributes.attribute(
-                    Attribute.of("com.example.target", String),
+                kotlin.targets.getByName("androidApp").attributes.attribute(
+                    Attribute.of("com.example.target", String::class.java),
                     "notAndroidLib"
                 )
                 """.trimIndent()
@@ -734,18 +711,14 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             }
 
             libBuildScript.writeText(
-                appBuildScriptBackup +
-                        //language=Gradle
+                libBuildScriptBackup +
                         """
-                            
-                        android {
-                            namespace 'app.example.com.lib'
-                        }
+
                         kotlin.targets.all {
                             compilations.all {
                                 attributes.attribute(
-                                    Attribute.of("com.example.compilation", String),
-                                    targetName + compilationName.capitalize()
+                                    Attribute.of("com.example.compilation", String::class.java),
+                                    target.name + compilationName.capitalize()
                                 )
                             }
                         }
@@ -753,15 +726,11 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             )
             appBuildScript.writeText(
                 appBuildScriptBackup +
-                        //language=Gradle
                         """
-                            
-                        android {
-                            namespace 'app.example.com.app_sample'
-                        }
-                        kotlin.targets.androidApp.compilations.all {
+
+                        kotlin.targets.getByName("androidApp").compilations.all {
                             attributes.attribute(
-                                Attribute.of("com.example.compilation", String),
+                                Attribute.of("com.example.compilation", String::class.java),
                                 "notDebug"
                             )
                         }
@@ -832,8 +801,6 @@ class KotlinAndroidMppIT : KGPBaseTest() {
      */
     @DisplayName("KT-49798: com.android.build.api.attributes.AgpVersionAttr is not published")
     @GradleAndroidTest
-    @AndroidTestVersions(minVersion = TestVersions.AGP.AGP_71)
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_2) // due AGP version limit ^
     fun testKT49798AgpVersionAttrNotPublished(
         gradleVersion: GradleVersion,
         agpVersion: String,
@@ -864,15 +831,14 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         }
     }
 
+    // TODO: improve it via KT-63409
     @DisplayName("produced artifacts are consumable by projects with various AGP versions")
     @GradleAndroidTest
-    @AndroidTestVersions(minVersion = TestVersions.AGP.AGP_71)
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_2) // due AGP version limit ^
     fun testAndroidMultiplatformPublicationAGPCompatibility(
         gradleVersion: GradleVersion,
         agpVersion: String,
         jdkVersion: JdkVersions.ProvidedJdk,
-        @TempDir tempDir: Path
+        @TempDir tempDir: Path,
     ) {
         project(
             "new-mpp-android-agp-compatibility",
@@ -890,30 +856,21 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             }
         }
 
-        val checkedConsumerAGPVersions = AGPVersion.testedVersions
-            .filter { version -> version >= AGPVersion.fromString(TestVersions.AGP.AGP_42) }
-            .filter { version -> version < AGPVersion.fromString(TestVersions.AGP.MAX_SUPPORTED) }
-            .map { it.toString() }
+        val checkedConsumerAGPVersions = AgpCompatibilityMatrix.entries
+            .filter { agp ->
+                AgpCompatibilityMatrix.fromVersion(agp.version) < AgpCompatibilityMatrix.fromVersion(TestVersions.AGP.MAX_SUPPORTED)
+            }
 
         checkedConsumerAGPVersions.forEach { consumerAgpVersion ->
-            val agpTestVersion = TestVersions.AgpCompatibilityMatrix.values().find { it.version == consumerAgpVersion }
-                ?: fail("AGP version $consumerAgpVersion is not defined in TestVersions.AGP!")
-            val consumerGradleVersion = when {
-                gradleVersion < agpTestVersion.minSupportedGradleVersion -> agpTestVersion.minSupportedGradleVersion
-                gradleVersion > agpTestVersion.maxSupportedGradleVersion -> agpTestVersion.maxSupportedGradleVersion
-                else -> gradleVersion
-            }
-            println("Testing compatibility for AGP consumer version $consumerAgpVersion on Gradle ${consumerGradleVersion.version} (Producer: $agpVersion)")
+            println(
+                "Testing compatibility for AGP consumer version $consumerAgpVersion on Gradle" +
+                        " ${consumerAgpVersion.minSupportedGradleVersion} (Producer: $agpVersion)"
+            )
             project(
                 "new-mpp-android-agp-compatibility",
-                consumerGradleVersion,
-                buildOptions = defaultBuildOptions.copy(androidVersion = consumerAgpVersion)
-                    .suppressDeprecationWarningsOn(
-                        "AGP relies on FileTrees for ignoring empty directories when using @SkipWhenEmpty which has been deprecated."
-                    ) { options ->
-                        consumerGradleVersion >= GradleVersion.version(TestVersions.Gradle.G_7_4) && AGPVersion.fromString(options.safeAndroidVersion) < AGPVersion.v7_1_0
-                    },
-                buildJdk = jdkVersion.location,
+                consumerAgpVersion.minSupportedGradleVersion,
+                buildOptions = defaultBuildOptions.copy(androidVersion = consumerAgpVersion.version),
+                buildJdk = File(System.getProperty("jdk${consumerAgpVersion.requiredJdkVersion.majorVersion}Home")),
                 localRepoDir = tempDir
             ) {
                 /*
@@ -928,14 +885,15 @@ class KotlinAndroidMppIT : KGPBaseTest() {
                  */
                 build(":plainAndroidConsumer:assemble")
             }
-            println("Successfully tested compatibility for AGP consumer version $consumerAgpVersion on Gradle ${consumerGradleVersion.version} (Producer: $agpVersion)")
+            println(
+                "Successfully tested compatibility for AGP consumer version $consumerAgpVersion on Gradle" +
+                        " ${consumerAgpVersion.minSupportedGradleVersion} (Producer: $agpVersion)"
+            )
         }
     }
 
     @DisplayName("KT-49877, KT-35916: associate compilation dependencies are passed correctly to android test compilations")
     @GradleAndroidTest
-    @AndroidTestVersions(minVersion = TestVersions.AGP.AGP_71)
-    @GradleTestVersions(minVersion = TestVersions.Gradle.G_7_2) // due AGP version limit ^
     fun testAssociateCompilationDependenciesArePassedToAndroidTestCompilations(
         gradleVersion: GradleVersion,
         agpVersion: String,
@@ -947,14 +905,12 @@ class KotlinAndroidMppIT : KGPBaseTest() {
             buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
             buildJdk = jdkVersion.location
         ) {
-            build("allTests") {
+            build(":compileDebugUnitTestKotlinAndroid", ":compileReleaseUnitTestKotlinAndroid") {
                 assertTasksExecuted(
                     ":compileDebugKotlinAndroid",
                     ":compileReleaseKotlinAndroid",
                     ":compileDebugUnitTestKotlinAndroid",
                     ":compileReleaseUnitTestKotlinAndroid",
-                    ":testDebugUnitTest",
-                    ":testReleaseUnitTest",
                 )
             }
 
@@ -967,48 +923,12 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         }
     }
 
-    @GradleAndroidTest
-    fun mppAndroidRenameDiagnosticReportedOnKts(
-        gradleVersion: GradleVersion,
-        agpVersion: String,
-        jdkVersion: JdkVersions.ProvidedJdk,
-    ) = testAndroidRenameReported(gradleVersion, agpVersion, jdkVersion, "mppAndroidRenameKts")
-
-    @GradleAndroidTest
-    fun mppAndroidRenameDiagnosticReportedOnGroovy(
-        gradleVersion: GradleVersion,
-        agpVersion: String,
-        jdkVersion: JdkVersions.ProvidedJdk,
-    ) = testAndroidRenameReported(gradleVersion, agpVersion, jdkVersion, "mppAndroidRenameGroovy")
-
-    private fun testAndroidRenameReported(
-        gradleVersion: GradleVersion,
-        agpVersion: String,
-        jdkVersion: JdkVersions.ProvidedJdk,
-        projectName: String
-    ) {
-        project(
-            projectName,
-            gradleVersion,
-            buildOptions = defaultBuildOptions.copy(androidVersion = agpVersion),
-            buildJdk = jdkVersion.location
-        ) {
-            build("tasks") {
-                val warnings = output.lines().filter { it.startsWith("w:") }.toSet()
-                assert(
-                    warnings.any { warning -> warning.contains("androidTarget") }
-                )
-            }
-        }
-    }
-
-
     // https://youtrack.jetbrains.com/issue/KT-48436
     @GradleAndroidTest
     fun testUnusedSourceSetsReportAndroid(
         gradleVersion: GradleVersion,
         agpVersion: String,
-        jdkVersion: JdkVersions.ProvidedJdk
+        jdkVersion: JdkVersions.ProvidedJdk,
     ) {
         project(
             "new-mpp-android", gradleVersion,
@@ -1021,29 +941,87 @@ class KotlinAndroidMppIT : KGPBaseTest() {
         }
     }
 
+    @DisplayName("KT-63753: K2 File \"does not belong to any module\" when it is generated by `registerJavaGeneratingTask` in AGP")
     @GradleAndroidTest
-    fun smokeTestWithIcerockMobileMultiplatformGradlePlugin(
+    fun sourceGenerationTaskAddedToAndroidVariant(
         gradleVersion: GradleVersion,
         agpVersion: String,
-        jdkVersion: JdkVersions.ProvidedJdk
+        jdkVersion: JdkVersions.ProvidedJdk,
     ) {
         project(
-            "kgp-with-icerock-mobile-multiplatform", gradleVersion,
+            "new-mpp-android", gradleVersion,
             defaultBuildOptions.copy(androidVersion = agpVersion),
             buildJdk = jdkVersion.location
         ) {
-            settingsGradleKts.replaceText(
-                "resolutionStrategy {",
+            // Code copied from the reproducer from KT-63753
+            subProject("app").buildGradleKts.appendText(
                 """
-                    resolutionStrategy {
-                        eachPlugin {
-                            if (requested.id.id.startsWith("dev.icerock.mobile.multiplatform")) {
-                                useModule("dev.icerock:mobile-multiplatform:0.14.2")
-                            }
+                    
+                    abstract class FileGeneratingTask : DefaultTask() {
+                        @get:OutputDirectory
+                        abstract val outputDir: DirectoryProperty
+
+                        @TaskAction
+                        fun taskAction() {
+                            val outputDirFile = outputDir.asFile.get()
+                            outputDirFile.mkdirs()
+                            val file = File(outputDirFile, "Test.kt")
+                            val text = ""${'"'}
+                                val hello = "World!"
+                            ""${'"'}
+                            file.writeText(text)
                         }
+                    }
+                    
+                    android {
+                        applicationVariants.configureEach {
+                            val variant = this
+                            val outputDir = File(buildDir, "generateExternalFile/${'$'}{variant.dirName}")
+                            val task = project.tasks.register("generateExternalFile${'$'}{variant.name.capitalize()}", FileGeneratingTask::class.java) {
+                                this.outputDir.set(outputDir)
+                            }
+                            variant.registerJavaGeneratingTask(task, outputDir)
+                        }                    
+                    }
                 """.trimIndent()
             )
-            build("assemble")
+            build(":app:compileDebugKotlinAndroidApp") {
+                assertTasksExecuted(":app:compileDebugKotlinAndroidApp")
+            }
+        }
+    }
+
+    @DisplayName("KT-70380: KMM App failed to consume android binary lib when published incorrectly")
+    @GradleAndroidTest
+    @AndroidTestVersions(additionalVersions = [TestVersions.AGP.AGP_81])
+    @GradleTestVersions(additionalVersions = [TestVersions.Gradle.G_8_1, TestVersions.Gradle.G_8_2, TestVersions.Gradle.G_8_3])
+    fun kotlinAndroidHasBuildTypeAttribute(
+        gradleVersion: GradleVersion,
+        agpVersion: String,
+        jdkVersion: JdkVersions.ProvidedJdk,
+    ) {
+        kotlinAndroidLibraryProject(gradleVersion, agpVersion, jdkVersion).apply {
+            buildScriptInjection {
+                applyMavenPublishPlugin()
+                publishing.publications.create("default", MavenPublication::class.java) { publication ->
+                    publication.groupId = "com.example"
+                    publication.artifactId = "lib"
+                    publication.version = "1.0"
+
+                    project.afterEvaluate {
+                        publication.from(project.components.getByName("release"))
+                    }
+                }
+            }
+
+            build("publish") {
+                if (agpVersion == TestVersions.AGP.AGP_73) {
+                    // AGP 7.3 configures Publication automatically, so no diagnostic should be reported
+                    assertNoDiagnostic(KotlinToolingDiagnostics.AndroidPublicationNotConfigured)
+                } else {
+                    assertHasDiagnostic(KotlinToolingDiagnostics.AndroidPublicationNotConfigured)
+                }
+            }
         }
     }
 }

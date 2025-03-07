@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // SKIP_TXT
-// !LANGUAGE: -ReportMissingUpperBoundsViolatedErrorOnAbbreviationAtSupertypes
+// LANGUAGE: -ReportMissingUpperBoundsViolatedErrorOnAbbreviationAtSupertypes
 
 interface I
 open class TK<T : I, K : I>
@@ -13,7 +14,7 @@ object O1 : One<<!UPPER_BOUND_VIOLATED, UPPER_BOUND_VIOLATED!>Any<!>>() // compi
 object O2 : Both<<!UPPER_BOUND_VIOLATED!>Any<!>, <!UPPER_BOUND_VIOLATED!>Any<!>>()
 
 class A1<T : One<<!UPPER_BOUND_VIOLATED, UPPER_BOUND_VIOLATED!>Any<!>>>
-class A2<T : One<<!UPPER_BOUND_VIOLATED, UPPER_BOUND_VIOLATED!>Any<!>, Any>>
+class A2<T : One<!WRONG_NUMBER_OF_TYPE_ARGUMENTS!><Any, Any><!>>
 
 interface IO1 : OneList<<!UPPER_BOUND_VIOLATED, UPPER_BOUND_VIOLATED!>Any<!>> {}
 interface IO2 : BothList<<!UPPER_BOUND_VIOLATED!>Any<!>, <!UPPER_BOUND_VIOLATED!>Any<!>> {}

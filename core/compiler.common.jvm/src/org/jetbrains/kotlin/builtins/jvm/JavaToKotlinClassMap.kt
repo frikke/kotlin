@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.builtins.functions.BuiltInFunctionArity
 import org.jetbrains.kotlin.builtins.functions.FunctionTypeKind
 import org.jetbrains.kotlin.name.*
 import org.jetbrains.kotlin.resolve.jvm.JvmPrimitiveType
+import java.util.concurrent.atomic.*
 
 object JavaToKotlinClassMap {
     private val NUMBERED_FUNCTION_PREFIX: String =
@@ -46,7 +47,7 @@ object JavaToKotlinClassMap {
     )
 
     private inline fun <reified T> mutabilityMapping(kotlinReadOnly: ClassId, kotlinMutable: FqName): PlatformMutabilityMapping {
-        val mutableClassId = ClassId(kotlinReadOnly.packageFqName, kotlinMutable.tail(kotlinReadOnly.packageFqName), false)
+        val mutableClassId = ClassId(kotlinReadOnly.packageFqName, kotlinMutable.tail(kotlinReadOnly.packageFqName), isLocal = false)
         return PlatformMutabilityMapping(classId(T::class.java), kotlinReadOnly, mutableClassId)
     }
 
@@ -102,19 +103,27 @@ object JavaToKotlinClassMap {
             addKotlinToJava(FqName(kSuspendFun + i), K_FUNCTION_CLASS_ID)
         }
 
+        addKotlinToJava(FqName("kotlin.concurrent.atomics.AtomicInt"), classId(AtomicInteger::class.java))
+        addKotlinToJava(FqName("kotlin.concurrent.atomics.AtomicLong"), classId(AtomicLong::class.java))
+        addKotlinToJava(FqName("kotlin.concurrent.atomics.AtomicBoolean"), classId(AtomicBoolean::class.java))
+        addKotlinToJava(FqName("kotlin.concurrent.atomics.AtomicReference"), classId(AtomicReference::class.java))
+        addKotlinToJava(FqName("kotlin.concurrent.atomics.AtomicIntArray"), classId(AtomicIntegerArray::class.java))
+        addKotlinToJava(FqName("kotlin.concurrent.atomics.AtomicLongArray"), classId(AtomicLongArray::class.java))
+        addKotlinToJava(FqName("kotlin.concurrent.atomics.AtomicArray"), classId(AtomicReferenceArray::class.java))
+
         addKotlinToJava(FqNames.nothing.toSafe(), classId(Void::class.java))
     }
 
     /**
      * E.g.
-     * java.lang.String -> kotlin.String
-     * java.lang.Integer -> kotlin.Int
-     * kotlin.jvm.internal.IntCompanionObject -> kotlin.Int.Companion
-     * java.util.List -> kotlin.List
-     * java.util.Map.Entry -> kotlin.Map.Entry
-     * java.lang.Void -> null
-     * kotlin.jvm.functions.Function3 -> kotlin.Function3
-     * kotlin.jvm.functions.FunctionN -> null // Without a type annotation like @Arity(n), it's impossible to find out arity
+     * - java.lang.String -> kotlin.String
+     * - java.lang.Integer -> kotlin.Int
+     * - kotlin.jvm.internal.IntCompanionObject -> kotlin.Int.Companion
+     * - java.util.List -> kotlin.List
+     * - java.util.Map.Entry -> kotlin.Map.Entry
+     * - java.lang.Void -> null
+     * - kotlin.jvm.functions.Function3 -> kotlin.Function3
+     * - kotlin.jvm.functions.FunctionN -> null // Without a type annotation like @Arity(n), it's impossible to find out arity
      */
     fun mapJavaToKotlin(fqName: FqName): ClassId? {
         return javaToKotlin[fqName.toUnsafe()]
@@ -127,19 +136,19 @@ object JavaToKotlinClassMap {
 
     /**
      * E.g.
-     * kotlin.Throwable -> java.lang.Throwable
-     * kotlin.Int -> java.lang.Integer
-     * kotlin.Int.Companion -> kotlin.jvm.internal.IntCompanionObject
-     * kotlin.Nothing -> java.lang.Void
-     * kotlin.IntArray -> null
-     * kotlin.Function3 -> kotlin.jvm.functions.Function3
-     * kotlin.coroutines.SuspendFunction3 -> kotlin.jvm.functions.Function4
-     * kotlin.Function42 -> kotlin.jvm.functions.FunctionN
-     * kotlin.coroutines.SuspendFunction42 -> kotlin.jvm.functions.FunctionN
-     * kotlin.reflect.KFunction3 -> kotlin.reflect.KFunction
-     * kotlin.reflect.KSuspendFunction3 -> kotlin.reflect.KFunction
-     * kotlin.reflect.KFunction42 -> kotlin.reflect.KFunction
-     * kotlin.reflect.KSuspendFunction42 -> kotlin.reflect.KFunction
+     * - kotlin.Throwable -> java.lang.Throwable
+     * - kotlin.Int -> java.lang.Integer
+     * - kotlin.Int.Companion -> kotlin.jvm.internal.IntCompanionObject
+     * - kotlin.Nothing -> java.lang.Void
+     * - kotlin.IntArray -> null
+     * - kotlin.Function3 -> kotlin.jvm.functions.Function3
+     * - kotlin.coroutines.SuspendFunction3 -> kotlin.jvm.functions.Function4
+     * - kotlin.Function42 -> kotlin.jvm.functions.FunctionN
+     * - kotlin.coroutines.SuspendFunction42 -> kotlin.jvm.functions.FunctionN
+     * - kotlin.reflect.KFunction3 -> kotlin.reflect.KFunction
+     * - kotlin.reflect.KSuspendFunction3 -> kotlin.reflect.KFunction
+     * - kotlin.reflect.KFunction42 -> kotlin.reflect.KFunction
+     * - kotlin.reflect.KSuspendFunction42 -> kotlin.reflect.KFunction
      */
     fun mapKotlinToJava(kotlinFqName: FqNameUnsafe): ClassId? = when {
         isKotlinFunctionWithBigArity(kotlinFqName, NUMBERED_FUNCTION_PREFIX) -> FUNCTION_N_CLASS_ID
@@ -150,12 +159,11 @@ object JavaToKotlinClassMap {
     }
 
     private fun isKotlinFunctionWithBigArity(kotlinFqName: FqNameUnsafe, prefix: String): Boolean {
-        val arityString = kotlinFqName.asString().substringAfter(prefix, "")
-        if (arityString.isNotEmpty() && !arityString.startsWith('0')) {
-            val arity = arityString.toIntOrNull()
-            return arity != null && arity >= BuiltInFunctionArity.BIG_ARITY
-        }
-        return false
+        val fqNameAsString = kotlinFqName.asString()
+        if (!fqNameAsString.startsWith(prefix)) return false
+        val arityString = fqNameAsString.substring(prefix.length)
+        val arity = if (!arityString.startsWith('0')) arityString.toIntOrNull() else return false
+        return arity != null && arity >= BuiltInFunctionArity.BIG_ARITY
     }
 
     private fun addMapping(platformMutabilityMapping: PlatformMutabilityMapping) {

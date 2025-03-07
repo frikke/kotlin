@@ -9,24 +9,6 @@ version = "1.0"
 kotlin {
     jvm()
     js()
-
-    sourceSets {
-        commonMain {
-            dependencies {
-                implementation 'org.jetbrains.kotlin:kotlin-stdlib-common'
-            }
-        }
-        jvmMain {
-            dependencies {
-                implementation 'org.jetbrains.kotlin:kotlin-stdlib'
-            }
-        }
-        jsMain {
-            dependencies {
-                implementation 'org.jetbrains.kotlin:kotlin-stdlib-js'
-            }
-        }
-    }
 }
 
 publishing {
@@ -39,8 +21,4 @@ publishing {
     repositories {
         maven { setUrl("${rootProject.buildDir}/repo") }
     }
-}
-
-tasks.withType(org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile) {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
 }

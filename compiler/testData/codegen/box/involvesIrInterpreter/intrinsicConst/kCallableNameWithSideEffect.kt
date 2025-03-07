@@ -1,15 +1,19 @@
-// !LANGUAGE: +IntrinsicConstEvaluation
-// TARGET_BACKEND: JVM_IR
+// LANGUAGE: +IntrinsicConstEvaluation
+// IGNORE_IR_DESERIALIZATION_TEST: NATIVE
+// ^^^ KT-73621: EVALUATED{FIR} is shown instead of EVALUATED
 // WITH_STDLIB
 
 fun <T> T.id() = this
 
+fun someSideEffect(value: Any?) = {}
+
 class A {
     val a = ""
     fun b() = ""
+    fun withParameters(a: Int, b: String) = ""
 
     init {
-        println("A init")
+        someSideEffect("A init")
     }
 
     fun test() {
@@ -27,9 +31,12 @@ class A {
         val insideStringConcat = "${temp::b.<!EVALUATED("b")!>name<!>}"
 
         val complexExpression1 = A()::a.<!EVALUATED("a")!>name<!> + A()::b.<!EVALUATED("b")!>name<!>
-        val complexExpression2 = A::a.<!EVALUATED("a")!>name<!> <!EVALUATED("ab")!>+ A::b.<!EVALUATED("b")!>name<!><!>
+        val complexExpression2 = <!EVALUATED("ab")!>A::a.name + A::b.name<!>
 
-        var recursive = ::test.<!EVALUATED("test")!>name<!>
+        val recursive = ::test.<!EVALUATED("test")!>name<!>
+
+        val wihtParams1 = A::withParameters.<!EVALUATED("withParameters")!>name<!>
+        val wihtParams2 = A()::withParameters.<!EVALUATED("withParameters")!>name<!>
     }
 
     fun getA(): A = A()

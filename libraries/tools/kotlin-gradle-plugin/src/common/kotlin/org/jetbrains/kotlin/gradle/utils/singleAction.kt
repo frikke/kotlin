@@ -6,84 +6,59 @@
 package org.jetbrains.kotlin.gradle.utils
 
 import org.gradle.api.Project
-import org.gradle.api.logging.Logger
-import java.util.*
+import org.gradle.api.plugins.ExtraPropertiesExtension
+import org.jetbrains.kotlin.gradle.plugin.extraProperties
 
 /**
  * Base implementation of an actions executor that executes them once.
  */
 internal abstract class SingleAction {
-    private val performedActions = WeakHashMap<Project, MutableSet<String>>()
+
+    protected abstract val propertyKey: String
+    protected abstract fun extraProperties(project: Project): ExtraPropertiesExtension
 
     /**
-     * Calculates a part of a key that is used to determine whether an action from [run] was already executed
-     */
-    protected abstract fun selectKey(project: Project): Project
-
-    /**
-     * Runs an [action] once per key value which is being calculated as a combination of a [selectKey] value and an [actionId]
+     * Runs an [action] once per [actionId] key value.
      *
-     * Warning: if KGP is loaded multiple times by different classloaders, actions with the same [actionId] may be executed more than once
+     * Check the concrete implementation description for how often this action is expected to run.
      */
-    fun run(project: Project, actionId: String, action: () -> Unit) {
-        val performedActions = performedActions.computeIfAbsent(selectKey(project)) { mutableSetOf() }
-        if (performedActions.add(actionId)) {
+    fun run(
+        project: Project,
+        actionId: String,
+        action: () -> Unit
+    ) {
+        val extraProperties = extraProperties(project)
+        val performedActions = extraProperties.getOrPut(propertyKey) {
+            PerformedActions()
+        }
+        if (performedActions.actionsIds.add(actionId)) {
             action()
+            extraProperties.set(propertyKey, performedActions)
         }
     }
+
+    class PerformedActions(
+        val actionsIds: MutableSet<String> = mutableSetOf()
+    )
 }
 
 /**
  * Object that allows to run actions once per build
  *
- * Warning: if KGP is loaded multiple times by different classloaders, actions with the same id may be executed more than once
+ * Warning:
+  * - if the build has an included build, the action can be executed for each included build
  */
 internal object SingleActionPerBuild : SingleAction() {
-    override fun selectKey(project: Project): Project = project.rootProject
+    override val propertyKey = SingleActionPerBuild::class.java.name
+
+    override fun extraProperties(project: Project): ExtraPropertiesExtension = project.rootProject.extraProperties
 }
 
 /**
- * Object that allows to run actions once per project
- *
- * Warning: if KGP is loaded multiple times by different classloaders, actions with the same id may be executed more than once
+ * Object that allows to run actions once per project.
  */
 internal object SingleActionPerProject : SingleAction() {
-    override fun selectKey(project: Project) = project
-}
+    override val propertyKey: String = SingleActionPerProject::class.java.name
 
-/**
- * Object that allows to display warning once per build
- *
- * Warning: if KGP is loaded multiple times by different classloaders, warnings with the same id may be shown more than once
- */
-internal object SingleWarningPerBuild {
-    private const val ACTION_ID_SHOW_WARNING = "show-warning:"
-
-    /**
-     * Prints a warning with [warningText] using logger of [project]
-     *
-     * Warning: if KGP is loaded multiple times by different classloaders, warnings with the same id may be shown more than once
-     */
-    fun show(project: Project, warningText: String) = show(project, project.logger, warningText)
-
-    /**
-     * Prints a warning with [warningText] using [logger]
-     *
-     * Warning: if KGP is loaded multiple times by different classloaders, warnings with the same id may be shown more than once
-     */
-    fun show(project: Project, logger: Logger, warningText: String) =
-        SingleActionPerBuild.run(project, ACTION_ID_SHOW_WARNING + warningText) {
-            logger.warn(warningText)
-        }
-
-    /**
-     * Prints a deprecation warning for [target] of type [type] using logger of [project].
-     * If there's a replacement for it, you could specify [replacement]
-     *
-     * Warning: if KGP is loaded multiple times by different classloaders, warnings with the same id may be shown more than once
-     */
-    fun deprecation(project: Project, type: String, target: String, replacement: String? = null) {
-        val replacementMessage = replacement?.let { " Please, use '$replacement' instead." } ?: ""
-        show(project, "Warning: $type '$target' is deprecated and will be removed in next major releases.$replacementMessage\n")
-    }
+    override fun extraProperties(project: Project): ExtraPropertiesExtension = project.extraProperties
 }

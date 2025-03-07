@@ -1,0 +1,30 @@
+KaClassErrorType:
+  abbreviation: KaUsualClassType:
+    abbreviation: null
+    annotations: []
+    classId: expansion/FooAlias
+    nullability: NON_NULLABLE
+    qualifiers: [
+      KaResolvedClassTypeQualifier:
+        name: FooAlias
+        symbol: KaTypeAliasSymbol(expansion/FooAlias)
+        typeArguments: []
+    ]
+    symbol: KaTypeAliasSymbol(expansion/FooAlias)
+    typeArguments: []
+  annotations: []
+  candidateSymbols: []
+  errorMessage: Symbol not found for base/Foo
+  nullability: NON_NULLABLE
+  presentableText: base.Foo
+  qualifiers: [
+    KaUnresolvedClassTypeQualifier:
+      name: base
+      typeArguments: []
+    KaUnresolvedClassTypeQualifier:
+      name: Foo
+      typeArguments: []
+  ]
+
+Rendered type:
+expansion.FooAlias

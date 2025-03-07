@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.jvm;
@@ -22,7 +11,6 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.PackageIndex;
 import com.intellij.openapi.util.LowMemoryWatcher;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
@@ -34,6 +22,7 @@ import com.intellij.psi.impl.file.PsiPackageImpl;
 import com.intellij.psi.impl.file.impl.JavaFileManager;
 import com.intellij.psi.impl.light.LightModifierList;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.util.PsiModificationTracker;
 import com.intellij.util.CommonProcessors;
 import com.intellij.util.ConcurrencyUtil;
@@ -47,6 +36,7 @@ import org.jetbrains.kotlin.asJava.KtLightClassMarker;
 import org.jetbrains.kotlin.idea.KotlinLanguage;
 import org.jetbrains.kotlin.load.java.JavaClassFinder;
 import org.jetbrains.kotlin.load.java.structure.JavaClass;
+import org.jetbrains.kotlin.load.java.structure.JavaElementsKt;
 import org.jetbrains.kotlin.load.java.structure.impl.JavaClassImpl;
 import org.jetbrains.kotlin.load.java.structure.impl.source.JavaElementSourceFactory;
 import org.jetbrains.kotlin.name.ClassId;
@@ -62,10 +52,10 @@ public class KotlinJavaPsiFacade implements Disposable {
 
     private static class PackageCache {
         // long term cache
-        final ConcurrentMap<Pair<String, GlobalSearchScope>, PsiPackage> packageInLibScopeCache = new ConcurrentHashMap<>();
+        final ConcurrentMap<GlobalSearchScope, ConcurrentMap<String, PsiPackage>> packageInLibScopeCache = new ConcurrentHashMap<>();
 
         // short term caches
-        final ConcurrentMap<Pair<String, GlobalSearchScope>, PsiPackage> packageInScopeCache = new ConcurrentHashMap<>();
+        final ConcurrentMap<GlobalSearchScope, ConcurrentMap<String, PsiPackage>> packageInScopeCache = new ConcurrentHashMap<>();
         final ConcurrentMap<String, Boolean> hasPackageInAllScopeCache = new ConcurrentHashMap<>();
 
         void clear() {
@@ -165,8 +155,9 @@ public class KotlinJavaPsiFacade implements Disposable {
         return emptyModifierList;
     }
 
+    @Nullable
     public JavaClass findClass(@NotNull JavaClassFinder.Request request, @NotNull GlobalSearchScope scope) {
-        if (scope == GlobalSearchScope.EMPTY_SCOPE) return null;
+        if (SearchScope.isEmptyScope(scope)) return null;
 
         // We hope this method is being called often enough to cancel daemon processes smoothly
         ProgressIndicatorAndCompilationCanceledStatus.checkCanceled();
@@ -176,9 +167,11 @@ public class KotlinJavaPsiFacade implements Disposable {
 
         if (shouldUseSlowResolve()) {
             PsiClass[] classes = findClassesInDumbMode(qualifiedName, scope);
-            if (classes.length != 0) {
-                return createJavaClass(classId, classes[0]);
+            for (PsiClass psiClass : classes) {
+                JavaClass javaClass = tryCreateJavaClass(classId, psiClass);
+                if (javaClass != null) return javaClass;
             }
+
             return null;
         }
 
@@ -190,7 +183,10 @@ public class KotlinJavaPsiFacade implements Disposable {
             }
             else {
                 PsiClass aClass = finder.findClass(qualifiedName, scope);
-                if (aClass != null) return createJavaClass(classId, aClass);
+                if (aClass == null) continue;
+
+                JavaClass javaClass = tryCreateJavaClass(classId, aClass);
+                if (javaClass != null) return javaClass;
             }
         }
 
@@ -199,12 +195,12 @@ public class KotlinJavaPsiFacade implements Disposable {
 
     @NotNull
     public List<JavaClass> findClasses(@NotNull JavaClassFinder.Request request, @NotNull GlobalSearchScope scope) {
-        if (scope == GlobalSearchScope.EMPTY_SCOPE) return Collections.emptyList();
+        if (SearchScope.isEmptyScope(scope)) return Collections.emptyList();
 
         // We hope this method is being called often enough to cancel daemon processes smoothly
         ProgressIndicatorAndCompilationCanceledStatus.checkCanceled();
 
-        assert !shouldUseSlowResolve() : "`findClasses` should not be called from dumb mode, as results may be incomplete.";
+        assert !shouldUseSlowResolve() : "`findClasses` doesn't have an implementation for slow resolve mode.";
 
         ClassId classId = request.getClassId();
         String qualifiedName = classId.asSingleFqName().asString();
@@ -215,15 +211,16 @@ public class KotlinJavaPsiFacade implements Disposable {
             ProgressIndicatorAndCompilationCanceledStatus.checkCanceled();
 
             for (PsiClass psiClass : finder.findClasses(qualifiedName, scope)) {
-                javaClasses.add(createJavaClass(classId, psiClass));
+                JavaClass javaClass = tryCreateJavaClass(classId, psiClass);
+                if (javaClass != null) javaClasses.add(javaClass);
             }
         }
 
         return javaClasses;
     }
 
-    @NotNull
-    private JavaClass createJavaClass(@NotNull ClassId classId, @NotNull PsiClass psiClass) {
+    @Nullable
+    private JavaClass tryCreateJavaClass(@NotNull ClassId classId, @NotNull PsiClass psiClass) {
         JavaClassImpl javaClass = new JavaClassImpl(JavaElementSourceFactory.getInstance(project).createPsiSource(psiClass));
         FqName fqName = classId.asSingleFqName();
         if (!fqName.equals(javaClass.getFqName())) {
@@ -234,6 +231,10 @@ public class KotlinJavaPsiFacade implements Disposable {
             throw new IllegalStateException("Kotlin light classes should not be found by JavaPsiFacade, resolving: " + fqName);
         }
 
+        if (!classId.equals(JavaElementsKt.getClassId(javaClass))) {
+            return null;
+        }
+
         return javaClass;
     }
 
@@ -242,7 +243,7 @@ public class KotlinJavaPsiFacade implements Disposable {
      */
     @Nullable
     public Set<String> knownClassNamesInPackage(@NotNull FqName packageFqName, @NotNull GlobalSearchScope scope) {
-        if (scope == GlobalSearchScope.EMPTY_SCOPE) return Collections.emptySet();
+        if (SearchScope.isEmptyScope(scope)) return Collections.emptySet();
 
         KotlinPsiElementFinderWrapper[] finders = finders();
 
@@ -279,7 +280,7 @@ public class KotlinJavaPsiFacade implements Disposable {
         return pkg.findClassByShortName(className, scope);
     }
 
-    private boolean shouldUseSlowResolve() {
+    protected boolean shouldUseSlowResolve() {
         DumbService dumbService = DumbService.getInstance(getProject());
         return dumbService.isDumb() && dumbService.isAlternativeResolveEnabled();
     }
@@ -329,8 +330,9 @@ public class KotlinJavaPsiFacade implements Disposable {
         return javaFileManager;
     }
 
-    public PsiPackage findPackage(@NotNull String qualifiedName, GlobalSearchScope searchScope) {
-        if (searchScope == GlobalSearchScope.EMPTY_SCOPE) return null;
+    @Nullable
+    public PsiPackage findPackage(@NotNull String qualifiedName, @NotNull GlobalSearchScope searchScope) {
+        if (SearchScope.isEmptyScope(searchScope)) return null;
 
         ProgressIndicatorAndCompilationCanceledStatus.checkCanceled();
         if (certainlyDoesNotExist(qualifiedName, searchScope)) return null;
@@ -340,12 +342,13 @@ public class KotlinJavaPsiFacade implements Disposable {
         Boolean packageFoundInAllScope = cache.hasPackageInAllScopeCache.get(qualifiedName);
         if (packageFoundInAllScope != null && !packageFoundInAllScope.booleanValue()) return null;
 
-        Pair<String, GlobalSearchScope> key = new Pair<>(qualifiedName, searchScope);
-        PsiPackage pkg = cache.packageInLibScopeCache.get(key);
+        ConcurrentMap<String, PsiPackage> packageInLibScope = cache.packageInLibScopeCache.get(searchScope);
+        PsiPackage pkg = packageInLibScope != null ? packageInLibScope.get(qualifiedName) : null;
         if (pkg != null) {
             return unwrap(pkg);
         }
-        pkg = cache.packageInScopeCache.get(key);
+        ConcurrentMap<String, PsiPackage> packageInScope = cache.packageInScopeCache.get(searchScope);
+        pkg = packageInScope != null ? packageInScope.get(qualifiedName) : null;
         if (pkg != null) {
             return unwrap(pkg);
         }
@@ -356,7 +359,7 @@ public class KotlinJavaPsiFacade implements Disposable {
 
         {
             // store found package in a long term cache if package is found in library search scope
-            ConcurrentMap<Pair<String, GlobalSearchScope>, PsiPackage> existedPackageInScopeCache =
+            ConcurrentMap<GlobalSearchScope, ConcurrentMap<String, PsiPackage>> existedPackageInScopeCache =
                     isALibrarySearchScope ? cache.packageInLibScopeCache : cache.packageInScopeCache;
 
             KotlinPsiElementFinderWrapper[] finders = filteredFinders();
@@ -367,7 +370,9 @@ public class KotlinJavaPsiFacade implements Disposable {
                     if (!finder.isSameResultForAnyScope()) {
                         PsiPackage aPackage = finder.findPackage(qualifiedName, searchScope);
                         if (aPackage != null) {
-                            return unwrap(ConcurrencyUtil.cacheOrGet(existedPackageInScopeCache, key, aPackage));
+                            ConcurrentMap<String, PsiPackage> concurrentMap =
+                                    ConcurrencyUtil.cacheOrGet(existedPackageInScopeCache, searchScope, new ConcurrentHashMap<>());
+                            return unwrap(ConcurrencyUtil.cacheOrGet(concurrentMap, qualifiedName, aPackage));
                         }
                     }
                 }
@@ -377,7 +382,9 @@ public class KotlinJavaPsiFacade implements Disposable {
                     PsiPackage aPackage = finder.findPackage(qualifiedName, searchScope);
 
                     if (aPackage != null) {
-                        return unwrap(ConcurrencyUtil.cacheOrGet(existedPackageInScopeCache, key, aPackage));
+                        ConcurrentMap<String, PsiPackage> concurrentMap =
+                                ConcurrencyUtil.cacheOrGet(existedPackageInScopeCache, searchScope, new ConcurrentHashMap<>());
+                        return unwrap(ConcurrencyUtil.cacheOrGet(concurrentMap, qualifiedName, aPackage));
                     }
                 }
 
@@ -397,7 +404,7 @@ public class KotlinJavaPsiFacade implements Disposable {
             }
         }
 
-        ConcurrentMap<Pair<String, GlobalSearchScope>, PsiPackage> notFoundPackageInScopeCache;
+        ConcurrentMap<GlobalSearchScope, ConcurrentMap<String, PsiPackage>> notFoundPackageInScopeCache;
         switch (notFoundCacheType) {
             case LIB_SCOPE:
                 notFoundPackageInScopeCache = cache.packageInLibScopeCache;
@@ -411,7 +418,9 @@ public class KotlinJavaPsiFacade implements Disposable {
                 throw new IllegalStateException("Impossible enum value: " + notFoundCacheType.toString());
         }
 
-        return unwrap(ConcurrencyUtil.cacheOrGet(notFoundPackageInScopeCache, key, NULL_PACKAGE));
+        ConcurrentMap<String, PsiPackage> concurrentMap =
+                ConcurrencyUtil.cacheOrGet(notFoundPackageInScopeCache, searchScope, new ConcurrentHashMap<>());
+        return unwrap(ConcurrencyUtil.cacheOrGet(concurrentMap, qualifiedName, NULL_PACKAGE));
     }
 
     private PackageCache obtainPackageCache() {

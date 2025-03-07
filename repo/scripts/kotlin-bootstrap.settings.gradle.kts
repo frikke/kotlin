@@ -64,12 +64,12 @@ fun getRootSettings(
     val gradleInternal = (gradle as GradleInternal)
     return when {
         gradleInternal.isRootBuild() ||
-                settings.rootProject.name == "gradle-settings-conventions" -> {
+                setOf("gradle-settings-conventions", "gradle-build-conventions").contains(settings.rootProject.name) -> {
             settings
         }
         else -> {
             val gradleParent = gradle.parent ?: error("Could not get includedBuild parent build for ${settings.rootDir}!")
-            getRootSettings(gradle.parent!!.settings, gradle.parent!!)
+            getRootSettings(gradleParent.settings, gradleParent)
         }
     }
 }
@@ -83,14 +83,15 @@ val kotlinRootDir: File = when (rootSettings.rootProject.name) {
     "buildSrc" -> {
         val parentDir = rootSettings.rootDir.parentFile
         when (parentDir.name) {
-            "benchmarksAnalyzer", "performance-server" -> parentDir.parentFile.parentFile.parentFile
+            "benchmarksAnalyzer" -> parentDir.parentFile.parentFile.parentFile
             "performance" -> parentDir.parentFile.parentFile
             "ui" -> parentDir.parentFile.parentFile.parentFile.parentFile
             else -> parentDir
         }
     }
-    "benchmarksAnalyzer", "performance-server" -> rootSettings.rootDir.parentFile.parentFile.parentFile
+    "benchmarksAnalyzer" -> rootSettings.rootDir.parentFile.parentFile.parentFile
     "gradle-settings-conventions" -> rootSettings.rootDir.parentFile.parentFile
+    "gradle-build-conventions" -> rootSettings.rootDir.parentFile.parentFile
     "performance" -> rootSettings.rootDir.parentFile.parentFile
     "ui" -> rootSettings.rootDir.parentFile.parentFile.parentFile.parentFile
     else -> rootSettings.rootDir
@@ -138,7 +139,7 @@ fun String?.propValueToBoolean(default: Boolean = false): Boolean {
     }
 }
 
-fun Provider<String>.mapToBoolean(): Provider<Boolean> = map { it?.propValueToBoolean() }
+fun Provider<String>.mapToBoolean(): Provider<Boolean> = map { it.propValueToBoolean() }
 
 fun RepositoryHandler.addBootstrapRepo(
     bootstrapRepo: String,
@@ -173,22 +174,11 @@ fun RepositoryHandler.addBootstrapRepo(
 }
 
 @OptIn(kotlin.ExperimentalStdlibApi::class)
-fun getAdditionalBootstrapRepos(
-    bootstrapRepo: String,
-    bootstrapKotlinVersion: String,
-    isJpsBuildEnabled: Boolean
-): List<String> {
+fun getAdditionalBootstrapRepos(bootstrapRepo: String): List<String> {
     return buildList {
         if (bootstrapRepo.startsWith("https://buildserver.labs.intellij.net")
                 || bootstrapRepo.startsWith("https://teamcity.jetbrains.com")) {
             add(bootstrapRepo.replace("artifacts/content/maven", "artifacts/content/internal/repo"))
-        }
-
-        if (isJpsBuildEnabled) {
-            add(
-                "https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:(id:Kotlin_KotlinPublic_Aggregate)," +
-                        "number:$bootstrapKotlinVersion,branch:default:any/artifacts/content/internal/repo/"
-            )
         }
     }
 }
@@ -196,7 +186,6 @@ fun getAdditionalBootstrapRepos(
 fun Settings.applyBootstrapConfiguration(
     bootstrapVersion: String,
     bootstrapRepo: String,
-    isJpsBuildEnabled: Boolean,
     logMessage: String
 ) {
     settings.pluginManagement.repositories.addBootstrapRepo(bootstrapRepo, bootstrapVersion)
@@ -206,7 +195,7 @@ fun Settings.applyBootstrapConfiguration(
         }
     }
 
-    val additionalRepos = getAdditionalBootstrapRepos(bootstrapRepo, bootstrapVersion, isJpsBuildEnabled)
+    val additionalRepos = getAdditionalBootstrapRepos(bootstrapRepo)
     gradle.beforeProject {
         bootstrapKotlinVersion = bootstrapVersion
         bootstrapKotlinRepo = bootstrapRepo
@@ -231,8 +220,6 @@ val teamCityBootstrapUrl = loadLocalOrGradleProperty(Config.TEAMCITY_BOOTSTRAP_U
 val customBootstrapVersion = loadLocalOrGradleProperty(Config.CUSTOM_BOOTSTRAP_VERSION)
 val customBootstrapRepo = loadLocalOrGradleProperty(Config.CUSTOM_BOOTSTRAP_REPO)
 val defaultBootstrapVersion = loadLocalOrGradleProperty(Config.DEFAULT_BOOTSTRAP_VERSION)
-val isJpsBuildEnabled = loadLocalOrGradleProperty(Config.IS_JPS_BUILD_ENABLED)
-    .mapToBoolean().orElse(false)
 
 var Project.bootstrapKotlinVersion: String
     get() = property(Config.PROJECT_KOTLIN_VERSION) as String
@@ -264,7 +251,6 @@ when {
         applyBootstrapConfiguration(
             bootstrapVersion,
             bootstrapRepo,
-            isJpsBuildEnabled.get(),
             "Using Kotlin local bootstrap version $bootstrapVersion from $bootstrapRepo"
         )
     }
@@ -273,15 +259,14 @@ when {
 
         val query = "branch:default:any"
         val baseRepoUrl = teamCityBootstrapUrl.orNull ?: "https://buildserver.labs.intellij.net"
-        val teamCityProjectId = teamCityBootstrapProject.orNull ?: "Kotlin_KotlinDev_Compiler"
+        val teamCityProjectId = teamCityBootstrapProject.orNull ?: "Kotlin_KotlinDev_Artifacts"
         val teamCityBuildNumber = teamCityBootstrapBuildNumber.orNull ?: bootstrapVersion
 
-        val bootstrapRepo = "$baseRepoUrl/guestAuth/app/rest/builds/buildType:(id:$teamCityProjectId),number:$teamCityBuildNumber,$query/artifacts/content/maven/"
+        val bootstrapRepo = "$baseRepoUrl/guestAuth/app/rest/builds/buildType:(id:$teamCityProjectId),number:$teamCityBuildNumber,$query/artifacts/content/maven.zip!/"
 
         applyBootstrapConfiguration(
             bootstrapVersion,
             bootstrapRepo,
-            isJpsBuildEnabled.get(),
             "Using Kotlin TeamCity bootstrap version $bootstrapVersion from $bootstrapRepo"
         )
     }
@@ -292,7 +277,6 @@ when {
         applyBootstrapConfiguration(
             bootstrapVersion,
             bootstrapRepo,
-            isJpsBuildEnabled.get(),
             "Using Kotlin custom bootstrap version $bootstrapVersion from $bootstrapRepo"
         )
     }
@@ -303,7 +287,6 @@ when {
         applyBootstrapConfiguration(
             bootstrapVersion,
             bootstrapRepo,
-            isJpsBuildEnabled.get(),
             "Using Kotlin Space bootstrap version $bootstrapVersion from $bootstrapRepo"
         )
     }

@@ -1,8 +1,9 @@
-import TaskUtils.useAndroidEmulator
+import org.jetbrains.kotlin.build.androidsdkprovisioner.ProvisioningType
 
 plugins {
     kotlin("jvm")
     id("jps-compatible")
+    id("android-sdk-provisioner")
 }
 
 dependencies {
@@ -17,21 +18,18 @@ dependencies {
 
     testApi(kotlinStdlib())
     testApi(projectTests(":compiler:tests-common"))
-    testApi(commonDependency("junit:junit"))
+    testImplementation(libs.junit4)
     testApi(projectTests(":compiler:test-infrastructure"))
     testApi(projectTests(":compiler:test-infrastructure-utils"))
     testApi(projectTests(":compiler:tests-compiler-utils"))
     testApi(projectTests(":compiler:tests-common-new"))
 
-    testApi(commonDependency("junit:junit"))
-
     testApi(jpsModel())
-    testApi(jpsBuildTest())
 
     testRuntimeOnly(intellijCore())
     testRuntimeOnly(commonDependency("org.jetbrains.intellij.deps.jna:jna"))
 
-    testApi("org.junit.platform:junit-platform-launcher:${commonDependencyVersion("org.junit.platform", "")}")
+    testImplementation(libs.junit.platform.launcher)
 }
 
 sourceSets {
@@ -56,7 +54,9 @@ projectTest {
     }
 
     workingDir = rootDir
-    useAndroidEmulator(this)
+    androidSdkProvisioner {
+        provideToThisTaskAsSystemProperty(ProvisioningType.SDK_WITH_EMULATOR)
+    }
 }
 
 val generateAndroidTests by generator("org.jetbrains.kotlin.android.tests.CodegenTestsOnAndroidGenerator") {

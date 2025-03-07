@@ -5,13 +5,11 @@
 
 package org.jetbrains.kotlin.gradle.plugin.diagnostics
 
-import org.gradle.api.InvalidUserCodeException
 import org.gradle.api.Project
+import org.gradle.api.logging.Logger
+import org.gradle.api.provider.Provider
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
-import org.jetbrains.kotlin.gradle.plugin.PropertiesProvider.Companion.kotlinPropertiesProvider
-import org.jetbrains.kotlin.gradle.plugin.diagnostics.ToolingDiagnostic.Severity.ERROR
-import org.jetbrains.kotlin.gradle.plugin.diagnostics.ToolingDiagnostic.Severity.WARNING
 import org.jetbrains.kotlin.gradle.utils.registerClassLoaderScopedBuildService
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -20,52 +18,103 @@ private typealias ToolingDiagnosticId = String
 private typealias GradleProjectPath = String
 
 internal abstract class KotlinToolingDiagnosticsCollector : BuildService<BuildServiceParameters.None> {
+    /**
+     * When collector is in transparent mode, any diagnostics received will be immediately rendered
+     * instead of collected
+     */
+    @Volatile
+    private var isTransparent: Boolean = false
+
     private val rawDiagnosticsFromProject: MutableMap<GradleProjectPath, MutableList<ToolingDiagnostic>> = ConcurrentHashMap()
     private val reportedIds: MutableSet<ToolingDiagnosticId> = Collections.newSetFromMap(ConcurrentHashMap())
 
     fun getDiagnosticsForProject(project: Project): Collection<ToolingDiagnostic> {
-        val rawDiagnostics = rawDiagnosticsFromProject[project.path] ?: return emptyList()
-
-        val suppressedWarnings = project.kotlinPropertiesProvider.suppressedGradlePluginWarnings.toSet()
-        val suppressedErrors = project.kotlinPropertiesProvider.suppressedGradlePluginErrors.toSet()
-
-        fun ToolingDiagnostic.isSuppressed(): Boolean =
-            severity == WARNING && id in suppressedWarnings || severity == ERROR && id in suppressedErrors
-
-        return rawDiagnostics.filter { !it.isSuppressed() }
+        return rawDiagnosticsFromProject[project.path] ?: return emptyList()
     }
 
-    fun report(project: Project, diagnostic: ToolingDiagnostic) {
-        saveDiagnostic(project, diagnostic)
-    }
-
-    fun reportOncePerGradleProject(fromProject: Project, diagnostic: ToolingDiagnostic, key: ToolingDiagnosticId = diagnostic.id) {
-        if (reportedIds.add("${fromProject.path}#$key")) {
-            saveDiagnostic(fromProject, diagnostic)
+    fun report(
+        project: Project,
+        diagnostic: ToolingDiagnostic,
+        reportOnce: Boolean = false,
+        key: ToolingDiagnosticId = diagnostic.id,
+    ) {
+        if (reportedIds.add(key) || !reportOnce){
+            handleDiagnostic(project, diagnostic)
         }
     }
 
-    fun reportOncePerGradleBuild(fromProject: Project, diagnostic: ToolingDiagnostic, key: ToolingDiagnosticId = diagnostic.id) {
-        if (reportedIds.add(":#$key")) {
-            saveDiagnostic(fromProject, diagnostic)
+    fun report(
+        task: UsesKotlinToolingDiagnostics,
+        diagnostic: ToolingDiagnostic,
+        reportOnce: Boolean = false,
+        key: ToolingDiagnosticId = diagnostic.id,
+    ) {
+        report(task, task.logger, diagnostic, reportOnce, key)
+    }
+
+    fun report(
+        from: UsesKotlinToolingDiagnosticsParameters,
+        logger: Logger,
+        diagnostic: ToolingDiagnostic,
+        reportOnce: Boolean = false,
+        key: ToolingDiagnosticId = diagnostic.id,
+    ) {
+        if (reportedIds.add(key) || !reportOnce) {
+            val options = from.diagnosticRenderingOptions.get()
+            if (!diagnostic.isSuppressed(options)) {
+                renderReportedDiagnostic(diagnostic, logger, options)
+            }
         }
     }
 
-    private fun saveDiagnostic(project: Project, diagnostic: ToolingDiagnostic) {
-        if (diagnostic.severity == ToolingDiagnostic.Severity.FATAL) {
-            throw InvalidUserCodeException(diagnostic.message)
+    fun switchToTransparentMode() {
+        isTransparent = true
+    }
+
+    private fun handleDiagnostic(project: Project, diagnostic: ToolingDiagnostic) {
+        val options = ToolingDiagnosticRenderingOptions.forProject(project)
+        if (diagnostic.isSuppressed(options)) return
+
+        if (isTransparent) {
+            renderReportedDiagnostic(diagnostic, project.logger, options)
+            return
         }
+
         rawDiagnosticsFromProject.compute(project.path) { _, previousListIfAny ->
             previousListIfAny?.apply { add(diagnostic) } ?: mutableListOf(diagnostic)
+        }
+
+        if (diagnostic.severity == ToolingDiagnostic.Severity.FATAL) {
+            throw diagnostic.createAnExceptionForFatalDiagnostic(options)
         }
     }
 }
 
+internal val Project.kotlinToolingDiagnosticsCollectorProvider: Provider<KotlinToolingDiagnosticsCollector>
+    get() = gradle.registerClassLoaderScopedBuildService(KotlinToolingDiagnosticsCollector::class)
+
+
 internal val Project.kotlinToolingDiagnosticsCollector: KotlinToolingDiagnosticsCollector
-    get() = gradle.registerClassLoaderScopedBuildService(KotlinToolingDiagnosticsCollector::class).get()
+    get() = kotlinToolingDiagnosticsCollectorProvider.get()
 
 internal fun Project.reportDiagnostic(diagnostic: ToolingDiagnostic) {
     kotlinToolingDiagnosticsCollector.report(this, diagnostic)
+}
+
+internal fun KotlinToolingDiagnosticsCollector.reportOncePerGradleBuild(
+    fromProject: Project,
+    diagnostic: ToolingDiagnostic,
+    key: ToolingDiagnosticId = diagnostic.id,
+) {
+    report(fromProject, diagnostic, reportOnce = true, ":#$key")
+}
+
+internal fun KotlinToolingDiagnosticsCollector.reportOncePerGradleProject(
+    fromProject: Project,
+    diagnostic: ToolingDiagnostic,
+    key: ToolingDiagnosticId = diagnostic.id,
+) {
+    report(fromProject, diagnostic, reportOnce = true, "${fromProject.path}#$key")
 }
 
 internal fun Project.reportDiagnosticOncePerProject(diagnostic: ToolingDiagnostic, key: ToolingDiagnosticId = diagnostic.id) {
@@ -74,4 +123,18 @@ internal fun Project.reportDiagnosticOncePerProject(diagnostic: ToolingDiagnosti
 
 internal fun Project.reportDiagnosticOncePerBuild(diagnostic: ToolingDiagnostic, key: ToolingDiagnosticId = diagnostic.id) {
     kotlinToolingDiagnosticsCollector.reportOncePerGradleBuild(this, diagnostic, key)
+}
+
+@RequiresOptIn("Usage of immediate diagnostic reporting is discouraged. Please use the regular diagnostics pipeline.")
+internal annotation class ImmediateDiagnosticReporting
+
+@ImmediateDiagnosticReporting
+internal fun Project.reportDiagnosticImmediately(diagnostic: ToolingDiagnostic) {
+    val renderingOptions = ToolingDiagnosticRenderingOptions.forProject(project)
+    if (diagnostic.isSuppressed(renderingOptions)) return
+    renderReportedDiagnostic(
+        diagnostic,
+        project.logger,
+        renderingOptions
+    )
 }

@@ -6,55 +6,31 @@
 package org.jetbrains.kotlin.backend.konan
 
 import llvm.LLVMTypeRef
-import org.jetbrains.kotlin.backend.common.DefaultDelegateFactory
-import org.jetbrains.kotlin.backend.common.DefaultMapping
-import org.jetbrains.kotlin.backend.common.LoggingContext
+import org.jetbrains.kotlin.backend.common.ir.Symbols
+import org.jetbrains.kotlin.config.LoggingContext
 import org.jetbrains.kotlin.backend.common.linkage.partial.createPartialLinkageSupportForLowerings
 import org.jetbrains.kotlin.backend.konan.cexport.CAdapterExportedElements
-import org.jetbrains.kotlin.backend.konan.descriptors.BridgeDirections
-import org.jetbrains.kotlin.backend.konan.descriptors.ClassLayoutBuilder
-import org.jetbrains.kotlin.backend.konan.descriptors.GlobalHierarchyAnalysisResult
-import org.jetbrains.kotlin.backend.konan.ir.KonanIr
-import org.jetbrains.kotlin.backend.konan.ir.KonanSymbols
+import org.jetbrains.kotlin.backend.konan.ir.*
 import org.jetbrains.kotlin.backend.konan.llvm.KonanMetadata
 import org.jetbrains.kotlin.backend.konan.lower.*
 import org.jetbrains.kotlin.backend.konan.objcexport.ObjCExportCodeSpec
 import org.jetbrains.kotlin.backend.konan.objcexport.ObjCExportedInterface
+import org.jetbrains.kotlin.backend.konan.serialization.ExternalDeclarationFileNameProvider
+import org.jetbrains.kotlin.backend.konan.serialization.ModuleDeserializerProvider
+import org.jetbrains.kotlin.backend.konan.serialization.InlineFunctionDeserializer
 import org.jetbrains.kotlin.backend.konan.serialization.KonanIrLinker
+import org.jetbrains.kotlin.backend.konan.serialization.KonanPartialModuleDeserializer
 import org.jetbrains.kotlin.builtins.konan.KonanBuiltIns
+import org.jetbrains.kotlin.config.messageCollector
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.types.IrTypeSystemContext
 import org.jetbrains.kotlin.ir.types.IrTypeSystemContextImpl
-import org.jetbrains.kotlin.ir.util.irMessageLogger
-import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.ir.util.ReferenceSymbolTable
+import org.jetbrains.kotlin.ir.util.render
 import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import java.util.concurrent.ConcurrentHashMap
-
-internal class NativeMapping : DefaultMapping() {
-    data class BridgeKey(val target: IrSimpleFunction, val bridgeDirections: BridgeDirections)
-    enum class AtomicFunctionType {
-        COMPARE_AND_EXCHANGE, COMPARE_AND_SET, GET_AND_SET, GET_AND_ADD;
-    }
-    data class AtomicFunctionKey(val field: IrField, val type: AtomicFunctionType)
-
-    val outerThisFields = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrClass, IrField>()
-    val enumValueGetters = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrClass, IrFunction>()
-    val enumEntriesMaps = mutableMapOf<IrClass, Map<Name, LoweredEnumEntryDescription>>()
-    val bridges = ConcurrentHashMap<BridgeKey, IrSimpleFunction>()
-    val partiallyLoweredInlineFunctions = mutableMapOf<IrFunctionSymbol, IrFunction>()
-    val outerThisCacheAccessors = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrClass, IrSimpleFunction>()
-    val lateinitPropertyCacheAccessors = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrProperty, IrSimpleFunction>()
-    val objectInstanceGetter = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrClass, IrSimpleFunction>()
-    val boxFunctions = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrClass, IrSimpleFunction>()
-    val unboxFunctions = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrClass, IrSimpleFunction>()
-    val loweredInlineClassConstructors = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrConstructor, IrSimpleFunction>()
-    val volatileFieldToAtomicFunction = mutableMapOf<AtomicFunctionKey, IrSimpleFunction>()
-    val functionToVolatileField = DefaultDelegateFactory.newDeclarationToDeclarationMapping<IrSimpleFunction, IrField>()
-}
 
 // TODO: Can be renamed or merged with KonanBackendContext
 internal class Context(
@@ -64,22 +40,35 @@ internal class Context(
         override val irBuiltIns: IrBuiltIns,
         val irModules: Map<String, IrModuleFragment>,
         val irLinker: KonanIrLinker,
-        symbols: KonanSymbols,
+        override val symbols: KonanSymbols,
+        val symbolTable: ReferenceSymbolTable,
 ) : KonanBackendContext(config) {
-
-    override val ir: KonanIr = KonanIr(this, symbols)
-
     override val configuration get() = config.configuration
-
-    override val internalPackageFqn: FqName = RuntimeNames.kotlinNativeInternalPackageName
 
     override val optimizeLoopsOverUnsignedArrays = true
 
-    val innerClassesSupport by lazy { InnerClassesSupport(mapping, irFactory) }
-    val bridgesSupport by lazy { BridgesSupport(mapping, irBuiltIns, irFactory) }
-    val inlineFunctionsSupport by lazy { InlineFunctionsSupport(mapping) }
-    val enumsSupport by lazy { EnumsSupport(mapping, irBuiltIns, irFactory) }
+    override val innerClassesSupport: NativeInnerClassesSupport by lazy { NativeInnerClassesSupport(irFactory) }
+    val bridgesSupport by lazy { BridgesSupport(irBuiltIns, irFactory) }
+    val enumsSupport by lazy { EnumsSupport(irBuiltIns, irFactory) }
     val cachesAbiSupport by lazy { CachesAbiSupport(mapping, irFactory) }
+
+    val moduleDeserializerProvider by lazy {
+        ModuleDeserializerProvider(config.libraryToCache, config.cachedLibraries, irLinker)
+    }
+
+    val externalDeclarationFileNameProvider by lazy {
+        ExternalDeclarationFileNameProvider(moduleDeserializerProvider)
+    }
+
+    private val inlineFunctionDeserializers = ConcurrentHashMap<KonanPartialModuleDeserializer, InlineFunctionDeserializer>()
+
+    fun getInlineFunctionDeserializer(function: IrFunction): InlineFunctionDeserializer {
+        val deserializer = moduleDeserializerProvider.getDeserializerOrNull(function)
+                ?: error("No module deserializer for ${function.render()}")
+        return inlineFunctionDeserializers.getOrPut(deserializer) {
+            InlineFunctionDeserializer(deserializer, config.cachedLibraries, irLinker)
+        }
+    }
 
     // TODO: Remove after adding special <userData> property to IrDeclaration.
     private val layoutBuilders = ConcurrentHashMap<IrClass, ClassLayoutBuilder>()
@@ -106,14 +95,12 @@ internal class Context(
 
     val targetAbiInfo = config.target.abiInfo
 
-    val memoryModel = config.memoryModel
-
     override fun dispose() {}
 
     override val partialLinkageSupport = createPartialLinkageSupportForLowerings(
             config.partialLinkageConfig,
             irBuiltIns,
-            configuration.irMessageLogger
+            configuration.messageCollector
     )
 }
 

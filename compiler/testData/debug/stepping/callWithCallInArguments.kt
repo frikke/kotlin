@@ -1,3 +1,4 @@
+
 // FILE: test.kt
 
 class A
@@ -13,35 +14,53 @@ fun box() {
     )
 }
 
-// EXPECTATIONS JVM JVM_IR
-// test.kt:8 box
-// test.kt:3 <init>
-// test.kt:8 box
+// EXPECTATIONS JVM_IR
+// test.kt:9 box
+// test.kt:4 <init>
+// test.kt:9 box
+// test.kt:12 box
+// test.kt:6 bar
+// test.kt:4 <init>
+// test.kt:6 bar
 // test.kt:11 box
-// test.kt:5 bar
-// test.kt:3 <init>
-// test.kt:5 bar
+// test.kt:6 bar
+// test.kt:4 <init>
+// test.kt:6 bar
 // test.kt:10 box
-// test.kt:5 bar
-// test.kt:3 <init>
-// test.kt:5 bar
-// test.kt:9 box
-// test.kt:5 bar
-// test.kt:3 <init>
-// test.kt:5 bar
-// test.kt:9 box
-// test.kt:14 box
+// test.kt:6 bar
+// test.kt:4 <init>
+// test.kt:6 bar
+// test.kt:10 box
+// test.kt:15 box
 
 // EXPECTATIONS JS_IR
-// test.kt:8 box
-// test.kt:3 <init>
 // test.kt:9 box
-// test.kt:5 bar
-// test.kt:3 <init>
+// test.kt:4 <init>
 // test.kt:10 box
-// test.kt:5 bar
-// test.kt:3 <init>
-// test.kt:9 box
-// test.kt:5 bar
-// test.kt:3 <init>
-// test.kt:14 box
+// test.kt:6 bar
+// test.kt:4 <init>
+// test.kt:11 box
+// test.kt:6 bar
+// test.kt:4 <init>
+// test.kt:10 box
+// test.kt:6 bar
+// test.kt:4 <init>
+// test.kt:15 box
+
+// EXPECTATIONS WASM
+// test.kt:9 $box (12)
+// test.kt:4 $A.<init> (7)
+// test.kt:12 $box (24, 20)
+// test.kt:6 $bar (16)
+// test.kt:4 $A.<init> (7)
+// test.kt:6 $bar (19)
+// test.kt:11 $box (12)
+// test.kt:6 $bar (16)
+// test.kt:4 $A.<init> (7)
+// test.kt:6 $bar (19)
+// test.kt:10 $box (4)
+// test.kt:6 $bar (16)
+// test.kt:4 $A.<init> (7)
+// test.kt:6 $bar (19)
+// test.kt:10 $box (4)
+// test.kt:15 $box (1)

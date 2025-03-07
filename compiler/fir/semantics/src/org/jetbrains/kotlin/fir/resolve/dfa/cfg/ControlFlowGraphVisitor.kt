@@ -54,7 +54,21 @@ abstract class ControlFlowGraphVisitor<out R, in D> {
         return visitNode(node, data)
     }
 
+    open fun visitAnonymousFunctionCaptureNode(node: AnonymousFunctionCaptureNode, data: D): R {
+        return visitNode(node, data)
+    }
+
     open fun visitAnonymousFunctionExpressionNode(node: AnonymousFunctionExpressionNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    // ----------------------------------- Files ------------------------------------------
+
+    open fun visitFileEnterNode(node: FileEnterNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    open fun visitFileExitNode(node: FileExitNode, data: D): R {
         return visitNode(node, data)
     }
 
@@ -87,6 +101,26 @@ abstract class ControlFlowGraphVisitor<out R, in D> {
     }
 
     open fun visitScriptExitNode(node: ScriptExitNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    // ----------------------------------- Code Fragments ------------------------------------------
+
+    open fun visitCodeFragmentEnterNode(node: CodeFragmentEnterNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    open fun visitCodeFragmentExitNode(node: CodeFragmentExitNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    // ----------------------------------- REPL Snippets -------------------------------------------
+
+    open fun visitReplSnippetEnterNode(node: ReplSnippetEnterNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    open fun visitReplSnippetExitNode(node: ReplSnippetExitNode, data: D): R {
         return visitNode(node, data)
     }
 
@@ -221,49 +255,25 @@ abstract class ControlFlowGraphVisitor<out R, in D> {
         return visitNode(node, data)
     }
 
-    open fun visitFinallyProxyEnterNode(node: FinallyProxyEnterNode, data: D): R {
-        return visitNode(node, data)
-    }
-
-    open fun visitFinallyProxyExitNode(node: FinallyProxyExitNode, data: D): R {
-        return visitNode(node, data)
-    }
-
     open fun visitTryExpressionExitNode(node: TryExpressionExitNode, data: D): R {
         return visitNode(node, data)
     }
 
     // ----------------------------------- Boolean operators -----------------------------------
 
-    open fun visitBinaryAndEnterNode(node: BinaryAndEnterNode, data: D): R {
+    open fun visitBooleanOperatorEnterNode(node: BooleanOperatorEnterNode, data: D): R {
         return visitNode(node, data)
     }
 
-    open fun visitBinaryAndExitLeftOperandNode(node: BinaryAndExitLeftOperandNode, data: D): R {
+    open fun visitBooleanOperatorExitLeftOperandNode(node: BooleanOperatorExitLeftOperandNode, data: D): R {
         return visitNode(node, data)
     }
 
-    open fun visitBinaryAndEnterRightOperandNode(node: BinaryAndEnterRightOperandNode, data: D): R {
+    open fun visitBooleanOperatorEnterRightOperandNode(node: BooleanOperatorEnterRightOperandNode, data: D): R {
         return visitNode(node, data)
     }
 
-    open fun visitBinaryAndExitNode(node: BinaryAndExitNode, data: D): R {
-        return visitNode(node, data)
-    }
-
-    open fun visitBinaryOrEnterNode(node: BinaryOrEnterNode, data: D): R {
-        return visitNode(node, data)
-    }
-
-    open fun visitBinaryOrExitLeftOperandNode(node: BinaryOrExitLeftOperandNode, data: D): R {
-        return visitNode(node, data)
-    }
-
-    open fun visitBinaryOrEnterRightOperandNode(node: BinaryOrEnterRightOperandNode, data: D): R {
-        return visitNode(node, data)
-    }
-
-    open fun visitBinaryOrExitNode(node: BinaryOrExitNode, data: D): R {
+    open fun visitBooleanOperatorExitNode(node: BooleanOperatorExitNode, data: D): R {
         return visitNode(node, data)
     }
 
@@ -287,7 +297,7 @@ abstract class ControlFlowGraphVisitor<out R, in D> {
         return visitNode(node, data)
     }
 
-    open fun visitConstExpressionNode(node: ConstExpressionNode, data: D): R {
+    open fun visitLiteralExpressionNode(node: LiteralExpressionNode, data: D): R {
         return visitNode(node, data)
     }
 
@@ -307,7 +317,19 @@ abstract class ControlFlowGraphVisitor<out R, in D> {
         return visitNode(node, data)
     }
 
-    open fun visitFunctionCallNode(node: FunctionCallNode, data: D): R {
+    open fun visitFunctionCallArgumentsEnterNode(node: FunctionCallArgumentsEnterNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    open fun visitFunctionCallArgumentsExitNode(node: FunctionCallArgumentsExitNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    open fun visitFunctionCallEnterNode(node: FunctionCallEnterNode, data: D): R {
+        return visitNode(node, data)
+    }
+
+    open fun visitFunctionCallExitNode(node: FunctionCallExitNode, data: D): R {
         return visitNode(node, data)
     }
 

@@ -5,10 +5,12 @@
 
 package test.collections
 
+import test.TestPlatform
 import test.assertStaticTypeIs
 import test.assertTypeEquals
 import test.collections.behaviors.*
 import test.comparisons.STRING_CASE_INSENSITIVE_ORDER
+import test.testExceptOn
 import test.text.isAsciiLetter
 import kotlin.test.*
 import kotlin.random.Random
@@ -65,6 +67,18 @@ class ArraysTest {
         assertEquals("4", arr2[arr2.lastIndex])
     }
 
+    @Test fun arrayInit() {
+        val arr = Array(2) { it.toString() }
+
+        assertEquals(2, arr.size)
+        assertEquals(0.toString(), arr[0])
+        assertEquals(1.toString(), arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { Array(-1) { it.toString() } }
+        }
+    }
+
     @Test fun byteArray() {
         val arr = ByteArray(2)
 
@@ -72,6 +86,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(expected, arr[0])
         assertEquals(expected, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { ByteArray(-1) }
+        }
     }
 
     @Test fun byteArrayInit() {
@@ -80,6 +98,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals(0.toByte(), arr[0])
         assertEquals(1.toByte(), arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { ByteArray(-1) { it.toByte() } }
+        }
     }
 
     @Test fun shortArray() {
@@ -89,6 +111,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(expected, arr[0])
         assertEquals(expected, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { ShortArray(-1) }
+        }
     }
 
     @Test fun shortArrayInit() {
@@ -97,6 +123,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals(0.toShort(), arr[0])
         assertEquals(1.toShort(), arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { ShortArray(-1) { it.toShort() } }
+        }
     }
 
     @Test fun intArray() {
@@ -105,6 +135,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(0, arr[0])
         assertEquals(0, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { IntArray(-1) }
+        }
     }
 
     @Test fun intArrayInit() {
@@ -113,6 +147,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals(0.toInt(), arr[0])
         assertEquals(1.toInt(), arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { IntArray(-1) { it.toInt() } }
+        }
     }
 
     @Test fun longArray() {
@@ -122,6 +160,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(expected, arr[0])
         assertEquals(expected, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { LongArray(-1) }
+        }
     }
 
     @Test fun longArrayInit() {
@@ -130,6 +172,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals(0.toLong(), arr[0])
         assertEquals(1.toLong(), arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { LongArray(-1) { it.toLong() } }
+        }
     }
 
     @Test fun floatArray() {
@@ -139,6 +185,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(expected, arr[0])
         assertEquals(expected, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { FloatArray(-1) }
+        }
     }
 
     @Test fun floatArrayInit() {
@@ -147,6 +197,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals(0.toFloat(), arr[0])
         assertEquals(1.toFloat(), arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { FloatArray(-1) { it.toFloat() } }
+        }
     }
 
     @Test fun doubleArray() {
@@ -155,6 +209,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(0.0, arr[0])
         assertEquals(0.0, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { DoubleArray(-1) }
+        }
     }
 
     @Test fun doubleArrayInit() {
@@ -163,6 +221,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals(0.toDouble(), arr[0])
         assertEquals(1.toDouble(), arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { DoubleArray(-1) { it.toDouble() } }
+        }
     }
 
     @Test fun charArray() {
@@ -172,6 +234,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(expected, arr[0])
         assertEquals(expected, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { CharArray(-1) }
+        }
     }
 
     @Test fun charArrayInit() {
@@ -180,6 +246,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals('a', arr[0])
         assertEquals('b', arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { CharArray(-1) { 'a' + it } }
+        }
     }
 
     @Test fun booleanArray() {
@@ -187,6 +257,10 @@ class ArraysTest {
         assertEquals(arr.size, 2)
         assertEquals(false, arr[0])
         assertEquals(false, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { BooleanArray(-1) }
+        }
     }
 
     @Test fun booleanArrayInit() {
@@ -195,6 +269,10 @@ class ArraysTest {
         assertEquals(2, arr.size)
         assertEquals(true, arr[0])
         assertEquals(false, arr[1])
+
+        testExceptOn(TestPlatform.Js) {
+            assertFailsWith<RuntimeException> { BooleanArray(-1) { it % 2 == 0 } }
+        }
     }
 
     @Test fun contentEquals() {
@@ -212,7 +290,7 @@ class ArraysTest {
             assertFalse(check(array, array2), "Modified array should be different: original $list, modified $list2m")
         }
 
-        checkArray(arrayOf("a", 1, null), { copyOf() }, { toList() }, { a1, a2 -> a1 contentEquals a2 }, { reverse() })
+        checkArray(arrayOf<Any?>("a", 1, null), { copyOf() }, { toList() }, { a1, a2 -> a1 contentEquals a2 }, { reverse() })
         checkArray(byteArrayOf(1, 2, 3), { copyOf() }, { toList() }, { a1, a2 -> a1 contentEquals a2 }, { reverse() })
         checkArray(intArrayOf(1, 2, 3), { copyOf() }, { toList() }, { a1, a2 -> a1 contentEquals a2 }, { reverse() })
         checkArray(longArrayOf(1, 2, 3), { copyOf() }, { toList() }, { a1, a2 -> a1 contentEquals a2 }, { reverse() })
@@ -256,7 +334,7 @@ class ArraysTest {
     }
 
     @Test fun contentToString() {
-        arrayOf("a", 1, null).let { arr -> assertEquals(arr.asList().toString(), arr.contentToString()) }
+        arrayOf<Any?>("a", 1, null).let { arr -> assertEquals(arr.asList().toString(), arr.contentToString()) }
         charArrayOf('a', 'b', 'd').let { arr -> assertEquals(arr.asList().toString(), arr.contentToString()) }
         intArrayOf(1, 10, 42).let { arr -> assertEquals(arr.asList().toString(), arr.contentToString()) }
         longArrayOf(1L, 5L, Long.MAX_VALUE).let { arr -> assertEquals(arr.asList().toString(), arr.contentToString()) }
@@ -1871,6 +1949,57 @@ class ArraysTest {
         assertEquals(list, arr.toList())
 
         assertEquals(Array(0, { "" }).asList(), emptyList<String>())
+    }
+
+    @Test fun sortOutOfBounds() {
+        fun <TArray> doTest(
+            builder: IntArray.() -> TArray,
+            sort: TArray.() -> Unit,
+            sortFrom: TArray.(Int) -> Unit,
+            sortFromTo: TArray.(Int, Int) -> Unit,
+            sortDescending: TArray.() -> Unit,
+            sortDescendingFromTo: TArray.(Int, Int) -> Unit,
+        ) {
+            val empty = intArrayOf().builder()
+            empty.sort()
+            empty.sortFrom(0)
+            empty.sortFromTo(0, 0)
+            empty.sortDescending()
+            empty.sortDescendingFromTo(0, 0)
+
+            val nonEmpty = intArrayOf(1).builder()
+            nonEmpty.sort()
+            nonEmpty.sortFrom(1)
+            nonEmpty.sortFromTo(1, 1)
+            nonEmpty.sortDescending()
+            nonEmpty.sortDescendingFromTo(1, 1)
+
+            assertFailsWith<IndexOutOfBoundsException> { empty.sortFromTo(0, 1) }
+            assertFailsWith<IndexOutOfBoundsException> { empty.sortFromTo(5, 5) }
+            assertFailsWith<IndexOutOfBoundsException> { empty.sortDescendingFromTo(0, 1) }
+            assertFailsWith<IndexOutOfBoundsException> { empty.sortDescendingFromTo(5, 5) }
+            assertFailsWith<IndexOutOfBoundsException> { nonEmpty.sortFromTo(1, 2) }
+            assertFailsWith<IndexOutOfBoundsException> { nonEmpty.sortFromTo(5, 5) }
+            assertFailsWith<IndexOutOfBoundsException> { nonEmpty.sortDescendingFromTo(1, 2) }
+            assertFailsWith<IndexOutOfBoundsException> { nonEmpty.sortDescendingFromTo(5, 5) }
+        }
+
+        // quicksort
+        doTest({ map{it}.toIntArray() }, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toByte()}.toByteArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toShort()}.toShortArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toLong()}.toLongArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toChar()}.toCharArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toFloat()}.toFloatArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toDouble()}.toDoubleArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toUByte()}.toUByteArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toUShort()}.toUShortArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toUInt()}.toUIntArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        doTest({map{it.toULong()}.toULongArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
+        // booleanArrayOf().sort() // BooleanArray doesn't have sort extension method
+
+        // mergesort
+        doTest({map{it.toString()}.toTypedArray()}, sort = { sort() }, sortFrom = { sort(it) }, sortFromTo = { x, y -> sort(x, y) }, sortDescending = { sortDescending() }, sortDescendingFromTo = { x, y -> sortDescending(x, y) })
     }
 
     @Test fun sort() {

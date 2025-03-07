@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
@@ -9,7 +9,6 @@ import com.intellij.testFramework.TestDataPath;
 import org.jetbrains.kotlin.test.util.KtTestUtil;
 import org.jetbrains.kotlin.test.TargetBackend;
 import org.jetbrains.kotlin.test.TestMetadata;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -20,14 +19,26 @@ import java.util.regex.Pattern;
 @TestMetadata("plugins/kotlinx-serialization/testData/jdk11BoxIr")
 @TestDataPath("$PROJECT_ROOT")
 public class SerializationJdk11IrBoxTestGenerated extends AbstractSerializationJdk11IrBoxTest {
-    @Test
-    public void testAllFilesPresentInJdk11BoxIr() throws Exception {
-        KtTestUtil.assertAllTestsPresentByMetadataWithExcluded(this.getClass(), new File("plugins/kotlinx-serialization/testData/jdk11BoxIr"), Pattern.compile("^(.+)\\.kt$"), null, TargetBackend.JVM_IR, true);
-    }
+  @Test
+  public void testAllFilesPresentInJdk11BoxIr() {
+    KtTestUtil.assertAllTestsPresentByMetadataWithExcluded(this.getClass(), new File("plugins/kotlinx-serialization/testData/jdk11BoxIr"), Pattern.compile("^(.+)\\.kt$"), null, TargetBackend.JVM_IR, true);
+  }
 
-    @Test
-    @TestMetadata("kt57647.kt")
-    public void testKt57647() throws Exception {
-        runTest("plugins/kotlinx-serialization/testData/jdk11BoxIr/kt57647.kt");
-    }
+  @Test
+  @TestMetadata("flexibleType.kt")
+  public void testFlexibleType() {
+    runTest("plugins/kotlinx-serialization/testData/jdk11BoxIr/flexibleType.kt");
+  }
+
+  @Test
+  @TestMetadata("kt57647.kt")
+  public void testKt57647() {
+    runTest("plugins/kotlinx-serialization/testData/jdk11BoxIr/kt57647.kt");
+  }
+
+  @Test
+  @TestMetadata("serializableOnJavaClass.kt")
+  public void testSerializableOnJavaClass() {
+    runTest("plugins/kotlinx-serialization/testData/jdk11BoxIr/serializableOnJavaClass.kt");
+  }
 }

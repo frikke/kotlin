@@ -13,7 +13,7 @@ import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.testfixtures.ProjectBuilder
 import org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper
 import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
-import org.jetbrains.kotlin.gradle.util.addBuildEventsListenerRegistryMock
+import org.jetbrains.kotlin.gradle.util.configureDefaults
 import org.junit.Test
 import kotlin.test.BeforeTest
 import kotlin.test.assertEquals
@@ -23,7 +23,6 @@ class SingleTargetAndroidSourceSetLayoutTest {
     private val project = ProjectBuilder.builder().build() as ProjectInternal
 
     private val android: LibraryExtension = run {
-        addBuildEventsListenerRegistryMock(project)
         project.plugins.apply(LibraryPlugin::class.java)
         project.extensions.getByName("android") as LibraryExtension
     }
@@ -31,7 +30,7 @@ class SingleTargetAndroidSourceSetLayoutTest {
     @BeforeTest
     fun setup() {
         project.plugins.apply(KotlinAndroidPluginWrapper::class.java)
-        android.compileSdk = 31
+        android.configureDefaults()
     }
 
     @Test
@@ -39,20 +38,6 @@ class SingleTargetAndroidSourceSetLayoutTest {
         android.sourceSets.all { androidSourceSet -> project.getKotlinSourceSetOrFail(androidSourceSet) }
         project.evaluate()
     }
-
-    @Test
-    @Suppress("deprecation")
-    fun `test - default configuration - AndroidSourceSet has KotlinSourceSet as convention`() {
-        android.sourceSets.all { androidSourceSet ->
-            assertSame(
-                project.getKotlinSourceSetOrFail(androidSourceSet),
-                (androidSourceSet as org.gradle.api.internal.HasConvention).convention.plugins["kotlin"] as? KotlinSourceSet,
-                "Expected Convention 'kotlin' on AndroidSourceSet: ${androidSourceSet.name}"
-            )
-        }
-        project.evaluate()
-    }
-
 
     @Test
     fun `test - with flavors - AndroidSourceSet has associated KotlinSourceSet`() {

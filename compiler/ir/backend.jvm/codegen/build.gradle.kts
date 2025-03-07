@@ -10,6 +10,11 @@ dependencies {
     compileOnly(intellijCore())
 }
 
+optInToUnsafeDuringIrConstructionAPI()
+kotlin {
+    compilerOptions.optIn.add("org.jetbrains.kotlin.ir.util.JvmIrInlineExperimental")
+}
+
 sourceSets {
     "main" {
         projectDefault()

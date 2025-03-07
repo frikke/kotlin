@@ -1,5 +1,6 @@
+// RUN_PIPELINE_TILL: FRONTEND
 // RENDER_DIAGNOSTICS_FULL_TEXT
-// !LANGUAGE: +ForbidInferringTypeVariablesIntoEmptyIntersection
+// LANGUAGE: +ForbidInferringTypeVariablesIntoEmptyIntersection
 class Foo<T>
 
 class Bar<T> {

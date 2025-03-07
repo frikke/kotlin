@@ -6,51 +6,54 @@
 package org.jetbrains.kotlin.gradle.targets.js.yarn
 
 import org.gradle.api.logging.Logger
+import org.gradle.api.model.ObjectFactory
 import org.gradle.internal.service.ServiceRegistry
-import org.jetbrains.kotlin.gradle.targets.js.npm.NpmApi
-import org.jetbrains.kotlin.gradle.targets.js.npm.NpmEnvironment
-import org.jetbrains.kotlin.gradle.targets.js.npm.YarnEnvironment
+import org.gradle.process.ExecOperations
+import org.jetbrains.kotlin.gradle.targets.js.npm.NodeJsEnvironment
+import org.jetbrains.kotlin.gradle.targets.js.npm.NpmApiExecution
 import org.jetbrains.kotlin.gradle.targets.js.npm.resolved.PreparedKotlinCompilationNpmResolution
 import java.io.File
 
-class Yarn : NpmApi {
-    private val yarnWorkspaces = YarnWorkspaces()
+class Yarn internal constructor(
+    execOps: ExecOperations,
+    objects: ObjectFactory,
+) : NpmApiExecution<YarnEnvironment> {
+    private val yarnWorkspaces = YarnWorkspaces(
+        execOps = execOps,
+        objects = objects,
+    )
 
-    override fun preparedFiles(nodeJs: NpmEnvironment): Collection<File> =
+    override fun preparedFiles(nodeJs: NodeJsEnvironment): Collection<File> =
         yarnWorkspaces.preparedFiles(nodeJs)
 
     override fun prepareRootProject(
-        nodeJs: NpmEnvironment,
+        nodeJs: NodeJsEnvironment,
+        packageManagerEnvironment: YarnEnvironment,
         rootProjectName: String,
         rootProjectVersion: String,
-        logger: Logger,
         subProjects: Collection<PreparedKotlinCompilationNpmResolution>,
-        resolutions: Map<String, String>,
     ) = yarnWorkspaces
         .prepareRootProject(
             nodeJs,
+            packageManagerEnvironment,
             rootProjectName,
             rootProjectVersion,
-            logger,
             subProjects,
-            resolutions,
         )
 
     override fun resolveRootProject(
         services: ServiceRegistry,
         logger: Logger,
-        nodeJs: NpmEnvironment,
-        yarn: YarnEnvironment,
-        npmProjects: Collection<PreparedKotlinCompilationNpmResolution>,
-        cliArgs: List<String>
+        nodeJs: NodeJsEnvironment,
+        packageManagerEnvironment: YarnEnvironment,
+        cliArgs: List<String>,
     ) {
         yarnWorkspaces
             .resolveRootProject(
                 services,
                 logger,
                 nodeJs,
-                yarn,
-                npmProjects,
+                packageManagerEnvironment,
                 cliArgs
             )
     }

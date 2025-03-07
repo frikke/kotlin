@@ -73,7 +73,7 @@ To run blackbox compiler tests use:
 
 * **--tests** allows one to choose test suite(s) or test case(s) to run.
 
-      ./gradlew :native:native.tests:codegenBoxTest --tests "org.jetbrains.kotlin.konan.blackboxtest.NativeCodegenBoxTestGenerated\$Box\$*"
+      ./gradlew :native:native.tests:codegenBoxTest --tests "org.jetbrains.kotlin.konan.test.blackbox.NativeCodegenBoxTestGenerated\$Box\$*"
 
 * There are also Gradle project properties that can be used to control various aspects of blackbox tests. Example:
 
@@ -93,10 +93,23 @@ To run blackbox compiler tests use:
 | `memoryModel`           | The memory model: `LEGACY` or `EXPERIMENTAL` (default)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `useThreadStateChecker` | If `true` the thread state checker is enabled. The default is `false`.<br/><br/>Note: Thread state checker can be enabled only in combination with `optimizationMode=DEBUG`, `memoryModel=EXPERIMENTAL` and `cacheMode=NO`.                                                                                                                                                                                                                                                                                                                                                                         |
 | `gcType`                | The type of GC: `UNSPECIFIED` (default), `NOOP`, `STMS`, `CMS`<br/><br/>Note: The GC type can be specified only in combination with `memoryModel=EXPERIMENTAL`.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `gcScheduler`           | The type of GC scheduler: `UNSPECIFIED` (default), `DISABLED`, `WITH_TIMER`, `ON_SAFE_POINTS`, `AGGRESSIVE`<br/><br/>Note: The GC scheduler type can be specified only in combination with `memoryModel=EXPERIMENTAL`.                                                                                                                                                                                                                                                                                                                                                                              |
+| `gcScheduler`           | The type of GC scheduler: `UNSPECIFIED` (default), `ADAPTIVE`, `AGGRESSIVE`, `MANUAL`<br/><br/>Note: The GC scheduler type can be specified only in combination with `memoryModel=EXPERIMENTAL`.                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `cacheMode`             | * `NO`: no caches <br/>* `STATIC_ONLY_DIST` (default): use only caches for libs from the distribution <br/>* `STATIC_EVERYWHERE`: use caches for libs from the distribution and generate caches for all produced KLIBs<br/><br/>Note: Any cache mode that permits using caches can be enabled only when thread state checker is disabled.                                                                                                                                                                                                                                                           |
 | `executionTimeout`      | Max permitted duration of each individual test execution in milliseconds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `sanitizer`             | Run tests with sanitizer: `NONE` (default), `THREAD`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+
+A test can be ignored for certain property values with the help of test directives within test source files:
+- `// IGNORE_NATIVE: <name>=<value>` to ignore test for both K1 and K2 frontends
+- `// IGNORE_NATIVE_K1: <name>=<value>` to ignore test for K1 frontend only
+- `// IGNORE_NATIVE_K2: <name>=<value>` to ignore test for K2 frontend only
+
+Good examples are:
+- `// IGNORE_NATIVE: cacheMode=STATIC_EVERYWHERE`
+- `// IGNORE_NATIVE_K1: mode=ONE_STAGE_MULTI_MODULE`
+- `// IGNORE_NATIVE_K2: optimizationMode=OPT`
+- `// IGNORE_NATIVE: cacheMode=STATIC_EVERYWHERE && target=linux_x64`
+
+Test will be ignored in case value of any `// IGNORE_NATIVE*` directive would match to an actual test run setting. 
 
 ### Target-specific tests
 
@@ -141,12 +154,13 @@ To run Kotlin/Native target-specific tests use (takes time):
   case of targets that are tricky to execute tests on.
 
  ### Runtime unit tests
- 
-To run runtime unit tests on the host machine for both mimalloc and the standard allocator:
+
+To run all runtime unit tests on the host machine:
 
     ./gradlew :kotlin-native:runtime:hostRuntimeTests
-       
-To run tests for only one of these two allocators, run `:kotlin-native:runtime:hostStdAllocRuntimeTests` or `:kotlin-native:runtime:hostMimallocRuntimeTests`.
+
+Use `-Pgtest_filter=` to filter which tests to run (uses Google Test filter syntax).
+Use `-Pgtest_timeout=` to limit how much time each test executable can take (accepts values like `30s`, `1h15m20s`, and so on).
 
 We use [Google Test](https://github.com/google/googletest) to execute the runtime unit tests. The build automatically fetches
 the specified Google Test revision to `kotlin-native/runtime/googletest`. It is possible to manually modify the downloaded GTest sources for debug
@@ -360,7 +374,7 @@ The following compiler phases control different parts of LLVM pipeline:
 2. Running different parts of LLVM optimization pipeline:
    1. `MandatoryBitcodeLLVMPostprocessingPhase`: important postprocessing. Disabling can break generated code.
    2. `ModuleBitcodeOptimization`: Basic optimization pipeline. Something close to clang -O3
-   3. `LTOBitcodeOptimization`: LTO pipeline. Slower, but better optimizations, assuming whole program knowlage.  
+   3. `LTOBitcodeOptimization`: LTO pipeline. Slower, but better optimizations, assuming whole program knowledge.  
 3. `ObjectFiles`. Compilation of bitcode with Clang.
 
 For example, pass `-Xdisable-phases=LTOBitcodeOptimization` to skip this part of optimization pipeline for faster compilation with slower code.

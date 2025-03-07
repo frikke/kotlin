@@ -1,5 +1,5 @@
 plugins {
-    kotlin("multiplatform").version("<pluginMarkerVersion>")
+    kotlin("multiplatform")
 }
 
 repositories {
@@ -23,8 +23,4 @@ kotlin {
 
     js("server")
     js("client")
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile> {
-    kotlinOptions.freeCompilerArgs += "-Xforce-deprecated-legacy-compiler-usage"
 }

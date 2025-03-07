@@ -6,6 +6,7 @@
 package samples.collections
 
 import samples.*
+import kotlin.math.*
 import kotlin.test.*
 
 
@@ -695,25 +696,197 @@ class Collections {
         }
 
         @Sample
-        fun maxByOrNull() {
-            val nameToAge = listOf("Alice" to 42, "Bob" to 28, "Carol" to 51)
-            val oldestPerson = nameToAge.maxByOrNull { it.second }
-            assertPrints(oldestPerson, "(Carol, 51)")
+        fun maxMinPrimitive() {
+            // The largest and smallest elements in the array
+            val numbers = intArrayOf(3, 7, 2, 6)
+            assertPrints(numbers.max(), "7")
+            assertPrints(numbers.min(), "2")
 
-            val emptyList = emptyList<Pair<String, Int>>()
-            val emptyMax = emptyList.maxByOrNull { it.second }
-            assertPrints(emptyMax, "null")
+            val emptyArray = intArrayOf()
+
+            // max() and min() throw if the array is empty
+            assertFailsWith<NoSuchElementException> { emptyArray.max() }
+            assertFailsWith<NoSuchElementException> { emptyArray.min() }
+
+            // maxOrNull() and minOrNull() return null if the array is empty
+            assertPrints(emptyArray.maxOrNull(), "null")
+            assertPrints(emptyArray.minOrNull(), "null")
         }
 
         @Sample
-        fun minByOrNull() {
-            val list = listOf("abcd", "abc", "ab", "abcde")
-            val shortestString = list.minByOrNull { it.length }
+        fun maxMinFloating() {
+            // The largest and smallest elements in the array
+            val numbers = doubleArrayOf(3.0, 7.2, 2.4, 6.5)
+            assertPrints(numbers.max(), "7.2")
+            assertPrints(numbers.min(), "2.4")
+
+            // max() and min() return `NaN` if any of elements is `NaN`
+            val numbersWithNaN = doubleArrayOf(3.0, Double.NaN, 7.2, 2.4, 6.5)
+            assertPrints(numbersWithNaN.max(), "NaN")
+            assertPrints(numbersWithNaN.min(), "NaN")
+
+            val emptyArray = doubleArrayOf()
+
+            // max() and min() throw if the array is empty
+            assertFailsWith<NoSuchElementException> { emptyArray.max() }
+            assertFailsWith<NoSuchElementException> { emptyArray.min() }
+
+            // maxOrNull() and minOrNull() return null if the array is empty
+            assertPrints(emptyArray.maxOrNull(), "null")
+            assertPrints(emptyArray.minOrNull(), "null")
+        }
+
+        @Sample
+        fun maxMinGeneric() {
+            // The largest and smallest elements according to String.compareTo
+            val names = listOf("Alice", "Bob", "Carol")
+            assertPrints(names.max(), "Carol")
+            assertPrints(names.min(), "Alice")
+
+            val emptyList = emptyList<Int>()
+
+            // max() and min() throw if the collection is empty
+            assertFailsWith<NoSuchElementException> { emptyList.max() }
+            assertFailsWith<NoSuchElementException> { emptyList.min() }
+
+            // maxOrNull() and minOrNull() return null if the collection is empty
+            assertPrints(emptyList.maxOrNull(), "null")
+            assertPrints(emptyList.minOrNull(), "null")
+        }
+
+        @Sample
+        fun maxOfMinOfPrimitive() {
+            // The largest and smallest last digits in the array
+            val numbers = intArrayOf(13, 7, 22, 64)
+            assertPrints(numbers.maxOf { it % 10 }, "7")
+            assertPrints(numbers.minOf { it % 10 }, "2")
+
+            val emptyArray = intArrayOf()
+
+            // maxOf() and minOf() throw if the array is empty
+            assertFailsWith<NoSuchElementException> { emptyArray.maxOf { it % 10 } }
+            assertFailsWith<NoSuchElementException> { emptyArray.minOf { it % 10 } }
+
+            // maxOfOrNull() and minOfOrNull() return null if the array is empty
+            assertPrints(emptyArray.maxOfOrNull { it % 10 }, "null")
+            assertPrints(emptyArray.minOfOrNull { it % 10 }, "null")
+        }
+
+        @Sample
+        fun maxOfMinOfGeneric() {
+            // The length of the longest and shortest names
+            val names = listOf("Alice", "Bob", "Carol")
+            assertPrints(names.maxOf { it.length }, "5")
+            assertPrints(names.minOf { it.length }, "3")
+
+            val emptyList = emptyList<String>()
+
+            // maxOf() and minOf() throw if the collection is empty
+            assertFailsWith<NoSuchElementException> { emptyList.maxOf { it.length } }
+            assertFailsWith<NoSuchElementException> { emptyList.minOf { it.length } }
+
+            // maxOfOrNull() and minOfOrNull() return null if the collection is empty
+            assertPrints(emptyList.maxOfOrNull { it.length }, "null")
+            assertPrints(emptyList.minOfOrNull { it.length }, "null")
+        }
+
+        @Sample
+        fun maxOfMinOfFloatingResult() {
+            data class Rectangle(val width: Double, val height: Double) {
+                val aspectRatio: Double get() = if (height != 0.0) width / height else Double.NaN
+            }
+
+            // The largest and smallest width-to-height ratios
+            val rectangles = listOf(
+                Rectangle(15.0, 10.0),
+                Rectangle(25.0, 20.0),
+                Rectangle(40.0, 30.0),
+            )
+            assertPrints(rectangles.maxOf { it.aspectRatio }, "1.5")
+            assertPrints(rectangles.minOf { it.aspectRatio }, "1.25")
+
+            // Aspect ratio of a point (0.0 by 0.0) is NaN, hence the result is NaN
+            val rectanglesAndPoint = rectangles + Rectangle(0.0, 0.0)
+            assertPrints(rectanglesAndPoint.maxOf { it.aspectRatio }, "NaN")
+            assertPrints(rectanglesAndPoint.minOf { it.aspectRatio }, "NaN")
+
+            val emptyList = emptyList<Rectangle>()
+
+            // maxOf() and minOf() throw if the collection is empty
+            assertFailsWith<NoSuchElementException> { emptyList.maxOf { it.aspectRatio } }
+            assertFailsWith<NoSuchElementException> { emptyList.minOf { it.aspectRatio } }
+
+            // maxOfOrNull() and minOfOrNull() return null if the collection is empty
+            assertPrints(emptyList.maxOfOrNull { it.aspectRatio }, "null")
+            assertPrints(emptyList.minOfOrNull { it.aspectRatio }, "null")
+        }
+
+        @Sample
+        fun maxOfWithMinOfWithPrimitive() {
+            // A custom Comparator that orders numbers by their absolute values
+            val absComparator = compareBy<Int> { it.absoluteValue }
+
+            // The largest and smallest cubic values when compared by absolute value
+            val numbers = intArrayOf(-2, 3, -4, 1)
+            assertPrints(numbers.maxOfWith(absComparator) { it * it * it }, "-64")
+            assertPrints(numbers.minOfWith(absComparator) { it * it * it }, "1")
+
+            val emptyArray = intArrayOf()
+
+            // maxOfWith() and minOfWith() throw if the array is empty
+            assertFailsWith<NoSuchElementException> { emptyArray.maxOfWith(absComparator) { it * it * it } }
+            assertFailsWith<NoSuchElementException> { emptyArray.minOfWith(absComparator) { it * it * it } }
+
+            // maxOfWithOrNull() and minOfWithOrNull() return null if the array is empty
+            assertPrints(emptyArray.maxOfWithOrNull(absComparator) { it * it * it }, "null")
+            assertPrints(emptyArray.minOfWithOrNull(absComparator) { it * it * it }, "null")
+        }
+
+        @Sample
+        fun maxOfWithMinOfWithGeneric() {
+            data class Book(val title: String, val publishYear: Int, val rating: Double)
+
+            // A custom Comparator that orders strings by their length
+            val lengthComparator = compareBy<String> { it.length }
+
+            // The longest and shortest book titles
+            val books = listOf(
+                Book("Red Sand", 2004, 3.5),
+                Book("Silver Bullet", 2009, 4.4),
+                Book("Clear Water", 2018, 4.1),
+                Book("Night Sky", 2023, 3.8)
+            )
+            assertPrints(books.maxOfWith(lengthComparator) { it.title }, "Silver Bullet")
+            assertPrints(books.minOfWith(lengthComparator) { it.title }, "Red Sand")
+
+            val emptyList = listOf<Book>()
+
+            // maxOfWith() and minOfWith() throw if the collection is empty
+            assertFailsWith<NoSuchElementException> { emptyList.maxOfWith(lengthComparator) { it.title } }
+            assertFailsWith<NoSuchElementException> { emptyList.minOfWith(lengthComparator) { it.title } }
+
+            // maxOfWithOrNull() and minOfWithOrNull() return null if the collection is empty
+            assertPrints(emptyList.maxOfWithOrNull(lengthComparator) { it.title }, "null")
+            assertPrints(emptyList.minOfWithOrNull(lengthComparator) { it.title }, "null")
+        }
+
+        @Sample
+        fun minMaxByOrNull() {
+            val strings = listOf("abcd", "abc", "ab", "de", "abcde")
+
+            val longestString = strings.maxBy { it.length }
+            assertPrints(longestString, "abcde")
+
+            val shortestString = strings.minBy { it.length }
             assertPrints(shortestString, "ab")
 
             val emptyList = emptyList<String>()
-            val emptyMin = emptyList.minByOrNull { it.length }
-            assertPrints(emptyMin, "null")
+            // maxBy() and minBy() throw if the collection is empty
+            assertFailsWith<NoSuchElementException> { emptyList.maxBy { it.length } }
+            assertFailsWith<NoSuchElementException> { emptyList.minBy { it.length } }
+            // maxByOrNull() and minByOrNull() return null if the collection is empty
+            assertPrints(emptyList.maxByOrNull { it.length }, "null")
+            assertPrints(emptyList.minByOrNull { it.length }, "null")
         }
 
         @Sample
@@ -885,11 +1058,80 @@ class Collections {
 
         @Sample
         fun sortedBy() {
-            val list = listOf("aaa", "cc", "bbbb")
-            val sorted = list.sortedBy { it.length }
+            class Dish(val name: String, val calories: Int, val tasteRate: Float) {
+                override fun toString(): String = "Dish($name: $calories cal, taste $tasteRate/5)"
+            }
 
-            assertPrints(list, "[aaa, cc, bbbb]")
-            assertPrints(sorted, "[cc, aaa, bbbb]")
+            val fridgeContent = listOf(Dish("🍨", 207, 4.7f), Dish("🥦", 34, 2.3f), Dish("🧃", 34, 4.9f))
+
+            val dullDishes = fridgeContent.sortedBy { it.tasteRate }
+            assertPrints(dullDishes, "[Dish(🥦: 34 cal, taste 2.3/5), Dish(🍨: 207 cal, taste 4.7/5), Dish(🧃: 34 cal, taste 4.9/5)]")
+
+            val lightDishes = fridgeContent.sortedBy { it.calories }
+            // note that the sorting is stable, so the 🥦 is before the 🧃
+            assertPrints(lightDishes, "[Dish(🥦: 34 cal, taste 2.3/5), Dish(🧃: 34 cal, taste 4.9/5), Dish(🍨: 207 cal, taste 4.7/5)]")
+
+            // the original collection remains unchanged
+            assertPrints(fridgeContent, "[Dish(🍨: 207 cal, taste 4.7/5), Dish(🥦: 34 cal, taste 2.3/5), Dish(🧃: 34 cal, taste 4.9/5)]")
+        }
+
+        @Sample
+        fun sortedPrimitiveArrayBy() {
+            val unsorted = intArrayOf(3, 1, 2, 4)
+
+            val sortedByRemainder = unsorted.sortedBy { it % 3 }
+            // the sorting is stable: the order of 1 (1 % 3 == 1) and 4 (4 % 3 == 1) was preserved
+            assertPrints(sortedByRemainder, "[3, 1, 4, 2]")
+
+            val mapping = mapOf(1 to "one", 2 to "two", 3 to "three", 4 to "four")
+            val sortedByPronunciation = unsorted.sortedBy {
+                // take a key to sort by from the mapping
+                mapping.getOrDefault(it, "unknown")
+            }
+            // four < one < three < two, lexicographically
+            assertPrints(sortedByPronunciation, "[4, 1, 3, 2]")
+
+            // the original array remains unchanged
+            assertPrints(unsorted.toList(), "[3, 1, 2, 4]")
+        }
+
+        @Sample
+        fun sortedByDescending() {
+            class Dish(val name: String, val calories: Int, val tasteRate: Float) {
+                override fun toString(): String = "Dish($name: $calories cal, taste $tasteRate/5)"
+            }
+
+            val fridgeContent = listOf(Dish("🥦", 34, 2.3f), Dish("🧃", 34, 4.9f), Dish("🍨", 207, 4.7f))
+
+            val tastyDishes = fridgeContent.sortedByDescending { it.tasteRate }
+            assertPrints(tastyDishes,"[Dish(🧃: 34 cal, taste 4.9/5), Dish(🍨: 207 cal, taste 4.7/5), Dish(🥦: 34 cal, taste 2.3/5)]")
+
+            val energeticDishes = fridgeContent.sortedByDescending { it.calories }
+            // note that the sorting is stable, so the 🥦 is before the 🧃
+            assertPrints(energeticDishes,"[Dish(🍨: 207 cal, taste 4.7/5), Dish(🥦: 34 cal, taste 2.3/5), Dish(🧃: 34 cal, taste 4.9/5)]")
+
+            // the original collection remains unchanged
+            assertPrints(fridgeContent, "[Dish(🥦: 34 cal, taste 2.3/5), Dish(🧃: 34 cal, taste 4.9/5), Dish(🍨: 207 cal, taste 4.7/5)]")
+        }
+
+        @Sample
+        fun sortedPrimitiveArrayByDescending() {
+            val unsorted = intArrayOf(3, 1, 2, 4)
+
+            val sortedByValue = unsorted.sortedByDescending { it % 3 }
+            // the sorting is stable: the order of 1 (1 % 3 == 1) and 4 (4 % 3 == 1) was preserved
+            assertPrints(sortedByValue, "[2, 1, 4, 3]")
+
+            val mapping = mapOf(1 to "one", 2 to "two", 3 to "three", 4 to "four")
+            val sortedByPronunciation = unsorted.sortedByDescending {
+                // take a key to sort by from the mapping
+                mapping.getOrDefault(it, "unknown")
+            }
+            // two > three > one > four, lexicographically
+            assertPrints(sortedByPronunciation, "[2, 3, 1, 4]")
+
+            // the original array remains unchanged
+            assertPrints(unsorted.toList(), "[3, 1, 2, 4]")
         }
     }
 
